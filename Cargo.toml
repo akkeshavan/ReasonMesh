@@ -1,0 +1,65 @@
+[workspace]
+members = [
+    "crates/rm-syntax",
+    "crates/rm-ir",
+    "crates/rm-sat",
+    "crates/rm-smt",
+    "crates/rm-theory-euf",
+    "crates/rm-theory-bv",
+    "crates/rm-theory-arith",
+    "crates/rm-akx",
+    "crates/rm-bus",
+    "crates/rm-scheduler",
+    "crates/rm-worker",
+    "crates/rm-gpu",
+    "crates/rm-gpu-cuda",
+    "crates/rm-proof",
+    "crates/rm-telemetry",
+    "crates/rm-bench",
+    "crates/reasonmesh-cli",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/reasonmesh/reasonmesh"
+
+[workspace.dependencies]
+# Internal crates
+rm-akx      = { path = "crates/rm-akx" }
+rm-ir       = { path = "crates/rm-ir" }
+rm-syntax   = { path = "crates/rm-syntax" }
+rm-sat      = { path = "crates/rm-sat" }
+rm-smt      = { path = "crates/rm-smt" }
+rm-theory-euf   = { path = "crates/rm-theory-euf" }
+rm-theory-bv    = { path = "crates/rm-theory-bv" }
+rm-theory-arith = { path = "crates/rm-theory-arith" }
+rm-bus       = { path = "crates/rm-bus" }
+rm-scheduler = { path = "crates/rm-scheduler" }
+rm-worker    = { path = "crates/rm-worker" }
+rm-gpu       = { path = "crates/rm-gpu" }
+rm-proof     = { path = "crates/rm-proof" }
+rm-telemetry = { path = "crates/rm-telemetry" }
+rm-bench     = { path = "crates/rm-bench" }
+
+# External crates
+crossbeam-channel = "0.5"
+clap              = { version = "4", features = ["derive"] }
+serde             = { version = "1", features = ["derive"] }
+serde_json        = "1"
+thiserror         = "2"
+log               = "0.4"
+env_logger        = "0.11"
+smallvec          = { version = "1", features = ["serde"] }
+rustc-hash        = "2"
+parking_lot       = "0.12"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+
+[profile.bench]
+inherits = "release"
+debug = true
