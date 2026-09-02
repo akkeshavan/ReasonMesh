@@ -11,6 +11,7 @@ members = [
     "crates/rm-bus",
     "crates/rm-scheduler",
     "crates/rm-worker",
+    "crates/rm-orchestrator",
     "crates/rm-gpu",
     "crates/rm-gpu-cuda",
     "crates/rm-proof",
@@ -39,6 +40,7 @@ rm-theory-arith = { path = "crates/rm-theory-arith" }
 rm-bus       = { path = "crates/rm-bus" }
 rm-scheduler = { path = "crates/rm-scheduler" }
 rm-worker    = { path = "crates/rm-worker" }
+rm-orchestrator = { path = "crates/rm-orchestrator" }
 rm-gpu       = { path = "crates/rm-gpu" }
 rm-proof     = { path = "crates/rm-proof" }
 rm-telemetry = { path = "crates/rm-telemetry" }
@@ -55,6 +57,8 @@ env_logger        = "0.11"
 smallvec          = { version = "1", features = ["serde"] }
 rustc-hash        = "2"
 parking_lot       = "0.12"
+toml              = "0.8"
+postcard          = { version = "1", features = ["alloc"] }
 
 [profile.release]
 opt-level = 3

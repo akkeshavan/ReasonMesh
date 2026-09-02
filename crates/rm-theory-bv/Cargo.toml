@@ -1,12 +1,16 @@
 [package]
 name = "rm-theory-bv"
-description = "ReasonMesh: rm-theory-bv"
+description = "ReasonMesh: bit-vector theory (bit-blasting + circuit path), Milestone M4"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
 rm-akx    = { workspace = true }
+rm-ir     = { workspace = true }
+rm-sat    = { workspace = true }
+rm-syntax = { workspace = true }
 thiserror = { workspace = true }
 serde     = { workspace = true }
 log       = { workspace = true }
+rustc-hash = { workspace = true }

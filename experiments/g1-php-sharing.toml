@@ -1,0 +1,47 @@
+# G1 gate (§18) baseline 3: multi-worker portfolio WITH clause sharing.
+# This is what G1 asks: does async clause exchange beat the isolated portfolio?
+schema_version = 1
+name = "g1-php-sharing"
+description = "G1: 4-worker clause-sharing portfolio on PHP instances (pigeons > holes => UNSAT)"
+
+[solver]
+workers = 4
+seed = 1
+deterministic = false
+clause_sharing = true
+max_conflicts_per_problem = 5000000
+timeout_secs = 15
+
+[output]
+dir = "results/g1/sharing"
+trace = false
+
+[[problems]]
+name = "php-7-6"
+file = "../benchmarks/g1/php-7-6.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "php-8-7"
+file = "../benchmarks/g1/php-8-7.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "php-9-8"
+file = "../benchmarks/g1/php-9-8.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "php-10-9"
+file = "../benchmarks/g1/php-10-9.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "php-11-10"
+file = "../benchmarks/g1/php-11-10.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "php-12-11"
+file = "../benchmarks/g1/php-12-11.cnf"
+expect = "unsat"

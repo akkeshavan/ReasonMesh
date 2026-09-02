@@ -1,0 +1,14 @@
+[package]
+name = "rm-orchestrator"
+description = "ReasonMesh: rm-orchestrator"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+rm-akx       = { workspace = true }
+rm-scheduler = { workspace = true }
+thiserror    = { workspace = true }
+serde        = { workspace = true }
+serde_json   = { workspace = true }
+log          = { workspace = true }

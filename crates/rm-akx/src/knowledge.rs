@@ -124,7 +124,7 @@ pub struct HeuristicHint {
 // Knowledge kind discriminant (for routing/filtering without deserializing)
 // ---------------------------------------------------------------------------
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
 pub enum KnowledgeKindTag {
     Clause,
     TheoryLemma,
@@ -155,14 +155,14 @@ pub enum KnowledgeKind {
 impl KnowledgeKind {
     pub fn tag(&self) -> KnowledgeKindTag {
         match self {
-            Self::Clause(_)       => KnowledgeKindTag::Clause,
-            Self::TheoryLemma(_)  => KnowledgeKindTag::TheoryLemma,
-            Self::Bound(_)        => KnowledgeKindTag::Bound,
-            Self::Cube(_)         => KnowledgeKindTag::Cube,
-            Self::Conflict(_)     => KnowledgeKindTag::Conflict,
-            Self::ModelFragment(_)  => KnowledgeKindTag::ModelFragment,
-            Self::ProofFragment(_)  => KnowledgeKindTag::ProofFragment,
-            Self::HeuristicHint(_)  => KnowledgeKindTag::HeuristicHint,
+            Self::Clause(_) => KnowledgeKindTag::Clause,
+            Self::TheoryLemma(_) => KnowledgeKindTag::TheoryLemma,
+            Self::Bound(_) => KnowledgeKindTag::Bound,
+            Self::Cube(_) => KnowledgeKindTag::Cube,
+            Self::Conflict(_) => KnowledgeKindTag::Conflict,
+            Self::ModelFragment(_) => KnowledgeKindTag::ModelFragment,
+            Self::ProofFragment(_) => KnowledgeKindTag::ProofFragment,
+            Self::HeuristicHint(_) => KnowledgeKindTag::HeuristicHint,
         }
     }
 }
@@ -198,10 +198,10 @@ impl KnowledgeObject {
     /// The Scope required to share this object one level up the hierarchy.
     pub fn promoted_scope(&self) -> Option<Scope> {
         match self.scope {
-            Scope::Local   => Some(Scope::Process),
+            Scope::Local => Some(Scope::Process),
             Scope::Process => Some(Scope::Node),
-            Scope::Node    => Some(Scope::Global),
-            Scope::Global  => None,
+            Scope::Node => Some(Scope::Global),
+            Scope::Global => None,
         }
     }
 }
@@ -216,8 +216,8 @@ impl KnowledgeObject {
 /// the same canonical conclusion bytes, and the same sorted assumption set.
 /// An unconditional version of a conclusion supersedes all conditional versions.
 pub fn canonical_key(obj: &KnowledgeObject) -> u64 {
-    use std::hash::{Hash, Hasher};
     use rustc_hash::FxHasher;
+    use std::hash::{Hash, Hasher};
 
     let mut h = FxHasher::default();
     obj.kind.tag().hash(&mut h);
@@ -225,40 +225,63 @@ pub fn canonical_key(obj: &KnowledgeObject) -> u64 {
     for lit in &obj.assumptions {
         lit.raw().hash(&mut h);
     }
-    // Hash conclusion by kind.
-    match &obj.kind {
+    hash_conclusion_body(&mut h, obj.id, &obj.kind);
+    h.finish()
+}
+
+/// Compute a key for just the conclusion (kind + canonical form), ignoring
+/// the assumption set.
+///
+/// Used by the bus (§12.4): an unconditional version of a conclusion
+/// supersedes all conditional versions of the *same conclusion*, so routing
+/// and buffering need to compare conclusions independent of assumptions.
+pub fn conclusion_key(obj: &KnowledgeObject) -> u64 {
+    use rustc_hash::FxHasher;
+    use std::hash::Hasher;
+
+    let mut h = FxHasher::default();
+    hash_conclusion_body(&mut h, obj.id, &obj.kind);
+    h.finish()
+}
+
+/// Hash the knowledge kind tag and the canonical conclusion form (no
+/// assumptions). Shared by `canonical_key` and `conclusion_key`.
+fn hash_conclusion_body<H: std::hash::Hasher>(h: &mut H, id: KnowledgeId, kind: &KnowledgeKind) {
+    use std::hash::Hash;
+    kind.tag().hash(h);
+    match kind {
         KnowledgeKind::Clause(c) => {
             for lit in &c.literals {
-                lit.raw().hash(&mut h);
+                lit.raw().hash(h);
             }
         }
         KnowledgeKind::Bound(b) => {
-            b.term_id.hash(&mut h);
-            b.value_bytes.hash(&mut h);
+            b.term_id.hash(h);
+            b.value_bytes.hash(h);
         }
         KnowledgeKind::Cube(c) => {
             for lit in &c.literals {
-                lit.raw().hash(&mut h);
+                lit.raw().hash(h);
             }
         }
         KnowledgeKind::Conflict(c) => {
             for lit in &c.core {
-                lit.raw().hash(&mut h);
+                lit.raw().hash(h);
             }
         }
         // For opaque kinds, hash the raw bytes.
-        KnowledgeKind::TheoryLemma(t) => t.conclusion_bytes.hash(&mut h),
+        KnowledgeKind::TheoryLemma(t) => t.conclusion_bytes.hash(h),
         KnowledgeKind::ModelFragment(m) => {
             for (v, b) in &m.assignments {
-                v.hash(&mut h);
-                b.hash(&mut h);
+                v.hash(h);
+                b.hash(h);
             }
         }
-        KnowledgeKind::ProofFragment(p) => p.bytes.hash(&mut h),
+        KnowledgeKind::ProofFragment(p) => p.bytes.hash(h),
         KnowledgeKind::HeuristicHint(_) => {
-            // Hints are not deduplicated by content; each is fresh.
-            obj.id.0.hash(&mut h);
+            // Hints are not deduplicated by content; each is fresh, so key on
+            // the id to keep them distinct (and never superseded).
+            id.0.hash(h);
         }
     }
-    h.finish()
 }

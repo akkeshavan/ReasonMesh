@@ -1,0 +1,31 @@
+# Probe: are the larger random-3-SAT instances in the discriminating band
+# (solvable by single worker within 15s)? If yes they join the G1 wide set.
+schema_version = 1
+name = "g1-probe-large"
+description = "single-worker feasibility probe of r3sat-242/246"
+
+[solver]
+workers = 1
+seed = 1
+deterministic = true
+clause_sharing = true
+export_min_utility = 0.25
+import_min_utility = 0.143
+max_conflicts_per_problem = 5000000
+timeout_secs = 15
+
+[output]
+dir = "results/g1-probe"
+trace = false
+
+[[problems]]
+name = "r3sat-242-1"
+file = "../benchmarks/g2/r3sat-242-1.cnf"
+
+[[problems]]
+name = "r3sat-242-2"
+file = "../benchmarks/g2/r3sat-242-2.cnf"
+
+[[problems]]
+name = "r3sat-246-1"
+file = "../benchmarks/g2/r3sat-246-1.cnf"

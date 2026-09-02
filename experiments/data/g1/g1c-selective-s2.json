@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "manifest": "g1c-selective-s2",
+  "solver_version": "0.1.0",
+  "git_revision": "unknown",
+  "run_wall": {
+    "secs": 32,
+    "nanos": 519211583
+  },
+  "problems": [
+    {
+      "name": "php-10-9",
+      "outcome": "Unsat",
+      "expected": "unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 12,
+        "nanos": 66931541
+      },
+      "timed_out": false,
+      "conflicts": 1086158,
+      "decisions": 1118961,
+      "propagations": 13184177,
+      "restarts": 2585,
+      "knowledge": {
+        "exported": 22133,
+        "published": 22129,
+        "received": 22129,
+        "applied": 22129,
+        "buffered": 0,
+        "discarded": 0,
+        "bus_published": 22129,
+        "bus_deduplicated": 4,
+        "bus_evicted": 0,
+        "bus_backpressure": 0
+      }
+    },
+    {
+      "name": "r3sat-238-2",
+      "outcome": "Unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 5,
+        "nanos": 37755917
+      },
+      "timed_out": false,
+      "conflicts": 651840,
+      "decisions": 783704,
+      "propagations": 26583308,
+      "restarts": 1776,
+      "knowledge": {
+        "exported": 11060,
+        "published": 10952,
+        "received": 10952,
+        "applied": 10952,
+        "buffered": 0,
+        "discarded": 0,
+        "bus_published": 10952,
+        "bus_deduplicated": 108,
+        "bus_evicted": 0,
+        "bus_backpressure": 0
+      }
+    },
+    {
+      "name": "r3sat-240-r425",
+      "outcome": "Unknown",
+      "matches_expected": true,
+      "wall": {
+        "secs": 15,
+        "nanos": 414152042
+      },
+      "timed_out": true,
+      "conflicts": 1255310,
+      "decisions": 1493359,
+      "propagations": 51869524,
+      "restarts": 3060,
+      "knowledge": {
+        "exported": 15858,
+        "published": 15728,
+        "received": 15728,
+        "applied": 15728,
+        "buffered": 0,
+        "discarded": 0,
+        "bus_published": 15728,
+        "bus_deduplicated": 130,
+        "bus_evicted": 0,
+        "bus_backpressure": 0
+      }
+    }
+  ],
+  "summary": {
+    "problems": 3,
+    "solved": 2,
+    "unsolved": 1,
+    "solved_total_ns": 17104687458,
+    "par2_ns": 47104687458,
+    "par10_ns": 167104687458,
+    "timeout_ns": 15000000000
+  }
+}

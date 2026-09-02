@@ -10,5 +10,6 @@ rm-akx            = { workspace = true }
 thiserror         = { workspace = true }
 serde             = { workspace = true }
 crossbeam-channel = { workspace = true }
+postcard          = { workspace = true }
 log               = { workspace = true }
 rustc-hash        = { workspace = true }

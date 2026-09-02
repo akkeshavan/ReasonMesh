@@ -1,0 +1,47 @@
+# G1 gate (§18) baseline 1: ReasonMesh single-worker deterministic.
+# Reference for the ablation ladder (§16.3 baselines 1-3).
+schema_version = 1
+name = "g1-php-single"
+description = "G1 baseline 1: single deterministic worker on PHP instances"
+
+[solver]
+workers = 1
+seed = 1
+deterministic = true
+clause_sharing = true
+max_conflicts_per_problem = 5000000
+timeout_secs = 15
+
+[output]
+dir = "results/g1/single"
+trace = false
+
+[[problems]]
+name = "php-7-6"
+file = "../benchmarks/g1/php-7-6.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "php-8-7"
+file = "../benchmarks/g1/php-8-7.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "php-9-8"
+file = "../benchmarks/g1/php-9-8.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "php-10-9"
+file = "../benchmarks/g1/php-10-9.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "php-11-10"
+file = "../benchmarks/g1/php-11-10.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "php-12-11"
+file = "../benchmarks/g1/php-12-11.cnf"
+expect = "unsat"

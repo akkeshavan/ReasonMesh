@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "manifest": "g1-hard-single",
+  "solver_version": "0.1.0",
+  "git_revision": "unknown",
+  "run_wall": {
+    "secs": 43,
+    "nanos": 591157667
+  },
+  "problems": [
+    {
+      "name": "php-9-8",
+      "outcome": "Unsat",
+      "expected": "unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 648607083
+      },
+      "timed_out": false,
+      "conflicts": 53973,
+      "decisions": 55901,
+      "propagations": 702269,
+      "restarts": 165
+    },
+    {
+      "name": "php-10-9",
+      "outcome": "Unsat",
+      "expected": "unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 8,
+        "nanos": 830132167
+      },
+      "timed_out": false,
+      "conflicts": 277145,
+      "decisions": 284795,
+      "propagations": 3553382,
+      "restarts": 651
+    },
+    {
+      "name": "php-11-10",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 15,
+        "nanos": 18167
+      },
+      "timed_out": true,
+      "conflicts": 422670,
+      "decisions": 433681,
+      "propagations": 5671708,
+      "restarts": 1021
+    },
+    {
+      "name": "r3sat-238-2",
+      "outcome": "Unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 5,
+        "nanos": 373900334
+      },
+      "timed_out": false,
+      "conflicts": 206139,
+      "decisions": 247702,
+      "propagations": 8540660,
+      "restarts": 511
+    },
+    {
+      "name": "r3sat-240-r425",
+      "outcome": "Unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 13,
+        "nanos": 653331250
+      },
+      "timed_out": false,
+      "conflicts": 355917,
+      "decisions": 424436,
+      "propagations": 14901163,
+      "restarts": 850
+    }
+  ],
+  "summary": {
+    "problems": 5,
+    "solved": 4,
+    "unsolved": 1,
+    "solved_total_ns": 28505970834,
+    "par2_ns": 58505970834,
+    "par10_ns": 178505970834,
+    "timeout_ns": 15000000000
+  }
+}

@@ -1,9 +1,12 @@
+pub mod hierarchy;
 pub mod inproc;
+pub mod net;
 pub mod policy;
+pub mod queue;
 
 pub use policy::{BusConfig, EvictionPolicy};
 
-use rm_akx::{BusMetrics, KnowledgeBatch, KnowledgeObject, Scope};
+use rm_akx::{BusMetrics, KnowledgeBatch, Scope};
 use thiserror::Error;
 
 // ---------------------------------------------------------------------------
@@ -67,11 +70,7 @@ impl Default for PollBudget {
 /// versions of the same conclusion already in the buffer.
 pub trait KnowledgeBus: Send + Sync {
     /// Publish a batch of knowledge objects at the given scope.
-    fn publish(
-        &self,
-        scope: Scope,
-        batch: KnowledgeBatch,
-    ) -> Result<PublishHandle, BusError>;
+    fn publish(&self, scope: Scope, batch: KnowledgeBatch) -> Result<PublishHandle, BusError>;
 
     /// Non-blocking poll; returns an empty batch if nothing is available.
     fn poll(&self, budget: PollBudget) -> Result<KnowledgeBatch, BusError>;

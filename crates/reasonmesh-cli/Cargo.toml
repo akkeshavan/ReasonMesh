@@ -12,7 +12,11 @@ path = "src/main.rs"
 [dependencies]
 rm-akx    = { workspace = true }
 rm-sat    = { workspace = true }
+rm-smt    = { workspace = true }
 rm-bus    = { workspace = true }
+rm-proof  = { workspace = true }
+rm-telemetry = { workspace = true }
+rm-bench  = { workspace = true }
 clap      = { workspace = true }
 log       = { workspace = true }
 env_logger = { workspace = true }

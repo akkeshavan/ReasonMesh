@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "manifest": "g1-php-sharing",
+  "solver_version": "0.1.0",
+  "git_revision": "unknown",
+  "run_wall": {
+    "secs": 44,
+    "nanos": 299035583
+  },
+  "problems": [
+    {
+      "name": "php-7-6",
+      "outcome": "Unsat",
+      "expected": "unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 4225209
+      },
+      "timed_out": false,
+      "conflicts": 3864,
+      "decisions": 4060,
+      "propagations": 45524,
+      "restarts": 28
+    },
+    {
+      "name": "php-8-7",
+      "outcome": "Unsat",
+      "expected": "unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 47896625
+      },
+      "timed_out": false,
+      "conflicts": 23736,
+      "decisions": 24760,
+      "propagations": 291868,
+      "restarts": 120
+    },
+    {
+      "name": "php-9-8",
+      "outcome": "Unsat",
+      "expected": "unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 857118583
+      },
+      "timed_out": false,
+      "conflicts": 215892,
+      "decisions": 223604,
+      "propagations": 2809076,
+      "restarts": 660
+    },
+    {
+      "name": "php-10-9",
+      "outcome": "Unsat",
+      "expected": "unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 12,
+        "nanos": 341181542
+      },
+      "timed_out": false,
+      "conflicts": 1108580,
+      "decisions": 1139180,
+      "propagations": 14213528,
+      "restarts": 2604
+    },
+    {
+      "name": "php-11-10",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 15,
+        "nanos": 532166583
+      },
+      "timed_out": true,
+      "conflicts": 1311753,
+      "decisions": 1346730,
+      "propagations": 17864180,
+      "restarts": 3064
+    },
+    {
+      "name": "php-12-11",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 15,
+        "nanos": 516103500
+      },
+      "timed_out": true,
+      "conflicts": 1289793,
+      "decisions": 1326982,
+      "propagations": 19036501,
+      "restarts": 3064
+    }
+  ],
+  "summary": {
+    "problems": 6,
+    "solved": 4,
+    "unsolved": 2,
+    "solved_total_ns": 13250421959,
+    "par2_ns": 73250421959,
+    "par10_ns": 313250421959,
+    "timeout_ns": 15000000000
+  }
+}

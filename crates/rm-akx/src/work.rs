@@ -28,7 +28,10 @@ pub struct WorkBudget {
 
 impl Default for WorkBudget {
     fn default() -> Self {
-        WorkBudget { max_conflicts: 5_000, max_ms: 500 }
+        WorkBudget {
+            max_conflicts: 5_000,
+            max_ms: 500,
+        }
     }
 }
 
@@ -40,9 +43,9 @@ impl Default for WorkBudget {
 pub struct Priority(pub u32);
 
 impl Priority {
-    pub const LOW: Priority    = Priority(0);
+    pub const LOW: Priority = Priority(0);
     pub const NORMAL: Priority = Priority(100);
-    pub const HIGH: Priority   = Priority(200);
+    pub const HIGH: Priority = Priority(200);
 }
 
 // ---------------------------------------------------------------------------

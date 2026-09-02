@@ -1,6 +1,6 @@
-use crate::knowledge::{KnowledgeId, KnowledgeKindTag, KnowledgeObject};
+use crate::knowledge::{KnowledgeKindTag, KnowledgeObject};
 use crate::policy::ExportPolicy;
-use crate::work::{PartialModel, WorkBudget, WorkUnit};
+use crate::work::{PartialModel, WorkUnit};
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 use std::sync::Arc;
@@ -60,7 +60,9 @@ pub enum ReasonerEvent {
     SatCandidate { model: Arc<PartialModel> },
     /// Worker proved UNSAT under its active assumptions.
     /// Only meaningful when `Capabilities::is_complete == true`.
-    UnsatLocal { proof_ref: Option<crate::knowledge::ProofRef> },
+    UnsatLocal {
+        proof_ref: Option<crate::knowledge::ProofRef>,
+    },
     /// Budget exhausted with no conclusion; return and reschedule.
     BudgetExhausted,
     /// Worker needs a fresh WorkUnit to continue.

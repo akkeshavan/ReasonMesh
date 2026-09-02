@@ -18,6 +18,14 @@ impl WatchList {
         self.watches[lit.raw() as usize].push(cr);
     }
 
+    /// Remove every clause reference (used before rebuilding from the clause
+    /// database, e.g. after a learnt-clause reduction).
+    pub fn clear(&mut self) {
+        for list in self.watches.iter_mut() {
+            list.clear();
+        }
+    }
+
     pub fn get(&self, lit: Literal) -> &[ClauseRef] {
         &self.watches[lit.raw() as usize]
     }

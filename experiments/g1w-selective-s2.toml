@@ -1,0 +1,48 @@
+# G1 (§18) widened set: contested UNSAT/hard + SAT random-3-SAT direction.
+# Template; config substituted per run. SAT instances pinned expect=sat so
+# every pool verdict is machine-checked (validated models).
+schema_version = 1
+name = "g1w-selective-s2"
+description = "wide selective seed 2"
+
+[solver]
+workers = 4
+seed = 2
+deterministic = false
+clause_sharing = true
+export_min_utility = 0.25
+import_min_utility = 0.143
+max_conflicts_per_problem = 5000000
+timeout_secs = 15
+
+[output]
+dir = "results/g1-wide/g1w-selective-s2"
+trace = false
+
+[[problems]]
+name = "php-10-9"
+file = "../benchmarks/g1/php-10-9.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "r3sat-238-2"
+file = "../benchmarks/g2/r3sat-238-2.cnf"
+
+[[problems]]
+name = "r3sat-240-r425"
+file = "../benchmarks/g2/r3sat-240-r425.cnf"
+
+[[problems]]
+name = "r3sat-242-1"
+file = "../benchmarks/g2/r3sat-242-1.cnf"
+expect = "sat"
+
+[[problems]]
+name = "r3sat-242-2"
+file = "../benchmarks/g2/r3sat-242-2.cnf"
+expect = "sat"
+
+[[problems]]
+name = "r3sat-246-1"
+file = "../benchmarks/g2/r3sat-246-1.cnf"
+expect = "sat"

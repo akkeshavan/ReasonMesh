@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "manifest": "g1-probe-large",
+  "solver_version": "0.1.0",
+  "git_revision": "unknown",
+  "run_wall": {
+    "secs": 1,
+    "nanos": 671373166
+  },
+  "problems": [
+    {
+      "name": "r3sat-242-1",
+      "outcome": "Sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 69620375
+      },
+      "timed_out": false,
+      "conflicts": 4872,
+      "decisions": 6388,
+      "propagations": 214748,
+      "restarts": 25
+    },
+    {
+      "name": "r3sat-242-2",
+      "outcome": "Sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 1,
+        "nanos": 57804083
+      },
+      "timed_out": false,
+      "conflicts": 67245,
+      "decisions": 81480,
+      "propagations": 2906892,
+      "restarts": 205
+    },
+    {
+      "name": "r3sat-246-1",
+      "outcome": "Sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 538606875
+      },
+      "timed_out": false,
+      "conflicts": 41232,
+      "decisions": 50781,
+      "propagations": 1885049,
+      "restarts": 127
+    }
+  ],
+  "summary": {
+    "problems": 3,
+    "solved": 3,
+    "unsolved": 0,
+    "solved_total_ns": 1666031333,
+    "par2_ns": 1666031333,
+    "par10_ns": 1666031333,
+    "timeout_ns": 15000000000
+  }
+}

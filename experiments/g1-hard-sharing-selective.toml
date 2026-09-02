@@ -1,0 +1,45 @@
+# G1 gate (§18) — sharing with knowledge utility filtering, versus the
+# unfiltered sharing run (g1-hard-sharing). utility = 1/(1+lbd), so exporting
+# only min_utility ≥ 0.25 shares LBD ≤ 3 learnt clauses, and importing only
+# min_utility ≥ 0.143 applies LBD ≤ 6. Direct test of the §18 "fix knowledge
+# utility" decision branch.
+schema_version = 1
+name = "g1-hard-sharing-selective"
+description = "G1 baseline 3 (clause sharing) with LBD-filtered exchange"
+
+[solver]
+workers = 4
+seed = 1
+deterministic = false
+clause_sharing = true
+export_min_utility = 0.25
+import_min_utility = 0.143
+max_conflicts_per_problem = 5000000
+timeout_secs = 15
+
+[output]
+dir = "results/g1-hard/sharing-selective"
+trace = false
+
+[[problems]]
+name = "php-9-8"
+file = "../benchmarks/g1/php-9-8.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "php-10-9"
+file = "../benchmarks/g1/php-10-9.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "php-11-10"
+file = "../benchmarks/g1/php-11-10.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "r3sat-238-2"
+file = "../benchmarks/g2/r3sat-238-2.cnf"
+
+[[problems]]
+name = "r3sat-240-r425"
+file = "../benchmarks/g2/r3sat-240-r425.cnf"

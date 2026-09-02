@@ -1,8 +1,12 @@
 /// Eviction strategy when a scope-level buffer is full.
 #[derive(Clone, Copy, Debug)]
 pub enum EvictionPolicy {
-    /// Evict the item with the lowest utility score.
+    /// Evict the item with the lowest utility score; ties broken by age
+    /// (oldest first, spec §12.3 node/worker-local).
     LowestUtility,
+    /// Evict the lowest-utility item, and if utilities tie, the oldest one
+    /// (spec §12.3 cluster/global).
+    LowestUtilityThenOldest,
     /// Evict the oldest item regardless of utility.
     Oldest,
     /// Reject the incoming item (back-pressure to the producer).

@@ -1,0 +1,41 @@
+# G1 gate (§18) — combined hard set for baseline 1 (single worker).
+# Mixes PHP (pure resolution, low clause-sharing utility) with random 3-SAT
+# near the phase transition (higher sharing utility), per §16.3 ablation ladder.
+schema_version = 1
+name = "g1-hard-isolated"
+description = "G1 baseline 1: single deterministic worker on mixed hard set"
+
+[solver]
+workers = 4
+seed = 1
+deterministic = false
+clause_sharing = false
+max_conflicts_per_problem = 5000000
+timeout_secs = 15
+
+[output]
+dir = "results/g1-hard/isolated"
+trace = false
+
+[[problems]]
+name = "php-9-8"
+file = "../benchmarks/g1/php-9-8.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "php-10-9"
+file = "../benchmarks/g1/php-10-9.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "php-11-10"
+file = "../benchmarks/g1/php-11-10.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "r3sat-238-2"
+file = "../benchmarks/g2/r3sat-238-2.cnf"
+
+[[problems]]
+name = "r3sat-240-r425"
+file = "../benchmarks/g2/r3sat-240-r425.cnf"

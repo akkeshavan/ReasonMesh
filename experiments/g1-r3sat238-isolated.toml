@@ -1,0 +1,22 @@
+# Chunk-cadence control: isolated pool on a single instance, to test whether
+# the continuous-exchange chunk budget (5000/500ms) regresses solving vs the
+# whole-problem chunk (5M/15s). Remove after the diagnostic.
+schema_version = 1
+name = "g1-r3sat238-isolated"
+description = "isolated pool, single instance, chunk-cadence control"
+
+[solver]
+workers = 4
+seed = 1
+deterministic = false
+clause_sharing = false
+max_conflicts_per_problem = 5000000
+timeout_secs = 15
+
+[output]
+dir = "results/g1-hard/isolated"
+trace = false
+
+[[problems]]
+name = "r3sat-238-2"
+file = "../benchmarks/g2/r3sat-238-2.cnf"

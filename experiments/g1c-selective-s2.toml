@@ -1,0 +1,34 @@
+# G1 (§18) contested-set trial template. 3 knife-edge instances that decide
+# the gate, 3 configs {isolated, sharing-unfiltered, sharing-selective}, seeds
+# substituted per trial. Within-cadence (5k/500ms chunk) so comparisons are
+# apples-to-apples.
+schema_version = 1
+name = "g1c-selective-s2"
+description = "contested selective seed 2"
+
+[solver]
+workers = 4
+seed = 2
+deterministic = false
+clause_sharing = true
+export_min_utility = 0.25
+import_min_utility = 0.143
+max_conflicts_per_problem = 5000000
+timeout_secs = 15
+
+[output]
+dir = "results/g1-contested/g1c-selective-s2"
+trace = false
+
+[[problems]]
+name = "php-10-9"
+file = "../benchmarks/g1/php-10-9.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "r3sat-238-2"
+file = "../benchmarks/g2/r3sat-238-2.cnf"
+
+[[problems]]
+name = "r3sat-240-r425"
+file = "../benchmarks/g2/r3sat-240-r425.cnf"
