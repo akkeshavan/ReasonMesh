@@ -58,7 +58,7 @@ impl Default for NetConfig {
             min_compat: SCHEMA_VERSION,
             max_compat: SCHEMA_VERSION,
             max_frame: DEFAULT_MAX_FRAME,
-            max_incoming: 65_536,
+            max_incoming: 1_048_576,
         }
     }
 }

@@ -410,6 +410,7 @@ dependencies = [
  "rm-sat",
  "rm-smt",
  "rm-telemetry",
+ "rm-worker",
  "serde",
  "serde_json",
  "thiserror",

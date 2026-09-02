@@ -49,16 +49,20 @@ impl BroadcastBus {
 
 impl KnowledgeBus for BroadcastBus {
     fn publish(&self, scope: Scope, batch: KnowledgeBatch) -> Result<PublishHandle, BusError> {
-        // Export bus: bridge reads this exclusively. Silently dropping here
-        // means those clauses are never shared with remote peers, so we count
-        // the loss explicitly rather than swallowing it.
-        match self.export.publish(scope, batch.clone()) {
-            Ok(_) => {}
-            Err(BusError::BufferFull) => {
-                self.export_dropped
-                    .fetch_add(batch.len() as u64, Ordering::Relaxed);
+        // Export bus: publish one object at a time so the queue's utility-based
+        // eviction can consider each clause independently. A batch-level publish
+        // aborts on the first failure, silently discarding all remaining objects
+        // in the batch even if they are high enough utility to evict something.
+        // Per-object publishing ensures only clauses that genuinely cannot evict
+        // any buffered item are dropped.
+        let mut dropped = 0u64;
+        for obj in &batch {
+            if self.export.publish(scope, vec![obj.clone()]).is_err() {
+                dropped += 1;
             }
-            Err(_) => {}
+        }
+        if dropped > 0 {
+            self.export_dropped.fetch_add(dropped, Ordering::Relaxed);
         }
         // Local bus: workers read this; back-pressure propagates to caller.
         self.local.publish(scope, batch)
@@ -145,6 +149,12 @@ enum Command {
         /// Cross-node bridge polling interval in milliseconds.
         #[arg(long, default_value_t = 50u64)]
         bridge_ms: u64,
+        /// Maximum LBD of learned clauses forwarded to remote peers.
+        /// Only clauses with LBD ≤ this value enter the cross-node export queue.
+        /// Corresponds to the HIGH_UTILITY filter in the TLA+ specification
+        /// (spec axiom: KEY_CLAUSES ⊆ HIGH_UTILITY). Set to 0 to forward all clauses.
+        #[arg(long, default_value_t = 6u32)]
+        export_lbd: u32,
     },
     /// Replay a captured trace for debugging.
     Replay { trace: PathBuf },
@@ -158,11 +168,10 @@ enum Command {
 /// listener, connect to peers, run a bridge thread forwarding learned clauses
 /// across the network, then report the verdict.
 ///
-/// The "bridge" polls the local InprocBus and forwards clauses to all peers
-/// via the NetBus, and vice versa — implementing cross-node AKX sharing
-/// without modifying the WorkerPool internals. Each clause crosses the network
-/// once per bridge interval (50ms default), filtered by the global export
-/// utility gate (LBD≤3 by default).
+/// The "bridge" is event-driven: it drains the export queue and the incoming
+/// network queue at full speed whenever either is non-empty, sleeping only
+/// when both are idle. Only clauses with LBD ≤ `export_lbd` enter the
+/// cross-node export queue (HIGH_UTILITY filter from the TLA+ spec).
 fn run_serve(
     file: &std::path::Path,
     port: u16,
@@ -171,8 +180,10 @@ fn run_serve(
     peers: &[String],
     timeout_secs: u64,
     bridge_ms: u64,
+    export_lbd: u32,
 ) -> i32 {
     use rm_bus::net::{NetBus, NetConfig};
+    use rm_akx::ExportPolicy;
     use rm_worker::{Problem, WorkerConfig, WorkerPool, WorkerOutcome};
 
     // Parse DIMACS.
@@ -205,9 +216,22 @@ fn run_serve(
     let export_bus = bcast.export_bus();
     let local_bus = bcast.local_bus();
 
+    // Enforce the HIGH_UTILITY filter: only clauses with LBD ≤ export_lbd enter
+    // the cross-node export queue. The TLA+ spec assumes KEY_CLAUSES ⊆ HIGH_UTILITY;
+    // without this filter all clauses (including high-LBD noise) are forwarded.
+    // export_lbd=0 disables the filter entirely (forwards all clauses).
+    let export_min_utility = if export_lbd == 0 {
+        0.0_f32
+    } else {
+        1.0_f32 / (1.0 + export_lbd as f32)
+    };
     let pool_cfg = WorkerConfig {
         num_workers,
         seed,
+        export_policy: ExportPolicy {
+            min_utility: export_min_utility,
+            ..ExportPolicy::default()
+        },
         ..WorkerConfig::default()
     };
     let pool = WorkerPool::with_bus(
@@ -637,6 +661,7 @@ fn main() {
             peers,
             timeout_secs,
             bridge_ms,
+            export_lbd,
         } => {
             std::process::exit(run_serve(
                 &file,
@@ -646,6 +671,7 @@ fn main() {
                 &peers,
                 timeout_secs,
                 bridge_ms,
+                export_lbd,
             ));
         }
         Command::Solve {
