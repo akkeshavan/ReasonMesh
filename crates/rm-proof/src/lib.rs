@@ -5,5 +5,7 @@
 //! that shares no logic with the solver itself.
 
 pub mod model;
+pub mod proof_file;
 
 pub use model::{check_dimacs_model, ModelCheckError};
+pub use proof_file::{ProofError, ProofFile, Status as ProofStatus};

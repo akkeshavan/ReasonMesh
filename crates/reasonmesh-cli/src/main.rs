@@ -2,6 +2,7 @@ use clap::{Parser, Subcommand};
 use rm_akx::literal::Literal;
 use rm_bench::{run_manifest, Manifest};
 use rm_proof::model::check_dimacs_model;
+use rm_proof::{ProofError, ProofFile, ProofStatus};
 use rm_sat::{parse_dimacs, CdclSolver, SolveResult};
 use rm_smt::{SmtError, SmtSolver, SmtStatus};
 use rm_telemetry::{
@@ -283,6 +284,50 @@ fn write_trace(
     Ok(())
 }
 
+/// Verify a `.rmproof` file. Returns exit code: 0 = valid, 1 = invalid, 3 = error.
+fn run_check_proof(path: &std::path::Path) -> i32 {
+    let file = match std::fs::File::open(path) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("check-proof: cannot open {}: {e}", path.display());
+            return EXIT_INTERNAL_ERROR;
+        }
+    };
+    let proof = match ProofFile::parse(file) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("check-proof: parse error: {e}");
+            return EXIT_INTERNAL_ERROR;
+        }
+    };
+    match proof.verify() {
+        Ok(()) => {
+            match proof.status {
+                ProofStatus::Sat => {
+                    println!("VALID SAT model ({} vars, {} clauses)", proof.num_vars, proof.clauses.len());
+                    EXIT_SAT
+                }
+                ProofStatus::Unsat => {
+                    println!("VALID (UNSAT proof accepted)");
+                    EXIT_UNSAT
+                }
+            }
+        }
+        Err(ProofError::UnsatNotSupported) => {
+            eprintln!("check-proof: UNSAT certificate checking not yet implemented (milestone M6)");
+            EXIT_UNKNOWN
+        }
+        Err(ProofError::BadModel) => {
+            eprintln!("check-proof: INVALID — model falsifies a clause");
+            1
+        }
+        Err(e) => {
+            eprintln!("check-proof: error: {e}");
+            EXIT_INTERNAL_ERROR
+        }
+    }
+}
+
 fn main() {
     env_logger::init();
     let cli = Cli::parse();
@@ -324,7 +369,7 @@ fn main() {
             }
         },
         Command::CheckProof { proof } => {
-            eprintln!("check-proof: {} (not yet implemented)", proof.display());
+            std::process::exit(run_check_proof(&proof));
         }
         Command::Benchmark { manifest } => match Manifest::load(&manifest) {
             Ok(m) => match run_manifest(&m) {
