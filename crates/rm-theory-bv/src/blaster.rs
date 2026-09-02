@@ -96,7 +96,6 @@ impl Blaster {
                 let c = self.blast(dag, children[0]);
                 let t = self.blast(dag, children[1]);
                 let e = self.blast(dag, children[2]);
-                // then/else have the same width.
                 t.iter().zip(&e).map(|(ti, ei)| self.circuit.mux(c[0], *ti, *ei)).collect()
             }
             BvNot => {
@@ -208,12 +207,10 @@ impl Blaster {
         let mut rem: Vec<GateId> = vec![zero; n];
         let mut quot: Vec<GateId> = vec![zero; n];
         for i in (0..n).rev() {
-            // rem = rem << 1 | a[i]
             for j in (1..n).rev() {
                 rem[j] = rem[j - 1];
             }
             rem[0] = a[i];
-            // if rem >= b: rem -= b; quot[i] = 1
             let ge = self.u_ge(&rem, &b);
             let one = self.circuit.const_gate(true);
             let b_inv = self.bv_not(&b);
@@ -245,7 +242,6 @@ impl Blaster {
                 quot.iter().zip(&plus1).map(|(q, p)| self.circuit.mux(neg, *p, *q)).collect()
             }
             Op::BvSrem => {
-                // sign of dividend.
                 let inv = self.bv_not(&rem);
                 let ones = self.ones(n);
                 let zero = self.circuit.const_gate(false);
@@ -253,7 +249,6 @@ impl Blaster {
                 rem.iter().zip(&plus1).map(|(r, p)| self.circuit.mux(a_sign, *p, *r)).collect()
             }
             Op::BvSmod => {
-                // remainder must have the sign of the divisor.
                 let sign = b_sign;
                 let inv = self.bv_not(&rem);
                 let ones = self.ones(n);
@@ -286,7 +281,6 @@ impl Blaster {
             _ => self.circuit.const_gate(false),
         };
         let mut res = a;
-        // Barrel shifter over log2(n) stages.
         let stages = if n == 0 { 0 } else { (usize::BITS - (n - 1).leading_zeros()) as usize };
         for stage in 0..stages {
             let amount = 1usize << stage;
@@ -299,7 +293,6 @@ impl Blaster {
                     v
                 }
                 _ => {
-                    // right shifts fill with `fill` at the top.
                     let mut v = vec![fill; amount];
                     v.extend_from_slice(&res[..n.saturating_sub(amount)]);
                     v
@@ -387,7 +380,6 @@ impl Blaster {
     /// a < b unsigned.
     fn u_ult(&mut self, a: &[GateId], b: &[GateId]) -> GateId {
         let n = a.len();
-        // a - b = a + ~b + 1; a < b iff borrow (carry-out 0).
         let b_inv: Vec<GateId> = b.iter().map(|&x| self.circuit.not(x)).collect();
         let one = self.circuit.const_gate(true);
         let (_sum, carry) = self.add_carry(a, &b_inv, one, n);

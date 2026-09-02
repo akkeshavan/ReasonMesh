@@ -48,7 +48,6 @@ pub fn verify_drup(
         return Err(DrupError::NoEmptyClause);
     }
 
-    // Validate literal range.
     for clause in original.iter().chain(proof.iter()) {
         for &lit in clause {
             let var = lit.unsigned_abs();
@@ -58,28 +57,21 @@ pub fn verify_drup(
         }
     }
 
-    // Working clause database, starts with original clauses.
     let mut db: Vec<Vec<i32>> = original.to_vec();
 
     for (step_idx, clause) in proof.iter().enumerate() {
         if clause.is_empty() {
-            // Empty clause: must be derivable by UP from db alone (all
-            // clauses falsified with an empty assignment → UP detects it).
             if !up_derives_empty(&db, &[]) {
                 return Err(DrupError::NotRup { step: step_idx, clause: clause.clone() });
             }
-            // Valid proof — return count of verified steps.
             return Ok(step_idx + 1);
         }
 
-        // RUP check: negate all literals in `clause` and run UP.
-        // If UP reaches a contradiction, the clause is redundant (RUP).
         let negated: Vec<i32> = clause.iter().map(|&l| -l).collect();
         if !up_derives_empty(&db, &negated) {
             return Err(DrupError::NotRup { step: step_idx, clause: clause.clone() });
         }
 
-        // Add the clause to the database (all future steps can use it).
         db.push(clause.clone());
     }
 
@@ -93,20 +85,6 @@ pub fn verify_drup(
 /// This is a simple, correct but quadratic UP implementation. Good enough for
 /// the clause sizes produced by our solver.
 fn up_derives_empty(db: &[Vec<i32>], unit_lits: &[i32]) -> bool {
-    // `assignment[v]` = Some(sign) when variable v is assigned:
-    //   sign = true  → variable v is true  (positive literal satisfied)
-    //   sign = false → variable v is false (negative literal satisfied)
-    // We start with all literals in `unit_lits` assigned to false
-    // (because we negated them — they are the "assume-false" assignment).
-    //
-    // For a literal l in a clause:
-    //   l > 0: the literal is satisfied iff assignment[l] = Some(true)
-    //   l < 0: the literal is satisfied iff assignment[|l|] = Some(false)
-    //
-    // A clause is falsified iff every literal is assigned-false.
-    // A clause is unit iff exactly one literal is unassigned and the rest are false.
-
-    // max variable index for the assignment vector
     let max_var = db
         .iter()
         .flat_map(|c| c.iter())
@@ -115,35 +93,20 @@ fn up_derives_empty(db: &[Vec<i32>], unit_lits: &[i32]) -> bool {
         .max()
         .unwrap_or(0);
 
-    // None = unassigned, Some(true/false) = assigned value
     let mut asgn: Vec<Option<bool>> = vec![None; max_var + 1];
 
-    // Apply the initial unit literals (negated clause literals = assumed false).
     let mut queue: Vec<i32> = unit_lits.to_vec();
     for &lit in unit_lits {
         let v = lit.unsigned_abs() as usize;
-        // lit is the negated form of the original literal; assigning it means
-        // the original literal is false, i.e. its negation is true.
-        // `lit > 0` means original literal was negative (var=false → we set var=true)
-        // Wait — let me think carefully:
-        //   original literal p (positive): we negate to -p. So -p > 0 means we
-        //   need var(-p) = var(p) to be false. lit = -p < 0 → var = |lit|, we
-        //   assign the variable as false (the original literal p=false).
-        //
-        // Simpler: lit is in the `unit_lits` set. `lit` is assigned True (as a
-        // literal). A literal `lit > 0` means variable `lit` is true. `lit < 0`
-        // means variable `|lit|` is false.
         let val = lit > 0;
         asgn[v] = Some(val);
     }
 
-    // Iterative UP.
     let mut changed = true;
     while changed {
         changed = false;
 
         for clause in db {
-            // Count falsified and unassigned literals.
             let mut unassigned_lit: Option<i32> = None;
             let mut all_false = true;
             let mut unassigned_count = 0;
@@ -160,21 +123,18 @@ fn up_derives_empty(db: &[Vec<i32>], unit_lits: &[i32]) -> bool {
                         let satisfied = if lit > 0 { val } else { !val };
                         if satisfied {
                             all_false = false;
-                            unassigned_count = 0; // clause satisfied, short circuit below
+                            unassigned_count = 0;
                             break;
                         }
-                        // else: literal is false, continue
                     }
                 }
             }
 
             if all_false && unassigned_count == 0 {
-                // Clause is fully falsified — contradiction.
                 return true;
             }
 
             if unassigned_count == 1 {
-                // Unit clause: assign the unassigned literal to true.
                 let ul = unassigned_lit.unwrap();
                 let v = ul.unsigned_abs() as usize;
                 let val = ul > 0;
@@ -183,7 +143,6 @@ fn up_derives_empty(db: &[Vec<i32>], unit_lits: &[i32]) -> bool {
                     queue.push(ul);
                     changed = true;
                 } else if asgn[v] != Some(val) {
-                    // Conflict: variable assigned opposite value.
                     return true;
                 }
             }

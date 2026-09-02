@@ -112,14 +112,11 @@ impl DiffLogicSolver {
         } else {
             return;
         };
-        // Remove edges added since `target`.
         while self.edges.len() > target {
             let e = self.edges.pop().unwrap();
-            // Remove from adjacency list.
             self.adj[e.from as usize].retain(|(_, idx)| *idx != self.edges.len());
         }
         self.level_lim.truncate(level as usize);
-        // Reset potentials to 0; full BF recompute on next check().
         let n = self.num_vars as usize + 1;
         self.dist = vec![0i64; n];
         self.pred_edge = vec![None; n];
@@ -135,8 +132,6 @@ impl DiffLogicSolver {
         self.edges.push(Edge { from: y, to: x, weight: c, sat_lit });
         self.adj[y as usize].push((x, edge_idx));
 
-        // Incremental shortest-path update: only relax from the new edge.
-        // If dist[y] + c < dist[x], update dist[x] and propagate.
         self.relax_from_edge(edge_idx)?;
         Ok(())
     }
@@ -163,7 +158,6 @@ impl DiffLogicSolver {
     /// iff any edge can still relax after `n` rounds.
     pub fn check(&mut self) -> DlResult<()> {
         let n = self.num_vars as usize + 1;
-        // Initialize all potentials to 0 (implicit zero source).
         let mut dist = vec![0i64; n];
         let mut pred: Vec<Option<usize>> = vec![None; n];
 
@@ -180,7 +174,6 @@ impl DiffLogicSolver {
             if !changed { break; }
         }
 
-        // Negative cycle detection: if any edge can still relax, there's a cycle.
         for (idx, edge) in self.edges.iter().enumerate() {
             let new_d = dist[edge.from as usize].saturating_add(edge.weight);
             if new_d < dist[edge.to as usize] {
@@ -207,19 +200,16 @@ impl DiffLogicSolver {
             self.dist[to] = self.dist[from] + w;
             self.pred_edge[to] = Some(new_edge_idx);
 
-            // BFS/relaxation queue — propagate the update.
             let mut queue: SmallVec<[usize; 16]> = SmallVec::new();
             queue.push(to);
 
             while let Some(v) = queue.first().cloned() {
                 queue.remove(0);
 
-                // Check if v has a negative-cycle via pred chain back to itself.
                 if self.detect_negative_cycle_through(v) {
                     return Err(DlError::Conflict(self.extract_cycle_from(v)));
                 }
 
-                // Propagate to v's successors.
                 let adj_v: Vec<(VarId, usize)> = self.adj[v].clone();
                 for (succ, edge_idx) in adj_v {
                     let e = &self.edges[edge_idx];
@@ -236,8 +226,6 @@ impl DiffLogicSolver {
     }
 
     fn detect_negative_cycle_through(&self, start: usize) -> bool {
-        // Walk predecessor chain up to num_vars steps; if we return to start,
-        // there's a negative cycle.
         let mut cur = start;
         let limit = self.num_vars as usize + 2;
         for _ in 0..limit {

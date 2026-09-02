@@ -99,7 +99,6 @@ pub fn lex(src: &str) -> Result<Vec<Token>, LexError> {
         match c {
             ' ' | '\t' | '\r' | '\n' => {}
             ';' => {
-                // Comment until end of line.
                 for (_, c2) in chars.by_ref() {
                     if c2 == '\n' {
                         break;
@@ -192,7 +191,6 @@ pub fn lex(src: &str) -> Result<Vec<Token>, LexError> {
                 let mut closed = false;
                 while let Some((_, c2)) = chars.next() {
                     if c2 == '"' {
-                        // `""` escapes a quote inside the string.
                         if matches!(chars.peek(), Some((_, '"'))) {
                             s.push('"');
                             chars.next();

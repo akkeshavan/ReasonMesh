@@ -175,7 +175,6 @@ impl Orchestrator {
                 budget_ms,
                 budget_conflicts,
             } => {
-                // Must reproduce the same first-open node the primary chose.
                 let budget = WorkBudget {
                     max_conflicts: budget_conflicts,
                     max_ms: budget_ms,
@@ -274,7 +273,6 @@ impl Orchestrator {
         if let Some(r) = self.workers.get_mut(&worker) {
             if !r.dead {
                 r.last_heartbeat = Instant::now();
-                // Reset this worker's lease deadlines.
                 let leases = self.scheduler.leases().leases_for_worker(worker);
                 let now = Instant::now();
                 for id in leases {

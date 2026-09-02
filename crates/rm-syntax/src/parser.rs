@@ -46,7 +46,6 @@ impl Script {
         for expr in &exprs {
             commands.push(parse_command_skeleton(expr)?);
         }
-        // Build the constant symbol table from declarations.
         let mut constants: std::collections::HashMap<String, SortExpr> = std::collections::HashMap::new();
         for cmd in &commands {
             if let Command::DeclareFun { name, args, result } = cmd {
@@ -56,7 +55,6 @@ impl Script {
             }
         }
         let symbols = Symbols { constants };
-        // Re-parse command bodies now that sorts are known.
         let mut resolved = Vec::with_capacity(commands.len());
         for (expr, cmd) in exprs.iter().zip(&commands) {
             resolved.push(parse_command_body(expr, cmd, &symbols)?);
@@ -147,8 +145,6 @@ fn parse_command_skeleton(expr: &SExpr) -> Result<Command, ParseError> {
         }
         "assert" => {
             require_len(items, 2, "assert")?;
-            // Skeleton pass leaves a placeholder; the body pass re-parses the
-            // term once the constant symbol table is built.
             Ok(Command::Assert(bool_leaf()))
         }
         "check-sat" => Ok(Command::CheckSat),
@@ -235,7 +231,6 @@ fn parse_bv_literal(expr: &SExpr) -> Result<Option<Term>, ParseError> {
     match expr {
         SExpr::Atom(Atom::Bin(bits)) => {
             let width = bits.len() as u32;
-            // In SMT-LIB the leftmost digit is the most significant bit.
             let bits: Vec<bool> = bits
                 .chars()
                 .rev()
@@ -412,7 +407,6 @@ fn parse_term(expr: &SExpr, symbols: &Symbols) -> Result<Term, ParseError> {
         return Err(unexpected(0, "empty term ()"));
     }
 
-    // Indexed application `(_ name ...)`.
     if matches!(&items[0], SExpr::List(inner) if inner.first().is_some_and(|e| e.symbol() == Some("_"))) {
         let SExpr::List(inner) = &items[0] else { unreachable!() };
         return parse_indexed(inner, &items[1..], symbols);
@@ -440,7 +434,6 @@ fn parse_term(expr: &SExpr, symbols: &Symbols) -> Result<Term, ParseError> {
     }
     if "=>" == head {
         require_len(items, 3, "=>")?;
-        // Implication desugars to (or (not a) b).
         let a = parse_term(&items[1], symbols)?;
         let b = parse_term(&items[2], symbols)?;
         let na = Term { sort: SortExpr::Bool, inner: TermInner::Not(Box::new(a)) };
@@ -451,7 +444,6 @@ fn parse_term(expr: &SExpr, symbols: &Symbols) -> Result<Term, ParseError> {
     }
     if "xor" == head {
         require_len(items, 3, "xor")?;
-        // a xor b == (not (= a b)) at the Boolean level.
         let a = parse_term(&items[1], symbols)?;
         let b = parse_term(&items[2], symbols)?;
         let eq = Term { sort: SortExpr::Bool, inner: TermInner::Eq(Box::new(a), Box::new(b)) };
@@ -468,7 +460,6 @@ fn parse_term(expr: &SExpr, symbols: &Symbols) -> Result<Term, ParseError> {
         return parse_bv_app(bv_op_from(head), &items[1..], symbols);
     }
 
-    // User function call.
     let args: Vec<Term> = items[1..].iter().map(|t| parse_term(t, symbols)).collect::<Result<_, _>>()?;
     Ok(Term {
         sort: SortExpr::Bool,

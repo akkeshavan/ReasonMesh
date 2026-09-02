@@ -114,7 +114,6 @@ impl ProofFile {
                 continue;
             }
 
-            // DRUP proof line: "d <lit>* 0"
             if let Some(rest) = trimmed.strip_prefix("d ") {
                 let lits: Vec<i32> = rest
                     .split_whitespace()
@@ -125,13 +124,11 @@ impl ProofFile {
                 drup.push(lits);
                 continue;
             }
-            // Plain "0" line = empty DRUP step (empty clause in proof)
             if trimmed == "0" && status == Some(Status::Unsat) {
                 drup.push(vec![]);
                 continue;
             }
 
-            // Clause line: space-separated literals terminated by 0
             if num_vars.is_some() {
                 let lits: Result<Vec<i32>, _> = trimmed
                     .split_whitespace()
@@ -140,7 +137,7 @@ impl ProofFile {
                     .collect();
                 match lits {
                     Ok(ls) if !ls.is_empty() => clauses.push(ls),
-                    Ok(_) => {} // empty clause (line was just "0")
+                    Ok(_) => {}
                     Err(_) => return Err(ProofError::Malformed { line: lineno, msg: format!("bad clause: {trimmed}") }),
                 }
             }
@@ -149,7 +146,6 @@ impl ProofFile {
         let num_vars = num_vars.ok_or(ProofError::MissingHeader)?;
         let status = status.ok_or(ProofError::MissingStatus)?;
 
-        // Build model array (1-indexed).
         let mut model = vec![false; num_vars as usize + 1];
         for lit in model_lits {
             let var = lit.unsigned_abs();

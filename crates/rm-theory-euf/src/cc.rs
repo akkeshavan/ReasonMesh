@@ -135,12 +135,10 @@ impl CongruenceClosure {
             self.explain_parent.push(None);
             self.use_list.push(Vec::new());
         }
-        // Register this node in the use-lists of its arguments' classes.
         for &arg in &node.args {
             let rep = self.find(arg);
             self.use_list[rep.0 as usize].push(id);
         }
-        // Insert into signature table with current canonical args.
         let canon_args: SmallVec<[ENodeId; 4]> = node.args.iter().map(|&a| self.find(a)).collect();
         self.sig_table.insert((node.func.0, canon_args), id);
     }
@@ -154,7 +152,6 @@ impl CongruenceClosure {
         loop {
             let parent = self.uf[cur.0 as usize].parent;
             if parent == cur { return cur; }
-            // Path halving (avoids recursive borrow).
             let grandparent = self.uf[parent.0 as usize].parent;
             self.uf[cur.0 as usize].parent = grandparent;
             cur = grandparent;
@@ -188,7 +185,6 @@ impl CongruenceClosure {
             match self.undo.pop().unwrap() {
                 UndoEntry::Union { child, old_parent, old_rank, old_size_root } => {
                     let root = self.uf[child.0 as usize].parent;
-                    // Detach child from root.
                     self.uf[child.0 as usize].parent = old_parent;
                     self.uf[child.0 as usize].rank = old_rank;
                     self.uf[root.0 as usize].size = old_size_root;
@@ -265,14 +261,12 @@ impl CongruenceClosure {
             let rep_b = self.find(b);
             if rep_a == rep_b { continue; }
 
-            // Choose smaller class as child (union-by-rank).
             let (child, root) = if self.uf[rep_a.0 as usize].rank <= self.uf[rep_b.0 as usize].rank {
                 (rep_a, rep_b)
             } else {
                 (rep_b, rep_a)
             };
 
-            // Record undo entry before mutating.
             self.undo.push(UndoEntry::Union {
                 child,
                 old_parent: child,
@@ -280,19 +274,16 @@ impl CongruenceClosure {
                 old_size_root: self.uf[root.0 as usize].size,
             });
 
-            // Set explanation edge.
             let (expl_from, expl_to) = (child, root);
             self.undo.push(UndoEntry::ExplEdge { node: expl_from });
             self.explain_parent[expl_from.0 as usize] = Some((expl_to, reason));
 
-            // Perform union.
             self.uf[child.0 as usize].parent = root;
             self.uf[root.0 as usize].size += self.uf[child.0 as usize].size;
             if self.uf[child.0 as usize].rank == self.uf[root.0 as usize].rank {
                 self.uf[root.0 as usize].rank += 1;
             }
 
-            // Merge use-lists: move child's use-list into root's.
             let child_use: Vec<ENodeId> = std::mem::take(&mut self.use_list[child.0 as usize]);
             for &node_id in &child_use {
                 // Look up current canonical signature.
@@ -302,7 +293,6 @@ impl CongruenceClosure {
 
                 if let Some(&other) = self.sig_table.get(&sig_key) {
                     if other != node_id {
-                        // Congruence: node_id and other should be equal.
                         let rep_other = self.find(other);
                         let rep_node = self.find(node_id);
                         if rep_other != rep_node {
@@ -317,12 +307,10 @@ impl CongruenceClosure {
                     self.sig_table.insert(sig_key, node_id);
                 }
 
-                // Add to root's use-list.
                 self.use_list[root.0 as usize].push(node_id);
                 self.undo.push(UndoEntry::UseListPush { class: root });
             }
 
-            // Check disequalities. Snapshot to avoid borrow conflict with find().
             let diseqs_snap: Vec<(ENodeId, ENodeId, u32)> = self.diseqs.clone();
             for (a_rep, b_rep, _sat_lit) in diseqs_snap {
                 let cur_a = self.find(a_rep);
@@ -359,10 +347,6 @@ impl CongruenceClosure {
         mut b: ENodeId,
         premises: &mut Vec<ExplanationLit>,
     ) {
-        // Walk both paths toward the root, collecting asserted equalities.
-        // Simple version: walk from both sides, stopping at the common ancestor.
-        // A proper implementation uses LCA in the proof forest; this version
-        // collects all edges from both paths and deduplicates.
         let mut path_a = vec![a];
         let mut path_b = vec![b];
 
@@ -375,11 +359,9 @@ impl CongruenceClosure {
             path_b.push(b);
         }
 
-        // Find LCA (first common node).
         let set_a: rustc_hash::FxHashSet<ENodeId> = path_a.iter().copied().collect();
         let lca = path_b.iter().find(|n| set_a.contains(n)).copied().unwrap_or(path_a[0]);
 
-        // Collect asserted equalities from a_start to LCA.
         let mut cur = path_a[0];
         while cur != lca {
             if let Some((next, reason)) = &self.explain_parent[cur.0 as usize] {
@@ -387,7 +369,6 @@ impl CongruenceClosure {
                 cur = *next;
             } else { break; }
         }
-        // Collect from b_start to LCA.
         let mut cur = path_b[0];
         while cur != lca {
             if let Some((next, reason)) = &self.explain_parent[cur.0 as usize] {
@@ -396,7 +377,6 @@ impl CongruenceClosure {
             } else { break; }
         }
 
-        // Deduplicate.
         premises.sort_by_key(|l| (l.lhs, l.rhs, l.sat_lit));
         premises.dedup();
     }
@@ -407,7 +387,6 @@ impl CongruenceClosure {
                 premises.push(ExplanationLit::eq(*lhs, *rhs, Some(*sat_lit)));
             }
             MergeReason::Congruence { n1, n2 } => {
-                // Congruence lemma: doesn't come from an asserted SAT literal.
                 premises.push(ExplanationLit::eq(*n1, *n2, None));
             }
         }
@@ -427,8 +406,6 @@ impl CongruenceClosure {
         rhs: ENodeId,
         explanation: &Explanation,
     ) -> rm_akx::knowledge::TheoryLemma {
-        // Encode as "lhs=rhs given premises" in a simple text format.
-        // A richer encoding would use the rm-ir term DAG IDs.
         let conclusion = format!(
             "{}={}",
             egraph.node(lhs).func.0,
