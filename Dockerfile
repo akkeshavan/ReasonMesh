@@ -14,5 +14,8 @@ COPY --from=builder /src/target/release/reasonmesh ./
 COPY benchmarks/ benchmarks/
 COPY experiments/ experiments/
 
+# Port used by the NetBus TCP transport for peer-to-peer clause exchange.
+EXPOSE 9000
+
 ENTRYPOINT ["/app/reasonmesh"]
 CMD ["--help"]

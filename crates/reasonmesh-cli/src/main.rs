@@ -9,8 +9,48 @@ use rm_smt::{SmtError, SmtSolver, SmtStatus};
 use rm_telemetry::{
     now_nanos, Event, EventKind, Outcome, RunMeta, TraceError, TraceReader, TraceWriter,
 };
+use rm_bus::{BusConfig, BusError, KnowledgeBus, PollBudget, PublishHandle};
+use rm_bus::inproc::InprocBus;
+use rm_akx::{BusMetrics, KnowledgeBatch, Scope};
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
+
+/// Dual-queue bus: workers publish to both a local bus (for intra-node sharing)
+/// and an export bus (drained exclusively by the cross-node bridge thread).
+/// Workers import from the local bus, which the bridge also writes incoming
+/// remote clauses into. This prevents the bridge from stealing locally-needed
+/// clauses while still forwarding all exported clauses to remote nodes.
+struct BroadcastBus {
+    local: Arc<InprocBus>,
+    export: Arc<InprocBus>,
+}
+
+impl BroadcastBus {
+    fn new(config: &BusConfig) -> Self {
+        BroadcastBus {
+            local: Arc::new(InprocBus::new(config)),
+            export: Arc::new(InprocBus::new(config)),
+        }
+    }
+    fn export_bus(&self) -> Arc<InprocBus> { Arc::clone(&self.export) }
+    fn local_bus(&self) -> Arc<InprocBus> { Arc::clone(&self.local) }
+}
+
+impl KnowledgeBus for BroadcastBus {
+    fn publish(&self, scope: Scope, batch: KnowledgeBatch) -> Result<PublishHandle, BusError> {
+        let _ = self.export.publish(scope, batch.clone());
+        self.local.publish(scope, batch)
+    }
+    fn poll(&self, budget: PollBudget) -> Result<KnowledgeBatch, BusError> {
+        self.local.poll(budget)
+    }
+    fn metrics(&self) -> BusMetrics {
+        self.local.metrics()
+    }
+}
 /// Exit codes follow the SAT competition convention:
 /// 10 = SAT, 20 = UNSAT, 0 = UNKNOWN/TIMEOUT, 3 = internal error (invalid model).
 const EXIT_SAT: i32 = 10;
@@ -54,12 +94,179 @@ enum Command {
         #[arg(long)]
         proof_out: Option<PathBuf>,
     },
+    /// Run as a cluster node: load a DIMACS file, start local workers, and
+    /// exchange learned clauses with peer nodes over TCP (AKX NetBus).
+    ///
+    /// All nodes load the same problem file and race to solve it. Learned
+    /// clauses propagate across the network, accelerating the whole fleet.
+    /// This is the entry point for multi-machine parallel SAT.
+    Serve {
+        /// Path to the DIMACS CNF file to solve.
+        file: PathBuf,
+        /// TCP port to listen on for peer connections.
+        #[arg(long, default_value_t = 9000u16)]
+        port: u16,
+        /// Number of CDCL worker threads on this node.
+        #[arg(long, default_value_t = 4u32)]
+        workers: u32,
+        /// Base random seed (workers get seed, seed+1, seed+2, …).
+        /// Use different seeds on each node for portfolio diversification.
+        #[arg(long, default_value_t = 1u64)]
+        seed: u64,
+        /// Peer node addresses in "host:port" form. May be repeated.
+        #[arg(long = "peer")]
+        peers: Vec<String>,
+        /// Wall-clock timeout in seconds before this node reports UNKNOWN.
+        #[arg(long, default_value_t = 300u64)]
+        timeout_secs: u64,
+        /// Cross-node bridge polling interval in milliseconds.
+        #[arg(long, default_value_t = 50u64)]
+        bridge_ms: u64,
+    },
     /// Replay a captured trace for debugging.
     Replay { trace: PathBuf },
     /// Verify an UNSAT proof/certificate.
     CheckProof { proof: PathBuf },
     /// Run a benchmark manifest.
     Benchmark { manifest: PathBuf },
+}
+
+/// Multi-node cluster solve: load DIMACS, start a WorkerPool, bind a NetBus
+/// listener, connect to peers, run a bridge thread forwarding learned clauses
+/// across the network, then report the verdict.
+///
+/// The "bridge" polls the local InprocBus and forwards clauses to all peers
+/// via the NetBus, and vice versa — implementing cross-node AKX sharing
+/// without modifying the WorkerPool internals. Each clause crosses the network
+/// once per bridge interval (50ms default), filtered by the global export
+/// utility gate (LBD≤3 by default).
+fn run_serve(
+    file: &std::path::Path,
+    port: u16,
+    num_workers: usize,
+    seed: u64,
+    peers: &[String],
+    timeout_secs: u64,
+    bridge_ms: u64,
+) -> i32 {
+    use rm_bus::net::{NetBus, NetConfig};
+    use rm_worker::{Problem, WorkerConfig, WorkerPool, WorkerOutcome};
+
+    // Parse DIMACS.
+    let input = match std::fs::read_to_string(file) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("error: cannot read {}: {e}", file.display());
+            return EXIT_INTERNAL_ERROR;
+        }
+    };
+    let cnf = match parse_dimacs(&input) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("error: invalid DIMACS in {}: {e}", file.display());
+            return EXIT_INTERNAL_ERROR;
+        }
+    };
+
+    let clauses: Vec<Vec<Literal>> = cnf.clauses.iter().map(|clause| {
+        clause.iter().map(|&l| {
+            if l > 0 { Literal::positive(l as u32) } else { Literal::negative((-l) as u32) }
+        }).collect()
+    }).collect();
+    let problem = Problem::new(cnf.num_vars, clauses);
+
+    // BroadcastBus: workers publish to both local (for peer workers) and export
+    // (drained exclusively by the bridge thread). Workers import from local
+    // only. This cleanly separates local sharing from cross-node forwarding.
+    let bcast = Arc::new(BroadcastBus::new(&BusConfig::default()));
+    let export_bus = bcast.export_bus();
+    let local_bus = bcast.local_bus();
+
+    let pool_cfg = WorkerConfig {
+        num_workers,
+        seed,
+        ..WorkerConfig::default()
+    };
+    let pool = WorkerPool::with_bus(
+        problem,
+        pool_cfg,
+        Arc::clone(&bcast) as Arc<dyn KnowledgeBus>,
+    );
+
+    // Bind the NetBus listener (accept_loop runs in a background thread).
+    let bind_addr: std::net::SocketAddr = format!("0.0.0.0:{port}").parse().unwrap();
+    let net_bus = match NetBus::bind(bind_addr, NetConfig::default()) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("error: cannot bind :{port}: {e}");
+            return EXIT_INTERNAL_ERROR;
+        }
+    };
+    eprintln!("info: listening on 0.0.0.0:{port}");
+
+    // Connect to each peer with up to 30s of retry so all nodes can start
+    // concurrently without a fixed leader.
+    for peer_str in peers {
+        eprintln!("info: connecting to {peer_str} ...");
+        match net_bus.connect_peer_retry(peer_str, Duration::from_secs(30)) {
+            Ok(()) => eprintln!("info: connected to {peer_str}"),
+            Err(e) => {
+                eprintln!("error: cannot connect to {peer_str}: {e}");
+                return EXIT_INTERNAL_ERROR;
+            }
+        }
+    }
+
+    // Bridge thread:
+    //   export_bus → NetBus: forward locally learned clauses to all TCP peers
+    //   NetBus → local_bus: inject peer clauses so local workers can import them
+    let bridge_shutdown = Arc::new(AtomicBool::new(false));
+    {
+        let net = Arc::clone(&net_bus);
+        let shutdown = Arc::clone(&bridge_shutdown);
+        let interval = Duration::from_millis(bridge_ms);
+        std::thread::Builder::new()
+            .name("rm-bridge".into())
+            .spawn(move || {
+                while !shutdown.load(Ordering::SeqCst) {
+                    if let Ok(batch) = export_bus.poll(PollBudget { max_items: 64 }) {
+                        if !batch.is_empty() {
+                            let _ = net.publish(Scope::Global, batch);
+                        }
+                    }
+                    if let Ok(batch) = net.poll(PollBudget { max_items: 64 }) {
+                        if !batch.is_empty() {
+                            let _ = local_bus.publish(Scope::Process, batch);
+                        }
+                    }
+                    std::thread::sleep(interval);
+                }
+            })
+            .expect("spawn bridge thread");
+    }
+
+    eprintln!("info: starting {num_workers} workers, timeout={timeout_secs}s");
+    let outcomes = pool.run(&[], Some(Duration::from_secs(timeout_secs)));
+    bridge_shutdown.store(true, Ordering::SeqCst);
+
+    let nm = net_bus.metrics();
+    eprintln!(
+        "info: net_bus published={} bytes_out={} bytes_in={}",
+        nm.published_total, nm.bytes_serialized, nm.bytes_received
+    );
+
+    let sat = outcomes.iter().any(|o| matches!(o, WorkerOutcome::Sat { .. }));
+    let unsat = outcomes.iter().any(|o| matches!(o, WorkerOutcome::Unsat { .. }));
+    if sat {
+        println!("s SATISFIABLE");
+        EXIT_SAT
+    } else if unsat {
+        println!("s UNSATISFIABLE");
+        EXIT_UNSAT
+    } else {
+        println!("s UNKNOWN");
+        EXIT_UNKNOWN
+    }
 }
 
 /// Read and validate a `.rmtrace` file, printing the run summary.
@@ -375,6 +582,25 @@ fn main() {
     let cli = Cli::parse();
 
     match cli.command {
+        Command::Serve {
+            file,
+            port,
+            workers,
+            seed,
+            peers,
+            timeout_secs,
+            bridge_ms,
+        } => {
+            std::process::exit(run_serve(
+                &file,
+                port,
+                workers as usize,
+                seed,
+                &peers,
+                timeout_secs,
+                bridge_ms,
+            ));
+        }
         Command::Solve {
             file,
             workers,

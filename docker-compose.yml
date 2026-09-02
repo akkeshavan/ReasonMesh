@@ -1,0 +1,77 @@
+# 3-node ReasonMesh cluster.
+#
+# All three nodes load the same CNF problem, race to solve it, and share
+# learned clauses across the TCP NetBus. Node seeds are staggered (1, 5, 9)
+# so 12 workers cover 12 distinct heuristic trajectories.
+#
+# Usage:
+#   docker compose build          # ~2–5 min first build (cargo release)
+#   docker compose up             # starts all three nodes concurrently
+#
+# Each node prints "info:" diagnostics to stderr and the verdict ("s SATISFIABLE"
+# / "s UNSATISFIABLE") to stdout. Watch for "net_bus bytes_in=..." to confirm
+# cross-node clause traffic.
+#
+# To scale to more nodes, add additional service entries (node4, node5, ...)
+# and extend each node's --peer list. The NetBus TCP transport scales to
+# thousands of connections; the hierarchical promotion filter (LBD≤3 global)
+# bounds per-node bandwidth regardless of fleet size.
+
+services:
+  node1:
+    build: .
+    command:
+      - serve
+      - /cnf/problem.cnf
+      - --port=9000
+      - --workers=4
+      - --seed=1
+      - --peer=node2:9000
+      - --peer=node3:9000
+      - --timeout-secs=120
+    volumes:
+      - ./benchmarks/g1/php-10-9.cnf:/cnf/problem.cnf:ro
+    networks:
+      - reasonmesh
+    ports:
+      - "9001:9000"
+
+  node2:
+    build: .
+    command:
+      - serve
+      - /cnf/problem.cnf
+      - --port=9000
+      - --workers=4
+      - --seed=5
+      - --peer=node1:9000
+      - --peer=node3:9000
+      - --timeout-secs=120
+    volumes:
+      - ./benchmarks/g1/php-10-9.cnf:/cnf/problem.cnf:ro
+    networks:
+      - reasonmesh
+    ports:
+      - "9002:9000"
+
+  node3:
+    build: .
+    command:
+      - serve
+      - /cnf/problem.cnf
+      - --port=9000
+      - --workers=4
+      - --seed=9
+      - --peer=node1:9000
+      - --peer=node2:9000
+      - --timeout-secs=120
+    volumes:
+      - ./benchmarks/g1/php-10-9.cnf:/cnf/problem.cnf:ro
+    networks:
+      - reasonmesh
+    ports:
+      - "9003:9000"
+
+networks:
+  reasonmesh:
+    driver: bridge

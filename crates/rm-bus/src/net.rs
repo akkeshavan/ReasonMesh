@@ -208,6 +208,50 @@ impl NetBus {
         Ok(node)
     }
 
+    /// Add an outgoing peer connection to an existing node (e.g. one created
+    /// with `bind`). This allows a single `NetBus` to act as both server and
+    /// client — essential for forming a full mesh between cluster nodes.
+    pub fn connect_peer(self: &Arc<Self>, addr: SocketAddr) -> Result<(), BusError> {
+        let mut stream = TcpStream::connect(addr).map_err(io_to_bus)?;
+        stream
+            .set_read_timeout(Some(Duration::from_millis(100)))
+            .map_err(io_to_bus)?;
+        stream
+            .set_write_timeout(Some(Duration::from_secs(5)))
+            .map_err(io_to_bus)?;
+        handshake_client(&mut stream, &self.config)?;
+        stream.set_read_timeout(None).map_err(io_to_bus)?;
+        self.add_peer(Arc::new(stream));
+        Ok(())
+    }
+
+    /// Connect to a peer specified as `"host:port"`, retrying until `timeout`
+    /// elapses. Re-resolves the hostname on every attempt so Docker service
+    /// names work even if DNS is not ready at startup.
+    pub fn connect_peer_retry(
+        self: &Arc<Self>,
+        addr_str: &str,
+        timeout: Duration,
+    ) -> Result<(), BusError> {
+        use std::net::ToSocketAddrs;
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            let resolved: Vec<SocketAddr> = addr_str
+                .to_socket_addrs()
+                .map(|i| i.collect())
+                .unwrap_or_default();
+            for addr in resolved {
+                if self.connect_peer(addr).is_ok() {
+                    return Ok(());
+                }
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err(BusError::Disconnected);
+            }
+            std::thread::sleep(Duration::from_millis(500));
+        }
+    }
+
     fn node(cfg: NetConfig) -> Self {
         NetBus {
             config: cfg,

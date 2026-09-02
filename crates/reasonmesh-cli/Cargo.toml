@@ -17,6 +17,7 @@ rm-bus    = { workspace = true }
 rm-proof  = { workspace = true }
 rm-telemetry = { workspace = true }
 rm-bench  = { workspace = true }
+rm-worker = { workspace = true }
 clap      = { workspace = true }
 log       = { workspace = true }
 env_logger = { workspace = true }

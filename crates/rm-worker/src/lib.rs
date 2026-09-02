@@ -127,10 +127,12 @@ fn fold_stats(solver: &CdclSolver, shared: &WorkerStats) -> WorkerStats {
 }
 
 /// A shared-solver runtime: `num_workers` threads each running a reasoner on a
-/// shared in-process knowledge bus.
+/// shared knowledge bus. The bus may be an in-process `InprocBus`, a networked
+/// `NetBus`, or any composite implementation (`BroadcastBus`, etc.) as long as
+/// it implements `KnowledgeBus + Send + Sync`.
 pub struct WorkerPool {
     problem: Problem,
-    bus: Arc<InprocBus>,
+    bus: Arc<dyn KnowledgeBus>,
     config: WorkerConfig,
     shutdown: Arc<AtomicBool>,
     results: Mutex<Vec<WorkerOutcome>>,
@@ -182,10 +184,15 @@ impl Problem {
 }
 
 impl WorkerPool {
-    /// Create a pool for `problem`. Workers are created lazily; call
-    /// [`WorkerPool::run`] to execute them.
+    /// Create a pool for `problem` with a fresh `InprocBus`.
     pub fn new(problem: Problem, config: WorkerConfig) -> Self {
-        let bus = Arc::new(InprocBus::new(&config.bus));
+        let bus = Arc::new(InprocBus::new(&config.bus)) as Arc<dyn KnowledgeBus>;
+        WorkerPool::with_bus(problem, config, bus)
+    }
+
+    /// Create a pool using a caller-supplied bus implementation. Use this to
+    /// inject a `BroadcastBus`, `NetBus`, or other composite transport.
+    pub fn with_bus(problem: Problem, config: WorkerConfig, bus: Arc<dyn KnowledgeBus>) -> Self {
         WorkerPool {
             problem,
             bus,
@@ -195,9 +202,9 @@ impl WorkerPool {
         }
     }
 
-    /// The shared bus (for tests and inspection).
-    pub fn bus(&self) -> &Arc<InprocBus> {
-        &self.bus
+    /// The shared bus (for inspection and bridge wiring).
+    pub fn bus(&self) -> Arc<dyn KnowledgeBus> {
+        Arc::clone(&self.bus)
     }
 
     /// §16.2 bus-level operational metrics, as of the last poll.
@@ -220,7 +227,7 @@ impl WorkerPool {
             } else {
                 cubes[i].clone()
             };
-            let bus = Arc::clone(&self.bus);
+            let bus: Arc<dyn KnowledgeBus> = Arc::clone(&self.bus);
             let shutdown = Arc::clone(&self.shutdown);
             let cfg = self.config.clone();
             let problem = Problem {
@@ -270,7 +277,7 @@ fn run_worker(
     problem: &Problem,
     assumptions: Vec<Literal>,
     cfg: WorkerConfig,
-    bus: Arc<InprocBus>,
+    bus: Arc<dyn KnowledgeBus>,
     shutdown: Arc<AtomicBool>,
     deadline: Option<Duration>,
 ) -> WorkerOutcome {
@@ -369,7 +376,7 @@ fn run_worker(
 /// "Knowledge" metrics.
 fn drain_export_import(
     reasoner: &mut CdclReasoner,
-    bus: &Arc<InprocBus>,
+    bus: &Arc<dyn KnowledgeBus>,
     cfg: &WorkerConfig,
     acc: &mut WorkerStats,
 ) {
