@@ -160,11 +160,9 @@ impl CdclReasoner {
     /// because it skips the allocation+drop cycle for clauses that will never be sent.
     pub fn drain_and_export(&mut self, policy: &ExportPolicy) -> KnowledgeBatch {
         if policy.max_items == 0 {
-            // Isolated portfolio: discard the solver's outbox without building objects.
             self.solver.drain_learned();
             return KnowledgeBatch::new();
         }
-        // Sharing portfolio: convert to KnowledgeObjects, then apply the policy filter.
         self.drain_learned_to_pending();
         self.export(policy).unwrap_or_default()
     }
@@ -208,10 +206,6 @@ impl Reasoner for CdclReasoner {
             match d {
                 ImportDecision::Applied => {
                     if let KnowledgeKind::Clause(c) = &obj.kind {
-                        // Defensive: the worker's formula is sized to its own
-                        // problem; a clause referencing variables outside the
-                        // formula cannot be a consequence of it. Skip it rather
-                        // than let it overflow the watch table.
                         if c.literals.iter().any(|l| l.var() > self.num_vars) {
                             stats.discarded_no_overlap += 1;
                             continue;
@@ -229,9 +223,6 @@ impl Reasoner for CdclReasoner {
         }
 
         if !clauses.is_empty() {
-            // The import contract requires the solver to be at level 0 when
-            // integrating, which holds between `step` calls (solve() returns
-            // to base level on exit).
             self.solver.import_clauses(&clauses);
         }
         Ok(stats)
@@ -253,9 +244,6 @@ impl Reasoner for CdclReasoner {
             budget.max_conflicts,
             deadline,
         );
-        // Drain is now lazy: the worker calls drain_and_export() between steps
-        // rather than eagerly building KnowledgeObjects on every chunk boundary.
-        // This avoids thousands of unnecessary allocations for isolated workers.
 
         if self.work.is_cancelled() {
             return Ok(ReasonerEvent::Cancelled);
@@ -271,9 +259,6 @@ impl Reasoner for CdclReasoner {
                 if wall_budget_hit {
                     Ok(ReasonerEvent::BudgetExhausted)
                 } else {
-                    // Conflict budget spent but wall-clock remains: this is a
-                    // natural chunk boundary. Ask the scheduler to export and
-                    // hand back another budget.
                     Ok(ReasonerEvent::Progress)
                 }
             }
@@ -282,7 +267,6 @@ impl Reasoner for CdclReasoner {
 
     fn export(&self, policy: &ExportPolicy) -> Result<KnowledgeBatch, ReasonerError> {
         let mut pending = self.pending.lock().unwrap();
-        // Drop everything the caller has already seen (watermark).
         pending.retain(|o| o.id > policy.watermark);
 
         let mut out = KnowledgeBatch::new();

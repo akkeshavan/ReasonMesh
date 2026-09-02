@@ -4,7 +4,7 @@ use rm_bench::{run_manifest, Manifest};
 use rm_proof::model::check_dimacs_model;
 use rm_proof::proof_file::ProofFile as RmProofFile;
 use rm_proof::{ProofError, ProofFile, ProofStatus};
-use rm_sat::{parse_dimacs, CdclSolver, SolveResult};
+use rm_sat::{parse_dimacs, CdclSolver, DimacsCnf, SolveResult};
 use rm_smt::{SmtError, SmtSolver, SmtStatus};
 use rm_telemetry::{
     now_nanos, Event, EventKind, Outcome, RunMeta, TraceError, TraceReader, TraceWriter,
@@ -23,6 +23,11 @@ use std::time::Duration;
 /// Workers import from the local bus, which the bridge also writes incoming
 /// remote clauses into. This prevents the bridge from stealing locally-needed
 /// clauses while still forwarding all exported clauses to remote nodes.
+///
+/// The export bus uses per-object publishing so the queue's utility-based
+/// eviction considers each clause independently — a batch-level publish would
+/// abort on the first full-queue failure and silently discard all remaining
+/// objects even if they are high enough utility to evict something.
 struct BroadcastBus {
     local: Arc<InprocBus>,
     export: Arc<InprocBus>,
@@ -49,12 +54,6 @@ impl BroadcastBus {
 
 impl KnowledgeBus for BroadcastBus {
     fn publish(&self, scope: Scope, batch: KnowledgeBatch) -> Result<PublishHandle, BusError> {
-        // Export bus: publish one object at a time so the queue's utility-based
-        // eviction can consider each clause independently. A batch-level publish
-        // aborts on the first failure, silently discarding all remaining objects
-        // in the batch even if they are high enough utility to evict something.
-        // Per-object publishing ensures only clauses that genuinely cannot evict
-        // any buffered item are dropped.
         let mut dropped = 0u64;
         for obj in &batch {
             if self.export.publish(scope, vec![obj.clone()]).is_err() {
@@ -64,7 +63,6 @@ impl KnowledgeBus for BroadcastBus {
         if dropped > 0 {
             self.export_dropped.fetch_add(dropped, Ordering::Relaxed);
         }
-        // Local bus: workers read this; back-pressure propagates to caller.
         self.local.publish(scope, batch)
     }
     fn poll(&self, budget: PollBudget) -> Result<KnowledgeBatch, BusError> {
@@ -72,12 +70,11 @@ impl KnowledgeBus for BroadcastBus {
     }
     fn metrics(&self) -> BusMetrics {
         let mut m = self.local.metrics();
-        // Fold export drops into backpressure so the caller sees the full
-        // picture of clauses that did not reach the network.
         m.backpressure += self.export_dropped.load(Ordering::Relaxed);
         m
     }
 }
+
 /// Exit codes follow the SAT competition convention:
 /// 10 = SAT, 20 = UNSAT, 0 = UNKNOWN/TIMEOUT, 3 = internal error (invalid model).
 const EXIT_SAT: i32 = 10;
@@ -164,6 +161,98 @@ enum Command {
     Benchmark { manifest: PathBuf },
 }
 
+/// Parse a DIMACS file and convert it into a `Problem` ready for the worker pool.
+fn load_cnf_problem(file: &std::path::Path) -> Result<rm_worker::Problem, i32> {
+    use rm_worker::Problem;
+    let input = std::fs::read_to_string(file).map_err(|e| {
+        eprintln!("error: cannot read {}: {e}", file.display());
+        EXIT_INTERNAL_ERROR
+    })?;
+    let cnf = parse_dimacs(&input).map_err(|e| {
+        eprintln!("error: invalid DIMACS in {}: {e}", file.display());
+        EXIT_INTERNAL_ERROR
+    })?;
+    let clauses: Vec<Vec<Literal>> = cnf.clauses.iter().map(|clause| {
+        clause.iter().map(|&l| {
+            if l > 0 { Literal::positive(l as u32) } else { Literal::negative((-l) as u32) }
+        }).collect()
+    }).collect();
+    Ok(Problem::new(cnf.num_vars, clauses))
+}
+
+/// Connect to each peer address, retrying for up to 30 s so all nodes can
+/// start concurrently without a fixed leader.
+fn connect_peers(net: &Arc<rm_bus::net::NetBus>, peers: &[String]) -> Result<(), i32> {
+    for peer_str in peers {
+        eprintln!("info: connecting to {peer_str} ...");
+        match net.connect_peer_retry(peer_str, Duration::from_secs(30)) {
+            Ok(()) => eprintln!("info: connected to {peer_str}"),
+            Err(e) => {
+                eprintln!("error: cannot connect to {peer_str}: {e}");
+                return Err(EXIT_INTERNAL_ERROR);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Spawn the bridge thread that forwards clauses in both directions:
+///   export_bus → net: locally learned clauses go to all TCP peers.
+///   net → local_bus: peer clauses are injected for local workers to import.
+///
+/// The loop is event-driven; it only sleeps when both directions are idle so
+/// clause bursts drain at full speed without a fixed polling delay.
+fn spawn_bridge_thread(
+    export_bus: Arc<InprocBus>,
+    local_bus: Arc<InprocBus>,
+    net: Arc<rm_bus::net::NetBus>,
+    shutdown: Arc<AtomicBool>,
+    idle_ms: u64,
+) -> std::thread::JoinHandle<()> {
+    let idle_interval = Duration::from_millis(idle_ms);
+    std::thread::Builder::new()
+        .name("rm-bridge".into())
+        .spawn(move || {
+            loop {
+                if shutdown.load(Ordering::Acquire) {
+                    break;
+                }
+                let mut active = false;
+                if let Ok(batch) = export_bus.poll(PollBudget { max_items: 64 }) {
+                    if !batch.is_empty() {
+                        let _ = net.publish(Scope::Global, batch);
+                        active = true;
+                    }
+                }
+                if let Ok(batch) = net.poll(PollBudget { max_items: 64 }) {
+                    if !batch.is_empty() {
+                        let _ = local_bus.publish(Scope::Process, batch);
+                        active = true;
+                    }
+                }
+                if !active {
+                    std::thread::sleep(idle_interval);
+                }
+            }
+        })
+        .expect("spawn bridge thread")
+}
+
+/// Print the serve verdict based on the worker outcomes, returning an exit code.
+fn serve_verdict(outcomes: &[rm_worker::WorkerOutcome]) -> i32 {
+    use rm_worker::WorkerOutcome;
+    if outcomes.iter().any(|o| matches!(o, WorkerOutcome::Sat { .. })) {
+        println!("s SATISFIABLE");
+        EXIT_SAT
+    } else if outcomes.iter().any(|o| matches!(o, WorkerOutcome::Unsat { .. })) {
+        println!("s UNSATISFIABLE");
+        EXIT_UNSAT
+    } else {
+        println!("s UNKNOWN");
+        EXIT_UNKNOWN
+    }
+}
+
 /// Multi-node cluster solve: load DIMACS, start a WorkerPool, bind a NetBus
 /// listener, connect to peers, run a bridge thread forwarding learned clauses
 /// across the network, then report the verdict.
@@ -184,63 +273,33 @@ fn run_serve(
 ) -> i32 {
     use rm_bus::net::{NetBus, NetConfig};
     use rm_akx::ExportPolicy;
-    use rm_worker::{Problem, WorkerConfig, WorkerPool, WorkerOutcome};
+    use rm_worker::{WorkerConfig, WorkerPool};
 
-    // Parse DIMACS.
-    let input = match std::fs::read_to_string(file) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("error: cannot read {}: {e}", file.display());
-            return EXIT_INTERNAL_ERROR;
-        }
-    };
-    let cnf = match parse_dimacs(&input) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("error: invalid DIMACS in {}: {e}", file.display());
-            return EXIT_INTERNAL_ERROR;
-        }
+    let problem = match load_cnf_problem(file) {
+        Ok(p) => p,
+        Err(code) => return code,
     };
 
-    let clauses: Vec<Vec<Literal>> = cnf.clauses.iter().map(|clause| {
-        clause.iter().map(|&l| {
-            if l > 0 { Literal::positive(l as u32) } else { Literal::negative((-l) as u32) }
-        }).collect()
-    }).collect();
-    let problem = Problem::new(cnf.num_vars, clauses);
-
-    // BroadcastBus: workers publish to both local (for peer workers) and export
-    // (drained exclusively by the bridge thread). Workers import from local
-    // only. This cleanly separates local sharing from cross-node forwarding.
     let bcast = Arc::new(BroadcastBus::new(&BusConfig::default()));
-    let export_bus = bcast.export_bus();
-    let local_bus = bcast.local_bus();
-
-    // Enforce the HIGH_UTILITY filter: only clauses with LBD ≤ export_lbd enter
-    // the cross-node export queue. The TLA+ spec assumes KEY_CLAUSES ⊆ HIGH_UTILITY;
-    // without this filter all clauses (including high-LBD noise) are forwarded.
-    // export_lbd=0 disables the filter entirely (forwards all clauses).
     let export_min_utility = if export_lbd == 0 {
         0.0_f32
     } else {
         1.0_f32 / (1.0 + export_lbd as f32)
     };
-    let pool_cfg = WorkerConfig {
-        num_workers,
-        seed,
-        export_policy: ExportPolicy {
-            min_utility: export_min_utility,
-            ..ExportPolicy::default()
-        },
-        ..WorkerConfig::default()
-    };
     let pool = WorkerPool::with_bus(
         problem,
-        pool_cfg,
+        WorkerConfig {
+            num_workers,
+            seed,
+            export_policy: ExportPolicy {
+                min_utility: export_min_utility,
+                ..ExportPolicy::default()
+            },
+            ..WorkerConfig::default()
+        },
         Arc::clone(&bcast) as Arc<dyn KnowledgeBus>,
     );
 
-    // Bind the NetBus listener (accept_loop runs in a background thread).
     let bind_addr: std::net::SocketAddr = format!("0.0.0.0:{port}").parse().unwrap();
     let net_bus = match NetBus::bind(bind_addr, NetConfig::default()) {
         Ok(b) => b,
@@ -251,66 +310,22 @@ fn run_serve(
     };
     eprintln!("info: listening on 0.0.0.0:{port}");
 
-    // Connect to each peer with up to 30s of retry so all nodes can start
-    // concurrently without a fixed leader.
-    for peer_str in peers {
-        eprintln!("info: connecting to {peer_str} ...");
-        match net_bus.connect_peer_retry(peer_str, Duration::from_secs(30)) {
-            Ok(()) => eprintln!("info: connected to {peer_str}"),
-            Err(e) => {
-                eprintln!("error: cannot connect to {peer_str}: {e}");
-                return EXIT_INTERNAL_ERROR;
-            }
-        }
+    if let Err(code) = connect_peers(&net_bus, peers) {
+        return code;
     }
 
-    // Bridge thread:
-    //   export_bus → NetBus: forward locally learned clauses to all TCP peers
-    //   NetBus → local_bus: inject peer clauses so local workers can import them
-    //
-    // The loop is event-driven: it only sleeps when both directions are idle,
-    // so clause bursts are drained at full speed without a fixed 50 ms lag
-    // between the export-forward and net-inject phases.
     let bridge_shutdown = Arc::new(AtomicBool::new(false));
-    let bridge_handle = {
-        let net = Arc::clone(&net_bus);
-        let shutdown = Arc::clone(&bridge_shutdown);
-        let idle_interval = Duration::from_millis(bridge_ms);
-        std::thread::Builder::new()
-            .name("rm-bridge".into())
-            .spawn(move || {
-                loop {
-                    if shutdown.load(Ordering::Acquire) {
-                        break;
-                    }
-                    let mut active = false;
-                    if let Ok(batch) = export_bus.poll(PollBudget { max_items: 64 }) {
-                        if !batch.is_empty() {
-                            let _ = net.publish(Scope::Global, batch);
-                            active = true;
-                        }
-                    }
-                    if let Ok(batch) = net.poll(PollBudget { max_items: 64 }) {
-                        if !batch.is_empty() {
-                            let _ = local_bus.publish(Scope::Process, batch);
-                            active = true;
-                        }
-                    }
-                    // Sleep only when both directions were idle. Under load the
-                    // bridge runs at full CPU speed; at rest it yields the core.
-                    if !active {
-                        std::thread::sleep(idle_interval);
-                    }
-                }
-            })
-            .expect("spawn bridge thread")
-    };
+    let bridge_handle = spawn_bridge_thread(
+        bcast.export_bus(),
+        bcast.local_bus(),
+        Arc::clone(&net_bus),
+        Arc::clone(&bridge_shutdown),
+        bridge_ms,
+    );
 
     eprintln!("info: starting {num_workers} workers, timeout={timeout_secs}s");
     let outcomes = pool.run(&[], Some(Duration::from_secs(timeout_secs)));
     bridge_shutdown.store(true, Ordering::Release);
-    // Join the bridge so its panic (if any) surfaces here rather than being
-    // silently swallowed, and so TCP sockets are cleanly drained before exit.
     bridge_handle.join().expect("bridge thread panicked");
 
     let nm = net_bus.metrics();
@@ -326,18 +341,7 @@ fn run_serve(
         );
     }
 
-    let sat = outcomes.iter().any(|o| matches!(o, WorkerOutcome::Sat { .. }));
-    let unsat = outcomes.iter().any(|o| matches!(o, WorkerOutcome::Unsat { .. }));
-    if sat {
-        println!("s SATISFIABLE");
-        EXIT_SAT
-    } else if unsat {
-        println!("s UNSATISFIABLE");
-        EXIT_UNSAT
-    } else {
-        println!("s UNKNOWN");
-        EXIT_UNKNOWN
-    }
+    serve_verdict(&outcomes)
 }
 
 /// Read and validate a `.rmtrace` file, printing the run summary.
@@ -357,6 +361,78 @@ fn replay_trace(path: &std::path::Path) -> Result<(), TraceError> {
     Ok(())
 }
 
+/// Build a `CdclSolver` loaded with all clauses from `cnf`.
+fn build_dimacs_solver(cnf: &DimacsCnf, with_proof: bool) -> CdclSolver {
+    let mut solver = CdclSolver::new(cnf.num_vars);
+    if with_proof {
+        solver.enable_proof_logging();
+    }
+    for clause in &cnf.clauses {
+        let lits: Vec<Literal> = clause
+            .iter()
+            .map(|&l| {
+                if l > 0 { Literal::positive(l as u32) } else { Literal::negative((-l) as u32) }
+            })
+            .collect();
+        solver.add_clause(&lits);
+    }
+    solver
+}
+
+/// Validate a SAT model against the original clauses (using code that shares
+/// nothing with the solver internals), print the result, and write any
+/// requested proof file. Returns the outcome on success, or an exit code on
+/// internal error.
+fn handle_sat_model(
+    m: rm_sat::Model,
+    cnf: &DimacsCnf,
+    proof_out: Option<&std::path::Path>,
+) -> Result<Outcome, i32> {
+    let mut raw = vec![false; cnf.num_vars as usize + 1];
+    for v in 1..=cnf.num_vars {
+        raw[v as usize] = m.value_of(v);
+    }
+    match check_dimacs_model(cnf.num_vars, &cnf.clauses, &raw) {
+        Ok(true) => {
+            println!("s SATISFIABLE");
+            for v in 1..=cnf.num_vars {
+                println!("v {} {}", if raw[v as usize] { "" } else { "-" }, v);
+            }
+            if let Some(path) = proof_out {
+                emit_proof_file(path, |w| {
+                    RmProofFile::write_sat(cnf.num_vars, &cnf.clauses, &raw, w)
+                });
+            }
+            Ok(Outcome::Sat)
+        }
+        Ok(false) => {
+            eprintln!("error: solver returned a model that FAILS independent validation; this is a bug");
+            Err(EXIT_INTERNAL_ERROR)
+        }
+        Err(e) => {
+            eprintln!("error: cannot validate solver model ({e}); this is a bug");
+            Err(EXIT_INTERNAL_ERROR)
+        }
+    }
+}
+
+/// Append solve-phase telemetry events (phase start, search counters, outcome).
+fn record_solve_events(solver: &CdclSolver, outcome: Outcome, events: &mut Vec<Event>) {
+    let mut seq = events.len() as u64;
+    let mut push = |events: &mut Vec<Event>, kind: EventKind| {
+        seq += 1;
+        events.push(Event { seq, worker: 0, at_nanos: now_nanos(), kind });
+    };
+    push(events, EventKind::Phase { name: "root".into() });
+    push(events, EventKind::SearchSummary {
+        decisions: solver.decisions,
+        propagations: solver.propagations,
+        conflicts: solver.conflicts,
+        restarts: solver.restarts,
+    });
+    push(events, EventKind::RunFinished { outcome });
+}
+
 /// Solve a DIMACS instance, returning the exit code and the events recorded
 /// during the run (for the optional trace output).
 fn run_solve(
@@ -374,8 +450,7 @@ fn run_solve(
         }
     };
 
-    let is_smt = file.extension().is_some_and(|e| e == "smt2" || e == "smt");
-    if is_smt {
+    if file.extension().is_some_and(|e| e == "smt2" || e == "smt") {
         return run_smt_solve(&input, max_conflicts, events);
     }
 
@@ -387,67 +462,18 @@ fn run_solve(
         }
     };
 
-    let mut solver = CdclSolver::new(cnf.num_vars);
-    if proof_out.is_some() {
-        solver.enable_proof_logging();
-    }
-    for clause in &cnf.clauses {
-        let lits: Vec<Literal> = clause
-            .iter()
-            .map(|&l| {
-                if l > 0 {
-                    Literal::positive(l as u32)
-                } else {
-                    Literal::negative((-l) as u32)
-                }
-            })
-            .collect();
-        solver.add_clause(&lits);
-    }
-
+    let mut solver = build_dimacs_solver(&cnf, proof_out.is_some());
     let budget = max_conflicts.unwrap_or(u64::MAX);
     let result = solver.solve(&[], budget);
     let proof_log = solver.take_proof_log();
 
     let outcome = match result {
-        SolveResult::Sat(m) => {
-            // Independent validation: the model must satisfy the original
-            // clauses, checked by code sharing nothing with the solver
-            // internals (rm-proof).
-            let mut raw = vec![false; cnf.num_vars as usize + 1];
-            for v in 1..=cnf.num_vars {
-                raw[v as usize] = m.value_of(v);
-            }
-            match check_dimacs_model(cnf.num_vars, &cnf.clauses, &raw) {
-                Ok(true) => {
-                    println!("s SATISFIABLE");
-                    for v in 1..=cnf.num_vars {
-                        println!("v {} {}", if raw[v as usize] { "" } else { "-" }, v);
-                    }
-                    // Write SAT proof if requested.
-                    if let Some(path) = proof_out {
-                        emit_proof_file(path, |w| {
-                            RmProofFile::write_sat(cnf.num_vars, &cnf.clauses, &raw, w)
-                        });
-                    }
-                    Outcome::Sat
-                }
-                Ok(false) => {
-                    eprintln!(
-                        "error: solver returned a model that FAILS independent \
-                         validation; this is a bug"
-                    );
-                    return (EXIT_INTERNAL_ERROR, events);
-                }
-                Err(e) => {
-                    eprintln!("error: cannot validate solver model ({e}); this is a bug");
-                    return (EXIT_INTERNAL_ERROR, events);
-                }
-            }
-        }
+        SolveResult::Sat(m) => match handle_sat_model(m, &cnf, proof_out) {
+            Ok(o) => o,
+            Err(code) => return (code, events),
+        },
         SolveResult::Unsat => {
             println!("s UNSATISFIABLE");
-            // Write UNSAT proof if requested.
             if let (Some(path), Some(drup)) = (proof_out, proof_log) {
                 emit_proof_file(path, |w| {
                     RmProofFile::write_unsat(cnf.num_vars, &cnf.clauses, &drup, w)
@@ -461,34 +487,7 @@ fn run_solve(
         }
     };
 
-    // Record trace events (root phase, aggregate search counters, outcome).
-    let mut seq = 0u64;
-    let mut push = |events: &mut Vec<Event>, kind: EventKind| {
-        seq += 1;
-        events.push(Event {
-            seq,
-            worker: 0,
-            at_nanos: now_nanos(),
-            kind,
-        });
-    };
-    push(
-        &mut events,
-        EventKind::Phase {
-            name: "root".into(),
-        },
-    );
-    push(
-        &mut events,
-        EventKind::SearchSummary {
-            decisions: solver.decisions,
-            propagations: solver.propagations,
-            conflicts: solver.conflicts,
-            restarts: solver.restarts,
-        },
-    );
-    push(&mut events, EventKind::RunFinished { outcome });
-
+    record_solve_events(&solver, outcome, &mut events);
     let code = match outcome {
         Outcome::Sat => EXIT_SAT,
         Outcome::Unsat => EXIT_UNSAT,
@@ -524,23 +523,12 @@ fn run_smt_solve(
         }
     };
 
-    // Record trace events.
-    let mut seq = 0u64;
+    let mut seq = events.len() as u64;
     let mut push = |events: &mut Vec<Event>, kind: EventKind| {
         seq += 1;
-        events.push(Event {
-            seq,
-            worker: 0,
-            at_nanos: now_nanos(),
-            kind,
-        });
+        events.push(Event { seq, worker: 0, at_nanos: now_nanos(), kind });
     };
-    push(
-        &mut events,
-        EventKind::Phase {
-            name: "root".into(),
-        },
-    );
+    push(&mut events, EventKind::Phase { name: "root".into() });
 
     let (code, outcome) = match status {
         SmtStatus::Sat => {
@@ -581,8 +569,6 @@ fn write_trace(
         RunMeta::deterministic(env!("CARGO_PKG_VERSION"), command_line, seed),
     )?;
     for event in events {
-        // record_at reassigns per-timeline sequence numbers monotonically; the
-        // timestamps (timing metrics only) are preserved from the run.
         tw.record_at(rm_akx::reasoner::WorkerId(0), event.at_nanos, event.kind)?;
     }
     writer.flush().map_err(TraceError::Io)?;
@@ -685,13 +671,8 @@ fn main() {
             proof_out,
         } => {
             let workers = if deterministic { 1 } else { workers };
-            log::info!(
-                "solve: {} workers={} seed={}",
-                file.display(),
-                workers,
-                seed
-            );
-            let _ = no_gpu; // no GPU backend yet (M5)
+            log::info!("solve: {} workers={} seed={}", file.display(), workers, seed);
+            let _ = no_gpu;
 
             let command_line = std::env::args().collect::<Vec<_>>().join(" ");
             let (code, events) = run_solve(&file, max_conflicts, proof_out.as_deref());

@@ -111,9 +111,6 @@ impl ImportContext {
                 match self.lits[i].cmp(&asmpts[j]) {
                     Ordering::Less => i += 1,
                     Ordering::Equal => {
-                        // One context element satisfies any number of identical
-                        // assumption literals, so only advance the assumption
-                        // cursor.
                         j += 1;
                     }
                     Ordering::Greater => return false,
@@ -219,8 +216,6 @@ impl ImportBuffer {
             }
         }
         self.entries = keep;
-        // Entries may have been reordered on insert; sort by utility so the
-        // buffer keeps its eviction ordering.
         self.entries.sort_by(|a, b| {
             b.obj
                 .utility
@@ -304,12 +299,6 @@ impl ImportGate {
         if self.seen.contains(&key) {
             return ImportDecision::Duplicate;
         }
-        // Bloom pre-filter: a "definitely absent" assumption literal proves
-        // `ctx ⊉ asmpts`, so we may skip the exact subset merge. The filter
-        // never has false negatives, so this is sound — but it does NOT tell
-        // us whether the object still overlaps the context (Buffer vs Discard
-        // still requires the overlap scan). We only pass it down to save the
-        // merge in the common case.
         let non_subset = !obj.is_unconditional()
             && self
                 .prefilter

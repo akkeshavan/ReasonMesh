@@ -323,10 +323,7 @@ impl NetBus {
         let writer_alive = Arc::new(AtomicBool::new(true));
         let reader = self.spawn_reader(Arc::clone(&stream));
         let _writer = self.spawn_writer(stream, rx, Arc::clone(&writer_alive));
-        // _writer handle is intentionally dropped (detached). Liveness is
-        // tracked via `writer_alive` so `publish` can prune stale entries.
         let mut peers = self.peers.lock().unwrap();
-        // Prune peers whose reader finished or whose writer channel closed.
         peers.retain(|p| {
             p.writer_alive.load(Ordering::Acquire)
                 || p.handle.as_ref().is_some_and(|h| !h.is_finished())
@@ -355,9 +352,6 @@ impl NetBus {
                         match postcard::from_bytes::<KnowledgeBatch>(&payload) {
                             Ok(batch) => {
                                 let mut q = node.incoming.lock().unwrap();
-                                // Enforce the incoming queue capacity. Evict
-                                // oldest items first (they are least likely to
-                                // be useful once fresher clauses are available).
                                 let max = node.config.max_incoming;
                                 let headroom = max.saturating_sub(q.len());
                                 let will_drop = batch.len().saturating_sub(headroom);
@@ -395,8 +389,6 @@ impl NetBus {
                     break;
                 }
             }
-            // Signal liveness flag so `publish` prunes this peer promptly
-            // rather than accumulating false backpressure counts.
             alive.store(false, Ordering::Release);
         })
     }
@@ -414,17 +406,11 @@ impl KnowledgeBus for NetBus {
         frame.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
         frame.extend_from_slice(&bytes);
 
-        // Wrap in Arc so every peer channel clone is a pointer copy, not a
-        // full buffer copy. O(1) per peer instead of O(|frame|).
         let frame = Arc::new(frame);
 
         let mut peers = self.peers.lock().unwrap();
         let mut sent = 0usize;
-        // `retain` both sends and prunes dead peers in one pass.
-        // A send failure on an unbounded channel means the receiver (writer
-        // thread) has exited — treat as a dead peer, not back-pressure.
         peers.retain(|peer| {
-            // Drop peers whose reader finished AND writer died.
             let reader_done = peer.handle.as_ref().is_some_and(|h| h.is_finished());
             let writer_dead = !peer.writer_alive.load(Ordering::Acquire);
             if reader_done && writer_dead {
@@ -436,8 +422,6 @@ impl KnowledgeBus for NetBus {
                     true
                 }
                 Err(_) => {
-                    // Writer channel closed: writer thread has exited.
-                    // Remove the peer; remaining in-flight sends are lost.
                     false
                 }
             }
@@ -465,8 +449,6 @@ impl KnowledgeBus for NetBus {
             polled_total: self.polled.load(Ordering::Relaxed),
             deduplicated: self.deduplicated.load(Ordering::Relaxed),
             schema_rejected: self.schema_rejected.load(Ordering::Relaxed),
-            // Incoming queue evictions are reported in `evicted` so operators
-            // can see when inbound throughput exceeds `max_incoming`.
             evicted: self.incoming_dropped.load(Ordering::Relaxed),
             backpressure: self.backpressure.load(Ordering::Relaxed),
             bytes_serialized: self.bytes_serialized.load(Ordering::Relaxed),

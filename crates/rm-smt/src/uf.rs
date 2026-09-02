@@ -33,40 +33,32 @@ pub struct UfResult {
     pub model: Vec<(String, String)>,
 }
 
-/// Solve a QF_UF SMT-LIB script.
-pub fn solve_qf_uf(text: &str) -> Result<UfResult, String> {
-    let tokens = lex(text).map_err(|e| e.to_string())?;
-    let exprs = parse_program(&tokens).map_err(|e| e.to_string())?;
+struct UfDecls {
+    func_arity: FxHashMap<String, u32>,
+    assertions: Vec<SExpr>,
+    logic: Option<String>,
+}
 
-    // -----------------------------------------------------------------------
-    // Pass 1: collect declarations
-    // -----------------------------------------------------------------------
-    // function name → arity (0 = constant)
+fn collect_uf_declarations(exprs: &[SExpr]) -> UfDecls {
     let mut func_arity: FxHashMap<String, u32> = FxHashMap::default();
     let mut assertions: Vec<SExpr> = Vec::new();
     let mut logic: Option<String> = None;
-
-    for expr in &exprs {
+    for expr in exprs {
         let SExpr::List(items) = expr else { continue };
         let Some(head) = items.first().and_then(|e| e.symbol()) else { continue };
-
         match head {
             "set-logic" => {
                 if let Some(SExpr::Atom(Atom::Symbol(l))) = items.get(1) {
                     logic = Some(l.clone());
                 }
             }
-            "declare-sort" => {
-                // (declare-sort Name arity) — just accept, don't type-check
-            }
+            "declare-sort" => {}
             "declare-const" => {
-                // (declare-const name sort)
                 if let Some(SExpr::Atom(Atom::Symbol(name))) = items.get(1) {
                     func_arity.insert(name.clone(), 0);
                 }
             }
             "declare-fun" => {
-                // (declare-fun name (arg-sorts) result-sort)
                 if let Some(SExpr::Atom(Atom::Symbol(name))) = items.get(1) {
                     let arity = match items.get(2) {
                         Some(SExpr::List(args)) => args.len() as u32,
@@ -83,75 +75,46 @@ pub fn solve_qf_uf(text: &str) -> Result<UfResult, String> {
             _ => {}
         }
     }
+    UfDecls { func_arity, assertions, logic }
+}
 
-    // Validate logic.
-    match logic.as_deref() {
-        Some("QF_UF") | None => {}
-        Some(other) => return Err(format!("UF solver does not handle logic {other}")),
-    }
+struct UfGraph {
+    egraph: EGraph,
+    cc: CongruenceClosure,
+    term_cache: FxHashMap<String, rm_theory_euf::ENodeId>,
+}
 
-    if assertions.is_empty() {
-        return Ok(UfResult { status: UfStatus::Sat, model: Vec::new() });
-    }
-
-    // -----------------------------------------------------------------------
-    // Pass 2: intern all terms into the e-graph
-    // -----------------------------------------------------------------------
+fn build_term_graph(decls: &UfDecls) -> UfGraph {
     let mut egraph = EGraph::new();
     let mut cc = CongruenceClosure::new(64);
-    // term_str → ENodeId (for model output)
     let mut term_cache: FxHashMap<String, rm_theory_euf::ENodeId> = FxHashMap::default();
-
-    // Pre-intern all declared 0-arity constants so they exist even if only
-    // referenced inside compound terms.
-    for (name, arity) in &func_arity {
+    for (name, arity) in &decls.func_arity {
         if *arity == 0 {
             let id = egraph.constant(name);
             term_cache.insert(name.clone(), id);
         }
     }
-
-    // Now intern each assertion's terms.
-    for body in &assertions {
-        intern_assertion_terms(body, &func_arity, &mut egraph, &mut term_cache);
+    for body in &decls.assertions {
+        intern_assertion_terms(body, &decls.func_arity, &mut egraph, &mut term_cache);
     }
-
-    // Register all e-nodes with the CC (topological order = ENodeId order).
     for id in egraph.all_ids() {
         let node = egraph.node(id).clone();
         cc.add_term(id, &node);
     }
+    UfGraph { egraph, cc, term_cache }
+}
 
-    // -----------------------------------------------------------------------
-    // Pass 3: assert equalities / disequalities
-    // -----------------------------------------------------------------------
-    let mut next_lit: u32 = 0;
-
-    for body in &assertions {
-        let lit = next_lit;
-        next_lit += 1;
-        match assert_one(&mut cc, &egraph, body, &term_cache, lit) {
-            Ok(()) => {}
-            Err(AssertErr::Conflict) => {
-                return Ok(UfResult { status: UfStatus::Unsat, model: Vec::new() });
-            }
-            Err(AssertErr::Unsupported) => {
-                return Ok(UfResult { status: UfStatus::Unknown, model: Vec::new() });
-            }
-            Err(AssertErr::Parse(msg)) => return Err(msg),
-        }
-    }
-
-    // -----------------------------------------------------------------------
-    // Build SAT model: each constant maps to its class representative name.
-    // -----------------------------------------------------------------------
+fn build_uf_model(
+    func_arity: &FxHashMap<String, u32>,
+    cc: &mut CongruenceClosure,
+    term_cache: &FxHashMap<String, rm_theory_euf::ENodeId>,
+) -> Vec<(String, String)> {
     let mut model: Vec<(String, String)> = func_arity
         .iter()
         .filter(|(_, &a)| a == 0)
         .filter_map(|(name, _)| {
             let id = *term_cache.get(name)?;
             let rep = cc.repr(id);
-            // Find the name of the representative.
             let rep_name = term_cache
                 .iter()
                 .find(|(_, &v)| v == rep)
@@ -161,8 +124,34 @@ pub fn solve_qf_uf(text: &str) -> Result<UfResult, String> {
         })
         .collect();
     model.sort_by_key(|(n, _)| n.clone());
+    model
+}
 
-    Ok(UfResult { status: UfStatus::Sat, model })
+/// Solve a QF_UF SMT-LIB script.
+pub fn solve_qf_uf(text: &str) -> Result<UfResult, String> {
+    let tokens = lex(text).map_err(|e| e.to_string())?;
+    let exprs = parse_program(&tokens).map_err(|e| e.to_string())?;
+    let decls = collect_uf_declarations(&exprs);
+    match decls.logic.as_deref() {
+        Some("QF_UF") | None => {}
+        Some(other) => return Err(format!("UF solver does not handle logic {other}")),
+    }
+    if decls.assertions.is_empty() {
+        return Ok(UfResult { status: UfStatus::Sat, model: Vec::new() });
+    }
+    let UfGraph { egraph, mut cc, term_cache } = build_term_graph(&decls);
+    let mut next_lit: u32 = 0;
+    for body in &decls.assertions {
+        let lit = next_lit;
+        next_lit += 1;
+        match assert_one(&mut cc, &egraph, body, &term_cache, lit) {
+            Ok(()) => {}
+            Err(AssertErr::Conflict) => return Ok(UfResult { status: UfStatus::Unsat, model: Vec::new() }),
+            Err(AssertErr::Unsupported) => return Ok(UfResult { status: UfStatus::Unknown, model: Vec::new() }),
+            Err(AssertErr::Parse(msg)) => return Err(msg),
+        }
+    }
+    Ok(UfResult { status: UfStatus::Sat, model: build_uf_model(&decls.func_arity, &mut cc, &term_cache) })
 }
 
 // ---------------------------------------------------------------------------
@@ -182,13 +171,11 @@ fn intern_assertion_terms(
             let head = items.first().and_then(|e| e.symbol());
             match head {
                 Some("=") | Some("not") | Some("and") | Some("or") => {
-                    // Boolean connectives: recurse into subterms
                     for sub in items.iter().skip(1) {
                         intern_assertion_terms(sub, func_arity, egraph, cache);
                     }
                 }
                 Some(fname) => {
-                    // Theory-level function application: intern args first, then self
                     let mut arg_ids = Vec::new();
                     for arg in items.iter().skip(1) {
                         intern_term(arg, func_arity, egraph, cache);
@@ -241,11 +228,9 @@ fn intern_term(
                 Some(s) => s,
                 None => return,
             };
-            // Recurse into args first.
             for arg in items.iter().skip(1) {
                 intern_term(arg, func_arity, egraph, cache);
             }
-            // Collect arg IDs.
             let arg_ids: Vec<rm_theory_euf::ENodeId> = items
                 .iter()
                 .skip(1)
@@ -289,7 +274,6 @@ fn assert_one(
     lit: u32,
 ) -> Result<(), AssertErr> {
     let SExpr::List(items) = expr else {
-        // bare Bool atom: true/false — treat as tautology / contradiction-free
         return Ok(());
     };
     let Some(op) = items.first().and_then(|e| e.symbol()) else {
@@ -304,7 +288,6 @@ fn assert_one(
             Ok(())
         }
         "not" => {
-            // (not (= t1 t2))
             let inner = items.get(1).ok_or_else(|| AssertErr::Parse("not: missing body".into()))?;
             let SExpr::List(inner_items) = inner else { return Err(AssertErr::Unsupported); };
             if inner_items.first().and_then(|e| e.symbol()) != Some("=") {

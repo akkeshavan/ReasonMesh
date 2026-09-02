@@ -173,17 +173,19 @@ impl CdclSolver {
     // -----------------------------------------------------------------------
 
     /// Add a problem clause. Unit clauses are enqueued immediately at level 0.
+    ///
+    /// Watch convention (MiniSAT): a clause with watched literals w0, w1 is
+    /// stored under `(¬w0).raw()` and `(¬w1).raw()`. When `¬w0` becomes True
+    /// (i.e. w0 becomes False), BCP checks `watches[(¬w0).raw()]`.
     pub fn add_clause(&mut self, lits: &[Literal]) {
         match lits.len() {
             0 => {
-                // Empty clause → immediate UNSAT; store a sentinel for the solve loop.
                 self.db.set_empty_clause();
             }
             1 => {
-                // Unit clause: assign at level 0 if unassigned, conflict if false.
                 let lit = lits[0];
                 match self.assignment.literal_value(lit) {
-                    Value::True => {} // already satisfied
+                    Value::True => {}
                     Value::False => {
                         self.db.set_empty_clause();
                     }
@@ -195,15 +197,8 @@ impl CdclSolver {
             _ => {
                 let sv: SmallVec<[Literal; 4]> = lits.iter().copied().collect();
                 let cr = self.db.add(Clause::new(sv, false));
-                // Convention: watches[lit.raw()] is checked when lit is propagated (True).
-                // A clause with watches w0,w1 is stored under (¬w0) and (¬w1).
-                // When ¬w0 is assigned (making w0 false), we check watches[(¬w0).raw()].
-                // Equivalently: when literal p is assigned, check watches[p.raw()].
-                // Storage: watches[(¬w0).raw()] and watches[(¬w1).raw()].
-                let w0 = lits[0].negate();
-                let w1 = lits[1].negate();
-                self.watches.watch(w0, cr);
-                self.watches.watch(w1, cr);
+                self.watches.watch(lits[0].negate(), cr);
+                self.watches.watch(lits[1].negate(), cr);
             }
         }
     }
@@ -248,143 +243,29 @@ impl CdclSolver {
             return SolveResult::Unsat;
         }
 
-        // Determine the restart floor for this call.
-        //
-        // When assumptions are empty this call may be a *resumption* of an
-        // interrupted search (e.g. chunked worker steps). In that case the
-        // current decision level is > 0, but restarts must still go all the
-        // way back to level 0 — otherwise each chunk traps restarts at the
-        // depth they entered, VSIDS diversification stops working, and search
-        // performance degrades badly. Unconditionally keeping base_level = 0
-        // for assumption-free calls preserves this invariant.
-        //
-        // When assumptions are non-empty the floor must be at least the level
-        // at which the first assumption will be pushed, which is current_level
-        // + 1; we track that below via assumption_floor.
         self.base_level = if assumptions.is_empty() {
             0
         } else {
             self.assignment.current_level()
         };
 
-        // Settle all level-0 propagation *before* pushing assumptions.
-        //
-        // `add_clause` assigns unit clauses immediately but does not run BCP
-        // on their consequences. If that work is deferred to the main loop
-        // (which runs at a higher decision level once assumptions are pushed),
-        // a clause can be woken late — after its watched literals were both
-        // falsified at levels below the current one. BCP would then report a
-        // conflict whose clause contains NO literal at the current level,
-        // which breaks the 1-UIP invariant in `analyze`. Running propagation
-        // to a fixed point at level 0 first makes every assumption-level wake
-        // trigger on a literal assigned at the current level, restoring the
-        // invariant.
-        //
-        // For resumed assumption-free searches the BCP queue is already empty
-        // (the prior step() call left no pending propagations), so this is a
-        // fast no-op. For the initial call it performs the needed settlement.
-        if self.base_level == 0 && self.propagate().is_some() {
+        if self.base_level == 0 && self.settle_root_propagations() {
             self.assignment.backtrack_to(0);
             return SolveResult::Unsat;
         }
 
-        // Push assumptions as decisions.
-        let mut assumptions_pushed = 0u32;
-        for &lit in assumptions {
-            match self.assignment.literal_value(lit) {
-                Value::True => {} // already implied
-                Value::False => {
-                    self.assignment.backtrack_to(self.base_level);
-                    return SolveResult::Unsat;
-                }
-                Value::Undef => {
-                    self.assignment.new_decision_level();
-                    self.assignment.assign(
-                        lit,
-                        self.assignment.current_level(),
-                        ClauseRef::DECISION.0,
-                    );
-                    self.decisions += 1;
-                    assumptions_pushed += 1;
-                }
-            }
+        if let Some(r) = self.push_assumptions_onto_trail(assumptions) {
+            return r;
         }
-        self.assumption_floor = if assumptions_pushed > 0 {
-            self.base_level + assumptions_pushed
-        } else {
-            self.base_level
-        };
 
         let conflicts_at_entry = self.conflicts;
-
         let result = loop {
             if let Some(conflict_cr) = self.propagate() {
-                if self.assignment.current_level() == self.base_level {
-                    // Conflict at the assumption boundary: the problem under
-                    // the current assumptions (or the whole problem) is UNSAT.
-                    self.log_proof_empty();
-                    break SolveResult::Unsat;
+                if let Some(r) = self.process_conflict_in_loop(conflict_cr) {
+                    break r;
                 }
-                self.conflicts += 1;
-
-                let (learnt, mut backjump_level) = self.analyze(conflict_cr);
-                // Never backjump below the assumption levels.
-                if backjump_level < self.assumption_floor {
-                    backjump_level = self.assumption_floor;
-                }
-                self.assignment.backtrack_to(backjump_level);
-                self.decay_activities();
-
-                // learnt[0] is the asserting literal, unit at `backjump_level`.
-                // It may already be assigned at that level (typically because
-                // the conflict led back into the assumption region). If it is
-                // already False, the assumptions themselves are contradictory:
-                // every literal of the (valid) learnt clause is then False at
-                // `backjump_level`, so return UNSAT. If already True the
-                // clause is satisfied at that level and needs no assertion.
-                match self.assignment.literal_value(learnt[0]) {
-                    Value::True => {}
-                    Value::False => {
-                        self.log_proof_empty();
-                        break SolveResult::Unsat;
-                    }
-                    Value::Undef => {
-                        self.log_proof_clause(&learnt);
-                        if learnt.len() == 1 {
-                            // Unit learnings are asserted directly (never added
-                            // to the clause DB), but they are the most potent
-                            // exportable knowledge — stage them for AKX export.
-                            self.learned_outbox.push((learnt.to_vec(), 1));
-                            self.assignment.assign(
-                                learnt[0],
-                                backjump_level,
-                                ClauseRef::DECISION.0,
-                            );
-                        } else {
-                            let cr = self.add_learned_clause(&learnt);
-                            self.assignment.assign(learnt[0], backjump_level, cr.0);
-                        }
-                    }
-                }
-
-                self.maybe_restart();
-                self.maybe_reduce_db();
-            } else {
-                // No conflict. Decide or return SAT.
-                if self.conflicts >= self.next_restart_conflicts {
-                    self.do_restart();
-                } else if let Some(lit) = self.pick_branch() {
-                    self.assignment.new_decision_level();
-                    self.assignment.assign(
-                        lit,
-                        self.assignment.current_level(),
-                        ClauseRef::DECISION.0,
-                    );
-                    self.decisions += 1;
-                } else {
-                    // All variables assigned — extract model.
-                    break SolveResult::Sat(self.extract_model());
-                }
+            } else if let Some(r) = self.branch_or_finish() {
+                break r;
             }
 
             if self.conflicts - conflicts_at_entry > max_conflicts {
@@ -395,9 +276,118 @@ impl CdclSolver {
             }
         };
 
-        // Leave the solver clean for the next call.
         self.assignment.backtrack_to(self.base_level);
         result
+    }
+
+    /// Run level-0 BCP to settle unit clauses added before assumptions are
+    /// pushed. Returns `true` if a conflict is found (formula is already UNSAT).
+    ///
+    /// When assumptions are empty this may be a search resumption; the BCP
+    /// queue is already empty in that case, so this is a fast no-op.
+    fn settle_root_propagations(&mut self) -> bool {
+        self.propagate().is_some()
+    }
+
+    /// Push `assumptions` as decisions at consecutive decision levels.
+    ///
+    /// Returns `SolveResult::Unsat` immediately if any assumption literal is
+    /// already assigned False (contradictory assumptions). Returns `None` if
+    /// all assumptions are satisfied and search can continue.
+    fn push_assumptions_onto_trail(
+        &mut self,
+        assumptions: &[Literal],
+    ) -> Option<SolveResult> {
+        let mut pushed = 0u32;
+        for &lit in assumptions {
+            match self.assignment.literal_value(lit) {
+                Value::True => {}
+                Value::False => {
+                    self.assignment.backtrack_to(self.base_level);
+                    return Some(SolveResult::Unsat);
+                }
+                Value::Undef => {
+                    self.assignment.new_decision_level();
+                    self.assignment.assign(
+                        lit,
+                        self.assignment.current_level(),
+                        ClauseRef::DECISION.0,
+                    );
+                    self.decisions += 1;
+                    pushed += 1;
+                }
+            }
+        }
+        self.assumption_floor = if pushed > 0 {
+            self.base_level + pushed
+        } else {
+            self.base_level
+        };
+        None
+    }
+
+    /// Handle a BCP conflict discovered inside the main search loop.
+    ///
+    /// Analyzes the conflict, backtracks, adds the learned clause, and
+    /// triggers restart and DB reduction. Returns `SolveResult::Unsat` if the
+    /// conflict is irresolvable under the current assumptions, else `None`
+    /// (search continues).
+    fn process_conflict_in_loop(&mut self, conflict_cr: ClauseRef) -> Option<SolveResult> {
+        if self.assignment.current_level() == self.base_level {
+            self.log_proof_empty();
+            return Some(SolveResult::Unsat);
+        }
+        self.conflicts += 1;
+
+        let (learnt, mut backjump_level) = self.analyze(conflict_cr);
+        if backjump_level < self.assumption_floor {
+            backjump_level = self.assumption_floor;
+        }
+        self.assignment.backtrack_to(backjump_level);
+        self.decay_activities();
+
+        match self.assignment.literal_value(learnt[0]) {
+            Value::True => {}
+            Value::False => {
+                self.log_proof_empty();
+                return Some(SolveResult::Unsat);
+            }
+            Value::Undef => {
+                self.log_proof_clause(&learnt);
+                if learnt.len() == 1 {
+                    self.learned_outbox.push((learnt.to_vec(), 1));
+                    self.assignment
+                        .assign(learnt[0], backjump_level, ClauseRef::DECISION.0);
+                } else {
+                    let cr = self.add_learned_clause(&learnt);
+                    self.assignment.assign(learnt[0], backjump_level, cr.0);
+                }
+            }
+        }
+        self.maybe_restart();
+        self.maybe_reduce_db();
+        None
+    }
+
+    /// In the no-conflict branch: trigger a pending restart, make a branching
+    /// decision, or return `SolveResult::Sat` when all variables are assigned.
+    fn branch_or_finish(&mut self) -> Option<SolveResult> {
+        if self.conflicts >= self.next_restart_conflicts {
+            self.do_restart();
+            return None;
+        }
+        if let Some(lit) = self.pick_branch() {
+            self.assignment.new_decision_level();
+            self.assignment.assign(
+                lit,
+                self.assignment.current_level(),
+                ClauseRef::DECISION.0,
+            );
+            self.decisions += 1;
+            None
+        } else {
+            Some(SolveResult::Sat(self.extract_model()))
+        }
     }
 
     /// Import a batch of learned clauses (e.g. from AKX) into the clause
@@ -427,19 +417,19 @@ impl CdclSolver {
     /// Run BCP to a fixed point. Returns the conflicting ClauseRef, if any.
     ///
     /// Watch convention (MiniSAT):
-    ///   watches[p.raw()] = clauses woken when literal p is assigned True.
-    ///   Each clause stores its two watched literals as w0, w1.
-    ///   It is added under (¬w0).raw() and (¬w1).raw().
-    ///   When literal q = ¬w0 is assigned True, w0 is False; watches[q.raw()] is checked.
+    ///   `watches[p.raw()]` = clauses woken when literal `p` is assigned True.
+    ///   Each clause stores its two watched literals as `lits[0]`, `lits[1]`.
+    ///   It is registered under `lits[0].negate().raw()` and `lits[1].negate().raw()`.
+    ///   When literal `q = ¬lits[0]` is assigned True, `lits[0]` is False;
+    ///   `watches[q.raw()]` is checked. We rearrange so `lits[1]` is always
+    ///   the watch that became False (triggered the wake) and `lits[0]` is the
+    ///   "other" watch.
     fn propagate(&mut self) -> Option<ClauseRef> {
         while self.assignment.prop_head < self.assignment.trail().len() {
             let p = self.assignment.trail()[self.assignment.prop_head];
             self.assignment.prop_head += 1;
             self.propagations += 1;
 
-            // p was just assigned True, so ¬p is False.
-            // All clauses watching ¬p (stored under p.raw()) need checking.
-            // We must iterate carefully because we may remove items mid-iteration.
             let mut idx = 0;
             'clause_loop: loop {
                 let cr = {
@@ -450,41 +440,30 @@ impl CdclSolver {
                     list[idx]
                 };
 
-                // Ensure watches[0] is the "other" literal (not ¬p).
-                // By convention, the literal that triggered the wake is the one
-                // that became False. In our clause, we stored under ¬w, so the
-                // watch that became False is p.negate() = ¬p.
-                // Rearrange so that clause[1] is the False watch, clause[0] is other.
                 {
                     let clause = self.db.get_mut(cr);
                     if clause.lits[0].negate() == p {
                         clause.lits.swap(0, 1);
                     }
-                    // Now lits[1].negate() == p, i.e., lits[1] is the watch that became False.
                 }
 
                 let other_watch = self.db.get(cr).lits[0];
 
-                // If the other watch is already True, the clause is satisfied; keep watch.
                 if self.assignment.literal_value(other_watch) == Value::True {
                     idx += 1;
                     continue;
                 }
 
-                // Try to find a new non-False literal to replace lits[1].
                 let n = self.db.get(cr).lits.len();
                 let mut found_new = false;
                 for k in 2..n {
                     let cand = self.db.get(cr).lits[k];
                     if self.assignment.literal_value(cand) != Value::False {
-                        // Swap candidate to position 1 and update watches.
                         self.db.get_mut(cr).lits.swap(1, k);
                         let new_watch = self.db.get(cr).lits[1];
-                        // Remove this clause from watches[p] and add to watches[¬new_watch].
                         self.watches.remove(p, cr);
                         self.watches.watch(new_watch.negate(), cr);
                         found_new = true;
-                        // Don't advance idx since we removed the item at idx.
                         break;
                     }
                 }
@@ -493,14 +472,11 @@ impl CdclSolver {
                     continue;
                 }
 
-                // No new watch found. lits[0] is the only hope.
                 match self.assignment.literal_value(other_watch) {
                     Value::False => {
-                        // Conflict.
                         return Some(cr);
                     }
                     Value::Undef => {
-                        // Unit propagation: force other_watch.
                         self.assignment
                             .assign(other_watch, self.assignment.current_level(), cr.0);
                         idx += 1;
@@ -522,15 +498,10 @@ impl CdclSolver {
     /// second-level literal (if any) at index 1 — ready for watched-literal setup.
     fn analyze(&mut self, conflict_cr: ClauseRef) -> (SmallVec<[Literal; 8]>, u32) {
         let current_level = self.assignment.current_level();
-
-        // seen[var] = true once we've enqueued var in the analysis.
         let mut seen = vec![false; self.num_vars as usize + 1];
-        // Literals in the learned clause from levels < current_level.
         let mut learnt: SmallVec<[Literal; 8]> = SmallVec::new();
-        // Number of current-level vars still to resolve.
         let mut counter = 0usize;
 
-        // Process the initial conflict clause.
         self.process_reason_into(
             conflict_cr,
             current_level,
@@ -540,65 +511,80 @@ impl CdclSolver {
             None,
         );
 
-        // Walk the trail backward to find the 1-UIP.
-        // Copy the trail into a local Vec to avoid borrow conflicts with self.
         let trail_snapshot: Vec<Literal> = self.assignment.trail().to_vec();
-        let mut trail_pos = trail_snapshot.len();
-        let uip = loop {
-            // Scan backward for the next seen variable.
+        let uip = self.find_uip_on_trail(
+            &trail_snapshot,
+            current_level,
+            &mut seen,
+            &mut learnt,
+            &mut counter,
+        );
+
+        self.build_learned_clause(uip, learnt)
+    }
+
+    /// Walk the trail backward to find the 1-UIP literal.
+    ///
+    /// Scans from the end of the trail, resolving each current-level
+    /// antecedent until exactly one current-level literal remains in the
+    /// implied clause — that literal is the UIP.
+    fn find_uip_on_trail(
+        &mut self,
+        trail: &[Literal],
+        current_level: u32,
+        seen: &mut [bool],
+        learnt: &mut SmallVec<[Literal; 8]>,
+        counter: &mut usize,
+    ) -> Literal {
+        let mut trail_pos = trail.len();
+        loop {
             loop {
-                if trail_pos == 0 {
-                    // Invariant: a conflict clause always contains at least one
-                    // literal assigned at the current decision level, so the
-                    // 1-UIP is always found before we walk off the start.
-                    unreachable!("1-UIP analysis walked past the start of the trail");
-                }
+                debug_assert!(trail_pos > 0, "1-UIP analysis walked past trail start");
                 trail_pos -= 1;
-                if seen[trail_snapshot[trail_pos].var() as usize] {
+                if seen[trail[trail_pos].var() as usize] {
                     break;
                 }
             }
 
-            let lit = trail_snapshot[trail_pos];
+            let lit = trail[trail_pos];
             let var = lit.var();
-            seen[var as usize] = false; // consume
+            seen[var as usize] = false;
 
-            let lvl = self.assignment.level_of(var);
-            // `counter` counts current-level variables that are still waiting
-            // to be resolved. Lower-level literals were pushed straight into
-            // `learnt` by `process_reason_into` and need no resolution, but
-            // they are also marked `seen` — so skip them here without touching
-            // `counter` (this is the 1-UIP bookkeeping invariant).
-            if lvl != current_level {
+            if self.assignment.level_of(var) != current_level {
                 continue;
             }
 
-            counter -= 1;
-            if counter == 0 {
-                break lit;
+            *counter -= 1;
+            if *counter == 0 {
+                return lit;
             }
 
-            // Expand the antecedent of this literal.
             let reason_raw = self.assignment.reason_of(var);
             let reason_cr = ClauseRef(reason_raw);
             if !reason_cr.is_sentinel() {
                 self.process_reason_into(
                     reason_cr,
                     current_level,
-                    &mut seen,
-                    &mut learnt,
-                    &mut counter,
+                    seen,
+                    learnt,
+                    counter,
                     Some(var),
                 );
             }
-        };
+        }
+    }
 
-        // learnt clause = [¬UIP, ...lower-level literals...]
-        // ¬UIP is the asserting literal (will be unit at backjump level).
+    /// Construct the final learned clause: `[¬uip, ...lower-level literals...]`.
+    ///
+    /// Moves the highest-level literal from `learnt` to index 0 (for watched-
+    /// literal setup) and returns the complete clause together with the
+    /// backjump level (the level of that highest-level literal).
+    fn build_learned_clause(
+        &self,
+        uip: Literal,
+        mut learnt: SmallVec<[Literal; 8]>,
+    ) -> (SmallVec<[Literal; 8]>, u32) {
         let asserting = uip.negate();
-
-        // Backjump level = max level among learnt[1..].
-        // Also move the highest-level literal to index 1 (for watched-literal setup).
         let backjump_level = if learnt.is_empty() {
             0
         } else {
@@ -612,20 +598,17 @@ impl CdclSolver {
             max_lvl
         };
 
-        // Construct final clause: asserting literal first, then learnt.
         let mut clause: SmallVec<[Literal; 8]> = SmallVec::new();
         clause.push(asserting);
         clause.extend_from_slice(&learnt);
-
         (clause, backjump_level)
     }
 
-    /// Helper: visit all literals in `cr`'s clause and classify them.
+    /// Visit all literals in `cr`'s clause and classify them for 1-UIP analysis.
     ///
     /// `resolving_var` is the variable whose antecedent this clause is; that
-    /// variable's literal appears in the clause as the derived literal and must
-    /// be skipped so it is not re-seen (1-UIP resolution). `None` for the
-    /// initial conflict clause, which is processed in full.
+    /// literal is skipped to avoid re-processing it (1-UIP resolution). Pass
+    /// `None` for the initial conflict clause, which is processed in full.
     fn process_reason_into(
         &mut self,
         cr: ClauseRef,
@@ -635,28 +618,21 @@ impl CdclSolver {
         counter: &mut usize,
         resolving_var: Option<Var>,
     ) {
-        // Collect literals to avoid borrow conflicts.
         let lits: SmallVec<[Literal; 8]> = self.db.get(cr).lits.iter().copied().collect();
         for lit in lits {
             let var = lit.var();
-            if Some(var) == resolving_var {
-                continue;
-            }
-            if seen[var as usize] {
+            if Some(var) == resolving_var || seen[var as usize] {
                 continue;
             }
             let lvl = self.assignment.level_of(var);
             if lvl == 0 {
                 continue;
-            } // level-0 facts need no explanation
+            }
             seen[var as usize] = true;
             self.bump_var_activity(var);
             if lvl == current_level {
                 *counter += 1;
             } else {
-                // Lower level: goes into the learned clause as-is.
-                // This literal is False at the current assignment and will remain
-                // False after backjumping (it was assigned at a level <= backjump).
                 learnt.push(lit);
             }
         }
@@ -674,10 +650,8 @@ impl CdclSolver {
         clause.lbd = lbd;
 
         let cr = self.db.add(clause);
-        // Watch lits[0] and lits[1] (lits[0] will be assigned right after this call).
         self.watches.watch(lits[0].negate(), cr);
         self.watches.watch(lits[1].negate(), cr);
-        // Stage for AKX export (drained by the Reasoner between solve calls).
         self.learned_outbox.push((lits.to_vec(), lbd));
         cr
     }
@@ -700,23 +674,18 @@ impl CdclSolver {
         levels.len() as u32
     }
 
+    /// Remove low-quality learned clauses when the database exceeds `learnt_limit`.
+    ///
+    /// A clause is retained if its LBD ≤ 2 (high-quality "glue" clause) or if
+    /// it is currently locked as the reason for a trail assignment. The watch
+    /// lists are rebuilt after deletion to remove stale entries.
     fn maybe_reduce_db(&mut self) {
-        let learnt_count = self.db.learnt_count();
-        if learnt_count <= self.learnt_limit {
+        if self.db.learnt_count() <= self.learnt_limit {
             return;
         }
-
         self.db.reduce_learned(|cr, c| {
-            // A clause is "locked" while it is still the reason of its first
-            // literal (the watch invariant places the propagated literal at
-            // lits[0]). Such clauses are antecedents still on the trail;
-            // deleting one would leave analyze() dereferencing a dead
-            // ClauseRef. The flag is never maintained eagerly; recomputed here.
             c.lbd > 2 && self.assignment.reason_of(c.lits[0].var()) != cr.0
         });
-        // Dropped clauses leave stale entries in the two-watched-literal index;
-        // propagate() would panic on a deleted ClauseRef. Rebuild the watch
-        // lists from the surviving clauses (MiniSat-style reduceDB).
         self.db.rebuild_watches(&mut self.watches);
         self.learnt_limit = (self.learnt_limit as f64 * self.learnt_limit_inc) as usize;
     }
@@ -728,7 +697,6 @@ impl CdclSolver {
     fn bump_var_activity(&mut self, var: Var) {
         self.activity[var as usize] += self.activity_inc;
         if self.activity[var as usize] > 1e100 {
-            // Rescale to prevent float overflow.
             for a in self.activity.iter_mut() {
                 *a *= 1e-100;
             }

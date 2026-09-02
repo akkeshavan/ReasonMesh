@@ -162,14 +162,12 @@ impl Problem {
 
     /// Independently verify `model` against the problem and `cube`.
     pub fn validates(&self, model: &PartialModel, cube: &[Literal]) -> bool {
-        // The cube must be satisfied.
         for &lit in cube {
             match model.get(lit.var()) {
                 Some(v) if v == lit.is_positive() => {}
                 _ => return false,
             }
         }
-        // Every clause must be satisfied.
         for clause in &self.clauses {
             let sat = clause.iter().any(|&l| match model.get(l.var()) {
                 Some(v) => v == l.is_positive(),
@@ -272,6 +270,40 @@ impl WorkerPool {
     }
 }
 
+fn validate_sat_and_finish(
+    problem: &Problem,
+    assumptions: &[Literal],
+    worker: WorkerId,
+    model: Arc<PartialModel>,
+    solver: &CdclSolver,
+    shared: &WorkerStats,
+    shutdown: &Arc<AtomicBool>,
+) -> WorkerOutcome {
+    if problem.validates(&model, assumptions) {
+        shutdown.store(true, Ordering::SeqCst);
+        return WorkerOutcome::Sat {
+            worker,
+            model: (*model).clone(),
+            stats: fold_stats(solver, shared),
+        };
+    }
+    log::error!("worker {worker:?} returned an invalid model");
+    WorkerOutcome::Aborted { worker, stats: fold_stats(solver, shared) }
+}
+
+fn finish_unsat(
+    worker: WorkerId,
+    assumptions: &[Literal],
+    solver: &CdclSolver,
+    shared: &WorkerStats,
+    shutdown: &Arc<AtomicBool>,
+) -> WorkerOutcome {
+    if assumptions.is_empty() {
+        shutdown.store(true, Ordering::SeqCst);
+    }
+    WorkerOutcome::Unsat { worker, stats: fold_stats(solver, shared) }
+}
+
 fn run_worker(
     worker: WorkerId,
     problem: &Problem,
@@ -291,78 +323,35 @@ fn run_worker(
         cfg.import_policy.clone(),
         None,
     );
-
     let started = Instant::now();
     let mut shared = WorkerStats::default();
     let mut ran_conflicts = 0u64;
     loop {
         if deadline.is_some_and(|d| started.elapsed() >= d) || shutdown.load(Ordering::SeqCst) {
-            return WorkerOutcome::Aborted {
-                worker,
-                stats: fold_stats(reasoner.solver(), &shared),
-            };
+            return WorkerOutcome::Aborted { worker, stats: fold_stats(reasoner.solver(), &shared) };
         }
-
         let conflicts_before = reasoner.solver().conflicts;
         match reasoner.step(cfg.step_budget) {
             Ok(ReasonerEvent::SatCandidate { model }) => {
-                if problem.validates(&model, &assumptions) {
-                    // Announce to peers and stop everything else.
-                    shutdown.store(true, Ordering::SeqCst);
-                    return WorkerOutcome::Sat {
-                        worker,
-                        model: (*model).clone(),
-                        stats: fold_stats(reasoner.solver(), &shared),
-                    };
-                }
-                // Model failed independent validation: never trust it. Treat
-                // as an internal error and stop this worker.
-                log::error!("worker {worker:?} returned an invalid model");
-                return WorkerOutcome::Aborted {
-                    worker,
-                    stats: fold_stats(reasoner.solver(), &shared),
-                };
+                return validate_sat_and_finish(&problem, &assumptions, worker, model, reasoner.solver(), &shared, &shutdown);
             }
             Ok(ReasonerEvent::UnsatLocal { .. }) => {
-                // Complete solver: cube is closed.
-                // In a flat portfolio (root cube, no assumptions), this closes the
-                // whole formula — signal shutdown so sibling workers abort instead
-                // of running to their own independent conclusion.
-                if assumptions.is_empty() {
-                    shutdown.store(true, Ordering::SeqCst);
-                }
-                return WorkerOutcome::Unsat {
-                    worker,
-                    stats: fold_stats(reasoner.solver(), &shared),
-                };
+                return finish_unsat(worker, &assumptions, reasoner.solver(), &shared, &shutdown);
             }
             Ok(ReasonerEvent::Progress) | Ok(ReasonerEvent::BudgetExhausted) => {
-                // Apply the cumulative conflict budget across chunked steps.
                 ran_conflicts = ran_conflicts
                     .saturating_add(reasoner.solver().conflicts.saturating_sub(conflicts_before));
-                if cfg
-                    .conflict_budget
-                    .is_some_and(|cap| ran_conflicts >= cap)
-                {
-                    return WorkerOutcome::Aborted {
-                        worker,
-                        stats: fold_stats(reasoner.solver(), &shared),
-                    };
+                if cfg.conflict_budget.is_some_and(|cap| ran_conflicts >= cap) {
+                    return WorkerOutcome::Aborted { worker, stats: fold_stats(reasoner.solver(), &shared) };
                 }
                 drain_export_import(&mut reasoner, &bus, &cfg, &mut shared);
             }
             Ok(ReasonerEvent::Cancelled) | Ok(ReasonerEvent::NeedWork) => {
-                return WorkerOutcome::Aborted {
-                    worker,
-                    stats: fold_stats(reasoner.solver(), &shared),
-                };
+                return WorkerOutcome::Aborted { worker, stats: fold_stats(reasoner.solver(), &shared) };
             }
             Ok(ReasonerEvent::InternalError(e)) | Err(e) => {
                 log::error!("worker {worker:?} failed: {e}");
-                return WorkerOutcome::Aborted {
-                    worker,
-                    stats: fold_stats(reasoner.solver(), &shared),
-                };
+                return WorkerOutcome::Aborted { worker, stats: fold_stats(reasoner.solver(), &shared) };
             }
         }
     }

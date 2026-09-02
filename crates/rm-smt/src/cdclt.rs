@@ -111,7 +111,6 @@ impl NoCombinedSolver {
                 return Ok(());
             }
             for (xname, yname) in new_eqs {
-                // DL derived x = y — look up (or create) UF nodes and merge them.
                 let xid = self.get_or_create_uf_node(&xname);
                 let yid = self.get_or_create_uf_node(&yname);
                 let sat_lit = self.fresh_lit();
@@ -147,7 +146,6 @@ impl NoCombinedSolver {
             for j in (i + 1)..shared.len() {
                 let (xname, xi, xuid) = &shared[i];
                 let (yname, yi, yuid) = &shared[j];
-                // bound_between(yi, xi) = shortest path from yi to xi = upper bound on xi - yi
                 let xy_leq_0 = self.dl.bound_between(*yi, *xi).map(|b| b <= 0).unwrap_or(false);
                 let yx_leq_0 = self.dl.bound_between(*xi, *yi).map(|b| b <= 0).unwrap_or(false);
                 if xy_leq_0 && yx_leq_0 && !self.cc.are_equal(*xuid, *yuid) {
@@ -175,7 +173,6 @@ impl NoCombinedSolver {
 
         for (xi, yi, xuid, yuid) in shared {
             if self.cc.are_equal(xuid, yuid) {
-                // Check if DL already knows xi = yi (both shortest paths ≤ 0).
                 let already =
                     self.dl.bound_between(yi, xi).map(|b| b <= 0).unwrap_or(false)
                     && self.dl.bound_between(xi, yi).map(|b| b <= 0).unwrap_or(false);
@@ -203,7 +200,6 @@ impl NoCombinedSolver {
                         .assert_neq(&self.egraph, lhs, rhs, sat_var)
                         .map_err(|_| ())?;
                 }
-                // After EUF merge: propagate any derived DL equalities.
                 self.euf_propagate_to_dl()?;
             }
             TheoryLit::Leq { x, y, c, polarity, sat_var } => {
@@ -228,31 +224,30 @@ impl NoCombinedSolver {
 }
 
 // ---------------------------------------------------------------------------
-// Conjunctive QF_UFIDL solver (main entry point)
+// Parsed SMT-LIB declarations
 // ---------------------------------------------------------------------------
 
-/// Parse and solve a QF_UFIDL (or QF_UF / QF_IDL) SMT-LIB script.
-pub fn solve_qf_ufidl(text: &str) -> Result<NoResult, String> {
-    use rm_syntax::{lex, parse_program, Atom, SExpr};
+/// Declarations extracted from a parsed SMT-LIB script.
+struct SmtLibDecls {
+    uf_funcs: FxHashMap<String, u32>,
+    dl_vars: FxHashMap<String, u32>,
+    assertions: Vec<rm_syntax::SExpr>,
+    logic: Option<String>,
+}
 
-    let tokens = lex(text).map_err(|e| e.to_string())?;
-    let exprs = parse_program(&tokens).map_err(|e| e.to_string())?;
-
-    // -----------------------------------------------------------------------
-    // Pass 1: declarations
-    // -----------------------------------------------------------------------
-
+/// Parse `declare-const`, `declare-fun`, and `assert` commands from a
+/// sequence of SMT-LIB s-expressions.
+fn parse_smtlib_decls(exprs: &[rm_syntax::SExpr]) -> SmtLibDecls {
+    use rm_syntax::{Atom, SExpr};
     let mut uf_funcs: FxHashMap<String, u32> = FxHashMap::default();
     let mut dl_vars: FxHashMap<String, u32> = FxHashMap::default();
     let mut next_dl_id: u32 = 1;
-    let mut assertions: Vec<SExpr> = Vec::new();
-    let mut logic: Option<String> = None;
+    let mut assertions = Vec::new();
+    let mut logic = None;
 
-    for expr in &exprs {
+    for expr in exprs {
         let SExpr::List(items) = expr else { continue };
-        let Some(head) = items.first().and_then(|e| sexpr_symbol(e)) else {
-            continue;
-        };
+        let Some(head) = items.first().and_then(|e| sexpr_symbol(e)) else { continue };
         match head {
             "set-logic" => {
                 if let Some(SExpr::Atom(Atom::Symbol(l))) = items.get(1) {
@@ -280,8 +275,7 @@ pub fn solve_qf_ufidl(text: &str) -> Result<NoResult, String> {
                         Some(SExpr::List(args)) => args.len() as u32,
                         _ => 0,
                     };
-                    let result_sort =
-                        items.get(3).and_then(|e| sexpr_symbol(e)).unwrap_or("");
+                    let result_sort = items.get(3).and_then(|e| sexpr_symbol(e)).unwrap_or("");
                     if result_sort == "Int" || result_sort == "Real" {
                         dl_vars.entry(name.clone()).or_insert_with(|| {
                             let id = next_dl_id;
@@ -298,31 +292,21 @@ pub fn solve_qf_ufidl(text: &str) -> Result<NoResult, String> {
                     assertions.push(body.clone());
                 }
             }
-            "check-sat" | "get-model" | "exit" | "set-info" | "set-option" => {}
             _ => {}
         }
     }
 
-    match logic.as_deref() {
-        Some("QF_UFIDL") | Some("QF_UF") | Some("QF_IDL") | None => {}
-        Some(other) => return Err(format!("NO solver does not handle logic {other}")),
-    }
+    SmtLibDecls { uf_funcs, dl_vars, assertions, logic }
+}
 
-    if assertions.is_empty() {
-        return Ok(NoResult::Sat);
-    }
-
-    let num_arith = next_dl_id - 1;
-
-    // -----------------------------------------------------------------------
-    // Pass 2: build solver and intern declarations
-    // -----------------------------------------------------------------------
-
-    let mut solver = NoCombinedSolver::new(num_arith);
+/// Intern UF constants and register all arithmetic variables as shared
+/// between DL and UF. Returns the UF term cache for assertion flattening.
+fn intern_no_declarations(
+    solver: &mut NoCombinedSolver,
+    decls: &SmtLibDecls,
+) -> FxHashMap<String, ENodeId> {
     let mut uf_cache: FxHashMap<String, ENodeId> = FxHashMap::default();
-
-    // Intern UF constants.
-    for (name, arity) in &uf_funcs {
+    for (name, arity) in &decls.uf_funcs {
         if *arity == 0 {
             let id = solver.egraph.constant(name);
             let node = solver.egraph.node(id).clone();
@@ -330,35 +314,53 @@ pub fn solve_qf_ufidl(text: &str) -> Result<NoResult, String> {
             uf_cache.insert(name.clone(), id);
         }
     }
-    // Pre-register all arithmetic vars as shared (they may appear in UF terms).
-    for (name, &dl_id) in &dl_vars {
+    for (name, &dl_id) in &decls.dl_vars {
         let uid = solver.register_shared_var(name, dl_id);
         uf_cache.insert(name.clone(), uid);
     }
+    uf_cache
+}
 
-    // -----------------------------------------------------------------------
-    // Pass 3: flatten assertions into theory literals
-    // -----------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Conjunctive QF_UFIDL solver (main entry point)
+// ---------------------------------------------------------------------------
+
+/// Parse and solve a QF_UFIDL (or QF_UF / QF_IDL) SMT-LIB script.
+pub fn solve_qf_ufidl(text: &str) -> Result<NoResult, String> {
+    use rm_syntax::{lex, parse_program};
+
+    let tokens = lex(text).map_err(|e| e.to_string())?;
+    let exprs = parse_program(&tokens).map_err(|e| e.to_string())?;
+    let decls = parse_smtlib_decls(&exprs);
+
+    match decls.logic.as_deref() {
+        Some("QF_UFIDL") | Some("QF_UF") | Some("QF_IDL") | None => {}
+        Some(other) => return Err(format!("NO solver does not handle logic {other}")),
+    }
+
+    if decls.assertions.is_empty() {
+        return Ok(NoResult::Sat);
+    }
+
+    let num_arith = decls.dl_vars.values().copied().max().unwrap_or(0);
+    let mut solver = NoCombinedSolver::new(num_arith);
+    let mut uf_cache = intern_no_declarations(&mut solver, &decls);
 
     let mut all_literals: Vec<TheoryLit> = Vec::new();
     let mut has_disjunctions = false;
-
-    for assertion in &assertions {
+    for assertion in &decls.assertions {
         let mut lits: Vec<TheoryLit> = Vec::new();
         match flatten_assertion(
             assertion,
             true,
             &mut solver,
             &mut uf_cache,
-            &uf_funcs,
-            &dl_vars,
+            &decls.uf_funcs,
+            &decls.dl_vars,
             &mut lits,
         ) {
             FlattenResult::Ok => all_literals.extend(lits),
-            FlattenResult::Disjunction => {
-                has_disjunctions = true;
-                break;
-            }
+            FlattenResult::Disjunction => { has_disjunctions = true; break; }
             FlattenResult::Unsupported => return Ok(NoResult::Unknown),
         }
     }
@@ -367,24 +369,14 @@ pub fn solve_qf_ufidl(text: &str) -> Result<NoResult, String> {
         return solve_with_cdclt(text);
     }
 
-    // -----------------------------------------------------------------------
-    // Pass 4: assert literals and run Nelson-Oppen
-    // -----------------------------------------------------------------------
-
     for lit in &all_literals {
         if solver.assert_lit(lit).is_err() {
             return Ok(NoResult::Unsat);
         }
     }
-
-    if solver.dl.check().is_err() {
+    if solver.dl.check().is_err() || solver.no_fixed_point().is_err() {
         return Ok(NoResult::Unsat);
     }
-
-    if solver.no_fixed_point().is_err() {
-        return Ok(NoResult::Unsat);
-    }
-
     Ok(NoResult::Sat)
 }
 
@@ -437,7 +429,6 @@ fn flatten_assertion(
                     FlattenResult::Ok
                 }
                 "or" if !polarity => {
-                    // (not (or φ1 φ2)) = (and (not φ1) (not φ2))
                     for sub in items.iter().skip(1) {
                         match flatten_assertion(
                             sub, false, solver, uf_cache, uf_funcs, dl_vars, out,
@@ -457,11 +448,8 @@ fn flatten_assertion(
                         return FlattenResult::Unsupported;
                     };
 
-                    // Arithmetic equality: (= x y) where both are DL vars.
                     if let (Some(xn), Some(yn)) = (lhs.symbol(), rhs.symbol()) {
-                        if let (Some(&xi), Some(&yi)) =
-                            (dl_vars.get(xn), dl_vars.get(yn))
-                        {
+                        if let (Some(&xi), Some(&yi)) = (dl_vars.get(xn), dl_vars.get(yn)) {
                             if polarity {
                                 let sat1 = solver.fresh_lit();
                                 out.push(TheoryLit::Leq { x: xi, y: yi, c: 0, polarity: true, sat_var: sat1 });
@@ -469,13 +457,11 @@ fn flatten_assertion(
                                 out.push(TheoryLit::Leq { x: yi, y: xi, c: 0, polarity: true, sat_var: sat2 });
                                 return FlattenResult::Ok;
                             } else {
-                                // ¬(x=y): disjunction x-y≤-1 ∨ y-x≤-1
                                 return FlattenResult::Disjunction;
                             }
                         }
                     }
 
-                    // UF equality.
                     let lhs_id = match intern_uf_term(lhs, solver, uf_cache, uf_funcs) {
                         Ok(id) => id,
                         Err(()) => return FlattenResult::Unsupported,
@@ -700,83 +686,37 @@ fn mk_conflict_dl(e: DlError) -> Vec<Literal> {
 
 /// Lazy CDCL(T) path for formulas with disjunctions.
 fn solve_with_cdclt(text: &str) -> Result<NoResult, String> {
-    use rm_syntax::{lex, parse_program, Atom, SExpr};
+    use rm_syntax::{lex, parse_program};
 
     let tokens = lex(text).map_err(|e| e.to_string())?;
     let exprs = parse_program(&tokens).map_err(|e| e.to_string())?;
+    let decls = parse_smtlib_decls(&exprs);
 
-    let mut uf_funcs: FxHashMap<String, u32> = FxHashMap::default();
-    let mut dl_vars: FxHashMap<String, u32> = FxHashMap::default();
-    let mut next_dl_id: u32 = 1;
-    let mut assertions: Vec<SExpr> = Vec::new();
-
-    for expr in &exprs {
-        let SExpr::List(items) = expr else { continue };
-        let Some(head) = items.first().and_then(|e| sexpr_symbol(e)) else {
-            continue;
-        };
-        match head {
-            "declare-const" => {
-                if let Some(SExpr::Atom(Atom::Symbol(name))) = items.get(1) {
-                    let sort = items.get(2).and_then(|e| sexpr_symbol(e)).unwrap_or("");
-                    if sort == "Int" || sort == "Real" {
-                        dl_vars.entry(name.clone()).or_insert_with(|| {
-                            let id = next_dl_id;
-                            next_dl_id += 1;
-                            id
-                        });
-                    } else {
-                        uf_funcs.insert(name.clone(), 0);
-                    }
-                }
-            }
-            "declare-fun" => {
-                if let Some(SExpr::Atom(Atom::Symbol(name))) = items.get(1) {
-                    let arity = match items.get(2) {
-                        Some(SExpr::List(args)) => args.len() as u32,
-                        _ => 0,
-                    };
-                    let result_sort =
-                        items.get(3).and_then(|e| sexpr_symbol(e)).unwrap_or("");
-                    if result_sort == "Int" || result_sort == "Real" {
-                        dl_vars.entry(name.clone()).or_insert_with(|| {
-                            let id = next_dl_id;
-                            next_dl_id += 1;
-                            id
-                        });
-                    } else {
-                        uf_funcs.insert(name.clone(), arity);
-                    }
-                }
-            }
-            "assert" => {
-                if let Some(body) = items.get(1) {
-                    assertions.push(body.clone());
-                }
-            }
-            _ => {}
-        }
-    }
-
-    let num_arith = next_dl_id - 1;
+    let num_arith = decls.dl_vars.values().copied().max().unwrap_or(0);
     let mut cdclt = CdclT::new(num_arith);
 
     let mut uf_cache: FxHashMap<String, ENodeId> = FxHashMap::default();
-    for (name, arity) in &uf_funcs {
+    for (name, arity) in &decls.uf_funcs {
         if *arity == 0 {
             let id = cdclt.intern_const(name);
             uf_cache.insert(name.clone(), id);
         }
     }
-    for (name, _) in &dl_vars {
+    for (name, _) in &decls.dl_vars {
         if !uf_cache.contains_key(name) {
             let id = cdclt.intern_const(name);
             uf_cache.insert(name.clone(), id);
         }
     }
 
-    for assertion in &assertions {
-        let lit = encode_bool_cdclt(assertion, &mut cdclt, &mut uf_cache, &uf_funcs, &dl_vars);
+    for assertion in &decls.assertions {
+        let lit = encode_bool_cdclt(
+            assertion,
+            &mut cdclt,
+            &mut uf_cache,
+            &decls.uf_funcs,
+            &decls.dl_vars,
+        );
         match lit {
             Ok(l) => cdclt.sat.add_clause(&[l]),
             Err(()) => return Ok(NoResult::Unknown),

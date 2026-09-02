@@ -219,8 +219,6 @@ impl Hierarchy {
         let to = from + 1;
         let to_scope = scope_of(to);
 
-        // Lock source then target in ascending-level order, consistent across
-        // concurrent promote calls, to avoid lock-ordering deadlocks.
         let source = self.levels[from].lock().unwrap();
         let mut target = self.levels[to].lock().unwrap();
 
@@ -250,8 +248,6 @@ impl Hierarchy {
                 continue;
             }
             let mut promoted_obj = obj;
-            // Reflect the new scope level on the promoted copy so the next
-            // promotion step sees it as eligible.
             promoted_obj.scope = to_scope;
             match target.insert(promoted_obj) {
                 Ok(InsertOutcome::Inserted {
@@ -271,8 +267,6 @@ impl Hierarchy {
                     self.promotion_deduplicated.fetch_add(1, Ordering::Relaxed);
                 }
                 Err(_) => {
-                    // Target full and incoming not valuable enough: leave it
-                    // in the source for a later attempt.
                     self.backpressure.fetch_add(1, Ordering::Relaxed);
                 }
             }
