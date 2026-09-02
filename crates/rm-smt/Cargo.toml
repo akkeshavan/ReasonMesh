@@ -11,6 +11,7 @@ rm-ir           = { workspace = true }
 rm-syntax       = { workspace = true }
 rm-theory-bv    = { workspace = true }
 rm-theory-arith = { workspace = true }
+rm-theory-euf   = { workspace = true }
 thiserror       = { workspace = true }
 serde           = { workspace = true }
 log             = { workspace = true }

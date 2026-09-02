@@ -570,6 +570,7 @@ dependencies = [
  "rm-syntax",
  "rm-theory-arith",
  "rm-theory-bv",
+ "rm-theory-euf",
  "rustc-hash",
  "serde",
  "thiserror",

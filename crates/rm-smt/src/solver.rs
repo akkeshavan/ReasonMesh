@@ -4,6 +4,7 @@
 use rm_syntax::Script;
 use rm_theory_bv::{BvModel, BvResult, BvSolver};
 use crate::dl::{solve_qf_idl, DlStatus};
+use crate::uf::{solve_qf_uf, UfStatus};
 
 /// Errors from the SMT solver facade.
 #[derive(Debug, thiserror::Error)]
@@ -102,6 +103,21 @@ impl SmtSolver {
                     }
                 }
             }
+            Some("QF_UF") => {
+                match solve_qf_uf(&self.raw).map_err(SmtError::Internal)? {
+                    uf_result if uf_result.status == UfStatus::Sat => {
+                        let values = uf_result
+                            .model
+                            .into_iter()
+                            .collect();
+                        Ok(SmtResult { status: SmtStatus::Sat, model: None, values })
+                    }
+                    uf_result if uf_result.status == UfStatus::Unsat => {
+                        Ok(SmtResult { status: SmtStatus::Unsat, model: None, values: Vec::new() })
+                    }
+                    _ => Ok(SmtResult { status: SmtStatus::Unknown, model: None, values: Vec::new() }),
+                }
+            }
             Some(other) => Err(SmtError::UnsupportedLogic(other.to_owned())),
         }
     }
@@ -170,8 +186,40 @@ mod tests {
     }
 
     #[test]
+    fn qf_uf_sat() {
+        let s = SmtSolver::parse(
+            "(set-logic QF_UF)
+             (declare-sort U 0)
+             (declare-fun a () U)
+             (declare-fun b () U)
+             (assert (= a b))
+             (check-sat)",
+        )
+        .unwrap();
+        let r = s.solve(10_000).unwrap();
+        assert_eq!(r.status, SmtStatus::Sat);
+    }
+
+    #[test]
+    fn qf_uf_unsat() {
+        let s = SmtSolver::parse(
+            "(set-logic QF_UF)
+             (declare-sort U 0)
+             (declare-fun a () U)
+             (declare-fun b () U)
+             (declare-fun f (U) U)
+             (assert (= a b))
+             (assert (not (= (f a) (f b))))
+             (check-sat)",
+        )
+        .unwrap();
+        let r = s.solve(10_000).unwrap();
+        assert_eq!(r.status, SmtStatus::Unsat);
+    }
+
+    #[test]
     fn unsupported_logic_rejected() {
-        let s = SmtSolver::parse("(set-logic QF_UF) (declare-const a Bool) (assert a)").unwrap();
+        let s = SmtSolver::parse("(set-logic QF_LIA) (declare-const a Int) (assert (> a 0))").unwrap();
         assert!(matches!(s.solve(1000), Err(SmtError::UnsupportedLogic(_))));
     }
 
