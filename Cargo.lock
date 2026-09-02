@@ -568,7 +568,9 @@ dependencies = [
  "rm-akx",
  "rm-ir",
  "rm-syntax",
+ "rm-theory-arith",
  "rm-theory-bv",
+ "rustc-hash",
  "serde",
  "thiserror",
 ]
@@ -598,7 +600,9 @@ version = "0.1.0"
 dependencies = [
  "log",
  "rm-akx",
+ "rustc-hash",
  "serde",
+ "smallvec",
  "thiserror",
 ]
 

@@ -6,10 +6,12 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-rm-akx       = { workspace = true }
-rm-ir        = { workspace = true }
-rm-syntax    = { workspace = true }
-rm-theory-bv = { workspace = true }
-thiserror    = { workspace = true }
-serde        = { workspace = true }
-log          = { workspace = true }
+rm-akx          = { workspace = true }
+rm-ir           = { workspace = true }
+rm-syntax       = { workspace = true }
+rm-theory-bv    = { workspace = true }
+rm-theory-arith = { workspace = true }
+thiserror       = { workspace = true }
+serde           = { workspace = true }
+log             = { workspace = true }
+rustc-hash      = { workspace = true }

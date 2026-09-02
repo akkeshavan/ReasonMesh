@@ -1,9 +1,9 @@
-//! Facade over the theory solvers. For QF_BV it dispatches to the bit-blaster
-//! path; the interface is shaped so additional theories (EUF, arithmetic) can
-//! be added as CDCL(T) integration lands.
+//! Facade over the theory solvers. Dispatches to the bit-blaster path for
+//! QF_BV and to the difference-logic path for QF_IDL/QF_RDL.
 
 use rm_syntax::Script;
 use rm_theory_bv::{BvModel, BvResult, BvSolver};
+use crate::dl::{solve_qf_idl, DlStatus};
 
 /// Errors from the SMT solver facade.
 #[derive(Debug, thiserror::Error)]
@@ -37,30 +37,39 @@ pub struct SmtResult {
 
 /// Facade solver for a single SMT-LIB script.
 pub struct SmtSolver {
-    script: Script,
+    raw: String,
 }
 
 impl SmtSolver {
     pub fn parse(text: &str) -> Result<SmtSolver, SmtError> {
-        Ok(SmtSolver { script: Script::parse(text)? })
+        Ok(SmtSolver { raw: text.to_owned() })
     }
 
-    /// Which theory family the script declares.
-    fn logic(&self) -> Option<&str> {
-        self.script.commands.iter().find_map(|c| match c {
-            rm_syntax::Command::SetLogic(name) => Some(name.as_str()),
-            _ => None,
-        })
+    /// Extract the set-logic name from the raw text with a simple scan.
+    fn logic(&self) -> Option<String> {
+        // Look for `(set-logic <symbol>)` anywhere in the text.
+        let tokens = rm_syntax::lex(&self.raw).ok()?;
+        let exprs = rm_syntax::parse_program(&tokens).ok()?;
+        for expr in &exprs {
+            let rm_syntax::SExpr::List(items) = expr else { continue };
+            if items.first().and_then(|e| e.symbol()) == Some("set-logic") {
+                if let Some(rm_syntax::SExpr::Atom(rm_syntax::Atom::Symbol(l))) = items.get(1) {
+                    return Some(l.clone());
+                }
+            }
+        }
+        None
     }
 
     /// Solve the script.
     pub fn solve(&self, max_conflicts: u64) -> Result<SmtResult, SmtError> {
-        match self.logic() {
+        match self.logic().as_deref() {
             Some("QF_BV") | None => {
-                if self.script.assertions().is_empty() {
+                let script = Script::parse(&self.raw)?;
+                if script.assertions().is_empty() {
                     return Err(SmtError::EmptyProblem);
                 }
-                let bv = BvSolver::new(self.script.clone());
+                let bv = BvSolver::new(script.clone());
                 let mut values: Vec<(String, String)> = Vec::new();
                 let (status, model) = match bv.solve(max_conflicts).map_err(SmtError::Internal)? {
                     BvResult::Sat { model } => {
@@ -76,7 +85,24 @@ impl SmtSolver {
                 };
                 Ok(SmtResult { status, model, values })
             }
-            Some(other) => Err(SmtError::UnsupportedLogic(other.to_string())),
+            Some("QF_IDL") | Some("QF_RDL") => {
+                match solve_qf_idl(&self.raw).map_err(SmtError::Internal)? {
+                    (DlStatus::Sat, int_model) => {
+                        let values = int_model
+                            .into_iter()
+                            .map(|(n, v)| (n, v.to_string()))
+                            .collect();
+                        Ok(SmtResult { status: SmtStatus::Sat, model: None, values })
+                    }
+                    (DlStatus::Unsat, _) => {
+                        Ok(SmtResult { status: SmtStatus::Unsat, model: None, values: Vec::new() })
+                    }
+                    (DlStatus::Unknown, _) => {
+                        Ok(SmtResult { status: SmtStatus::Unknown, model: None, values: Vec::new() })
+                    }
+                }
+            }
+            Some(other) => Err(SmtError::UnsupportedLogic(other.to_owned())),
         }
     }
 }
@@ -106,6 +132,36 @@ mod tests {
              (declare-const x (_ BitVec 4))
              (assert (= x #b0000))
              (assert (= x #b1111))
+             (check-sat)",
+        )
+        .unwrap();
+        let r = s.solve(10_000).unwrap();
+        assert_eq!(r.status, SmtStatus::Unsat);
+    }
+
+    #[test]
+    fn qf_idl_sat() {
+        let s = SmtSolver::parse(
+            "(set-logic QF_IDL)
+             (declare-const x Int)
+             (declare-const y Int)
+             (assert (<= (- x y) 5))
+             (assert (<= (- y x) 3))
+             (check-sat)",
+        )
+        .unwrap();
+        let r = s.solve(10_000).unwrap();
+        assert_eq!(r.status, SmtStatus::Sat);
+    }
+
+    #[test]
+    fn qf_idl_unsat() {
+        let s = SmtSolver::parse(
+            "(set-logic QF_IDL)
+             (declare-const x Int)
+             (declare-const y Int)
+             (assert (<= (- x y) 1))
+             (assert (<= (- y x) -3))
              (check-sat)",
         )
         .unwrap();

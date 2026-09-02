@@ -6,7 +6,9 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-rm-akx    = { workspace = true }
-thiserror = { workspace = true }
-serde     = { workspace = true }
-log       = { workspace = true }
+rm-akx     = { workspace = true }
+thiserror  = { workspace = true }
+serde      = { workspace = true }
+log        = { workspace = true }
+smallvec   = { workspace = true }
+rustc-hash = { workspace = true }
