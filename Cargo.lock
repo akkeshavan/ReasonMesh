@@ -567,12 +567,14 @@ dependencies = [
  "log",
  "rm-akx",
  "rm-ir",
+ "rm-sat",
  "rm-syntax",
  "rm-theory-arith",
  "rm-theory-bv",
  "rm-theory-euf",
  "rustc-hash",
  "serde",
+ "smallvec",
  "thiserror",
 ]
 

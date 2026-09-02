@@ -3,6 +3,7 @@
 
 use rm_syntax::Script;
 use rm_theory_bv::{BvModel, BvResult, BvSolver};
+use crate::cdclt::{solve_qf_ufidl, NoResult};
 use crate::dl::{solve_qf_idl, DlStatus};
 use crate::uf::{solve_qf_uf, UfStatus};
 
@@ -116,6 +117,13 @@ impl SmtSolver {
                         Ok(SmtResult { status: SmtStatus::Unsat, model: None, values: Vec::new() })
                     }
                     _ => Ok(SmtResult { status: SmtStatus::Unknown, model: None, values: Vec::new() }),
+                }
+            }
+            Some("QF_UFIDL") => {
+                match solve_qf_ufidl(&self.raw).map_err(SmtError::Internal)? {
+                    NoResult::Sat => Ok(SmtResult { status: SmtStatus::Sat, model: None, values: Vec::new() }),
+                    NoResult::Unsat => Ok(SmtResult { status: SmtStatus::Unsat, model: None, values: Vec::new() }),
+                    NoResult::Unknown => Ok(SmtResult { status: SmtStatus::Unknown, model: None, values: Vec::new() }),
                 }
             }
             Some(other) => Err(SmtError::UnsupportedLogic(other.to_owned())),

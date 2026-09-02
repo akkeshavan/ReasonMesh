@@ -318,6 +318,40 @@ impl DiffLogicSolver {
         Some(self.dist[x as usize])
     }
 
+    /// Compute the shortest path from `source` to `target` in the constraint
+    /// graph (i.e., the tightest derivable upper bound on `target - source`).
+    ///
+    /// Returns `None` if no path exists (no constraint links them).
+    /// O(V·E) — intended for small shared-variable sets (Nelson-Oppen).
+    pub fn bound_between(&self, source: VarId, target: VarId) -> Option<i64> {
+        if source > self.num_vars || target > self.num_vars {
+            return None;
+        }
+        let n = self.num_vars as usize + 1;
+        let mut dist = vec![i64::MAX / 2; n];
+        dist[source as usize] = 0;
+
+        for _ in 0..n {
+            let mut changed = false;
+            for edge in &self.edges {
+                let d = dist[edge.from as usize];
+                if d < i64::MAX / 2 {
+                    let nd = d.saturating_add(edge.weight);
+                    if nd < dist[edge.to as usize] {
+                        dist[edge.to as usize] = nd;
+                        changed = true;
+                    }
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+
+        let d = dist[target as usize];
+        if d < i64::MAX / 2 { Some(d) } else { None }
+    }
+
     /// Number of asserted edges.
     pub fn num_edges(&self) -> usize { self.edges.len() }
 
