@@ -2,6 +2,7 @@ use clap::{Parser, Subcommand};
 use rm_akx::literal::Literal;
 use rm_bench::{run_manifest, Manifest};
 use rm_proof::model::check_dimacs_model;
+use rm_proof::proof_file::ProofFile as RmProofFile;
 use rm_proof::{ProofError, ProofFile, ProofStatus};
 use rm_sat::{parse_dimacs, CdclSolver, SolveResult};
 use rm_smt::{SmtError, SmtSolver, SmtStatus};
@@ -48,6 +49,10 @@ enum Command {
         /// Write a replay trace (`.rmtrace`) of this run to the given path.
         #[arg(long)]
         trace: Option<PathBuf>,
+        /// Write a proof certificate (`.rmproof`) to this path.
+        /// SAT instances write a model proof; UNSAT instances write a DRUP proof.
+        #[arg(long)]
+        proof_out: Option<PathBuf>,
     },
     /// Replay a captured trace for debugging.
     Replay { trace: PathBuf },
@@ -76,7 +81,11 @@ fn replay_trace(path: &std::path::Path) -> Result<(), TraceError> {
 
 /// Solve a DIMACS instance, returning the exit code and the events recorded
 /// during the run (for the optional trace output).
-fn run_solve(file: &std::path::Path, max_conflicts: Option<u64>) -> (i32, Vec<Event>) {
+fn run_solve(
+    file: &std::path::Path,
+    max_conflicts: Option<u64>,
+    proof_out: Option<&std::path::Path>,
+) -> (i32, Vec<Event>) {
     let mut events: Vec<Event> = Vec::new();
 
     let input = match std::fs::read_to_string(file) {
@@ -101,6 +110,9 @@ fn run_solve(file: &std::path::Path, max_conflicts: Option<u64>) -> (i32, Vec<Ev
     };
 
     let mut solver = CdclSolver::new(cnf.num_vars);
+    if proof_out.is_some() {
+        solver.enable_proof_logging();
+    }
     for clause in &cnf.clauses {
         let lits: Vec<Literal> = clause
             .iter()
@@ -116,7 +128,10 @@ fn run_solve(file: &std::path::Path, max_conflicts: Option<u64>) -> (i32, Vec<Ev
     }
 
     let budget = max_conflicts.unwrap_or(u64::MAX);
-    let outcome = match solver.solve(&[], budget) {
+    let result = solver.solve(&[], budget);
+    let proof_log = solver.take_proof_log();
+
+    let outcome = match result {
         SolveResult::Sat(m) => {
             // Independent validation: the model must satisfy the original
             // clauses, checked by code sharing nothing with the solver
@@ -130,6 +145,12 @@ fn run_solve(file: &std::path::Path, max_conflicts: Option<u64>) -> (i32, Vec<Ev
                     println!("s SATISFIABLE");
                     for v in 1..=cnf.num_vars {
                         println!("v {} {}", if raw[v as usize] { "" } else { "-" }, v);
+                    }
+                    // Write SAT proof if requested.
+                    if let Some(path) = proof_out {
+                        emit_proof_file(path, |w| {
+                            RmProofFile::write_sat(cnf.num_vars, &cnf.clauses, &raw, w)
+                        });
                     }
                     Outcome::Sat
                 }
@@ -148,6 +169,12 @@ fn run_solve(file: &std::path::Path, max_conflicts: Option<u64>) -> (i32, Vec<Ev
         }
         SolveResult::Unsat => {
             println!("s UNSATISFIABLE");
+            // Write UNSAT proof if requested.
+            if let (Some(path), Some(drup)) = (proof_out, proof_log) {
+                emit_proof_file(path, |w| {
+                    RmProofFile::write_unsat(cnf.num_vars, &cnf.clauses, &drup, w)
+                });
+            }
             Outcome::Unsat
         }
         SolveResult::Unknown => {
@@ -284,6 +311,20 @@ fn write_trace(
     Ok(())
 }
 
+/// Write a proof file, reporting errors to stderr (non-fatal — the solve
+/// result is still printed correctly even if proof writing fails).
+fn emit_proof_file(path: &std::path::Path, write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>) {
+    match std::fs::File::create(path) {
+        Ok(f) => {
+            let mut w = std::io::BufWriter::new(f);
+            if let Err(e) = write(&mut w) {
+                eprintln!("warning: could not write proof to {}: {e}", path.display());
+            }
+        }
+        Err(e) => eprintln!("warning: could not create proof file {}: {e}", path.display()),
+    }
+}
+
 /// Verify a `.rmproof` file. Returns exit code: 0 = valid, 1 = invalid, 3 = error.
 fn run_check_proof(path: &std::path::Path) -> i32 {
     let file = match std::fs::File::open(path) {
@@ -308,22 +349,23 @@ fn run_check_proof(path: &std::path::Path) -> i32 {
                     EXIT_SAT
                 }
                 ProofStatus::Unsat => {
-                    println!("VALID (UNSAT proof accepted)");
+                    let steps = proof.drup.len();
+                    println!("VALID UNSAT proof ({} vars, {} clauses, {steps} DRUP steps)", proof.num_vars, proof.clauses.len());
                     EXIT_UNSAT
                 }
             }
         }
         Err(ProofError::UnsatNotSupported) => {
-            eprintln!("check-proof: UNSAT certificate checking not yet implemented (milestone M6)");
+            eprintln!("check-proof: UNSAT status declared but no DRUP steps found in file");
             EXIT_UNKNOWN
         }
         Err(ProofError::BadModel) => {
-            eprintln!("check-proof: INVALID — model falsifies a clause");
+            eprintln!("check-proof: INVALID SAT proof — model falsifies a clause");
             1
         }
         Err(e) => {
-            eprintln!("check-proof: error: {e}");
-            EXIT_INTERNAL_ERROR
+            eprintln!("check-proof: INVALID: {e}");
+            1
         }
     }
 }
@@ -341,6 +383,7 @@ fn main() {
             no_gpu,
             max_conflicts,
             trace,
+            proof_out,
         } => {
             let workers = if deterministic { 1 } else { workers };
             log::info!(
@@ -352,7 +395,7 @@ fn main() {
             let _ = no_gpu; // no GPU backend yet (M5)
 
             let command_line = std::env::args().collect::<Vec<_>>().join(" ");
-            let (code, events) = run_solve(&file, max_conflicts);
+            let (code, events) = run_solve(&file, max_conflicts, proof_out.as_deref());
             if let Some(trace_path) = trace {
                 match write_trace(&trace_path, seed, command_line, events) {
                     Ok(()) => log::info!("trace written to {}", trace_path.display()),

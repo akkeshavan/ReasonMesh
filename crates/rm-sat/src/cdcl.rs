@@ -85,6 +85,12 @@ pub struct CdclSolver {
     /// Reasoner for AKX export; cleared by the solver's LBD-based reduction
     /// only via removal from the clause DB, never from this queue.
     learned_outbox: Vec<(Vec<Literal>, u32)>,
+
+    /// DRUP proof log: each entry is one learned clause in DIMACS literal
+    /// encoding (positive = var true, negative = var false). Populated only
+    /// when proof logging is enabled via `enable_proof_logging()`.
+    /// The final entry is always the empty clause `[]` on UNSAT.
+    proof_log: Option<Vec<Vec<i32>>>,
 }
 
 impl CdclSolver {
@@ -110,12 +116,56 @@ impl CdclSolver {
             base_level: 0,
             assumption_floor: 0,
             learned_outbox: Vec::new(),
+            proof_log: None,
         }
     }
 
     /// Number of variables in the formula (index 0 is unused).
     pub fn num_vars(&self) -> u32 {
         self.num_vars
+    }
+
+    // -----------------------------------------------------------------------
+    // Proof logging (DRUP)
+    // -----------------------------------------------------------------------
+
+    /// Enable DRUP proof logging. Must be called before `solve()`.
+    /// Each learned clause — and the final empty clause on UNSAT — will be
+    /// appended to the internal log.
+    pub fn enable_proof_logging(&mut self) {
+        self.proof_log = Some(Vec::new());
+    }
+
+    /// Consume and return the proof log (DRUP format): each inner `Vec<i32>`
+    /// is one clause in DIMACS literal encoding. The last entry is `[]` (the
+    /// empty clause) if the result was UNSAT. Returns `None` if logging was
+    /// not enabled.
+    pub fn take_proof_log(&mut self) -> Option<Vec<Vec<i32>>> {
+        self.proof_log.take()
+    }
+
+    /// Convert a slice of `Literal`s to DIMACS integer representation.
+    fn lits_to_dimacs(lits: &[Literal]) -> Vec<i32> {
+        lits.iter()
+            .map(|l| {
+                let v = l.var() as i32;
+                if l.is_positive() { v } else { -v }
+            })
+            .collect()
+    }
+
+    /// Append a clause to the proof log (if logging is enabled).
+    fn log_proof_clause(&mut self, lits: &[Literal]) {
+        if let Some(log) = &mut self.proof_log {
+            log.push(Self::lits_to_dimacs(lits));
+        }
+    }
+
+    /// Append the empty clause to the proof log (signals UNSAT).
+    fn log_proof_empty(&mut self) {
+        if let Some(log) = &mut self.proof_log {
+            log.push(Vec::new());
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -194,6 +244,7 @@ impl CdclSolver {
         deadline: Option<Instant>,
     ) -> SolveResult {
         if self.db.has_empty_clause() {
+            self.log_proof_empty();
             return SolveResult::Unsat;
         }
 
@@ -250,6 +301,7 @@ impl CdclSolver {
                 if self.assignment.current_level() == self.base_level {
                     // Conflict at the assumption boundary: the problem under
                     // the current assumptions (or the whole problem) is UNSAT.
+                    self.log_proof_empty();
                     break SolveResult::Unsat;
                 }
                 self.conflicts += 1;
@@ -274,8 +326,12 @@ impl CdclSolver {
                 // clause is satisfied at that level and needs no assertion.
                 match self.assignment.literal_value(learnt[0]) {
                     Value::True => {}
-                    Value::False => break SolveResult::Unsat,
+                    Value::False => {
+                        self.log_proof_empty();
+                        break SolveResult::Unsat;
+                    }
                     Value::Undef => {
+                        self.log_proof_clause(&learnt);
                         if learnt.len() == 1 {
                             // Unit learnings are asserted directly (never added
                             // to the clause DB), but they are the most potent

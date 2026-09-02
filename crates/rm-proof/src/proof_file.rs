@@ -9,6 +9,7 @@
 //! [clause lines: space-separated literals, terminated by 0]
 //! s SAT | UNSAT
 //! v <lit1> <lit2> ... 0   ; one or more model lines for SAT results
+//! d <lit1> <lit2> ... 0   ; DRUP proof lines for UNSAT results
 //! ```
 //!
 //! The clauses section may be omitted if the proof is self-contained via a
@@ -17,6 +18,9 @@
 //! Model lines (`v ...`) follow the DIMACS SAT competition convention: positive
 //! literal = variable is true, negative literal = variable is false, `0` ends
 //! the model. Multiple `v` lines are concatenated.
+//!
+//! DRUP proof lines (`d ...`) are clause addition steps in DRUP format.
+//! The last `d` line must be the empty clause `d 0` (the contradiction).
 
 use std::io::{BufRead, BufReader, Read};
 use thiserror::Error;
@@ -40,6 +44,8 @@ pub enum ProofError {
     CheckFailed(#[from] crate::model::ModelCheckError),
     #[error("model is UNSATISFYING (clause falsified)")]
     BadModel,
+    #[error("DRUP proof verification failed: {0}")]
+    Drup(#[from] crate::drup::DrupError),
 }
 
 /// A parsed proof file, ready for validation.
@@ -50,6 +56,8 @@ pub struct ProofFile {
     pub status: Status,
     /// Model truth values (1-indexed; index 0 unused) for SAT proofs.
     pub model: Vec<bool>,
+    /// DRUP proof steps for UNSAT proofs (`d` lines). Empty for SAT.
+    pub drup: Vec<Vec<i32>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,6 +75,7 @@ impl ProofFile {
         let mut clauses: Vec<Vec<i32>> = Vec::new();
         let mut status: Option<Status> = None;
         let mut model_lits: Vec<i32> = Vec::new();
+        let mut drup: Vec<Vec<i32>> = Vec::new();
 
         for (idx, raw) in reader.lines().enumerate() {
             let lineno = idx + 1;
@@ -105,6 +114,23 @@ impl ProofFile {
                 continue;
             }
 
+            // DRUP proof line: "d <lit>* 0"
+            if let Some(rest) = trimmed.strip_prefix("d ") {
+                let lits: Vec<i32> = rest
+                    .split_whitespace()
+                    .take_while(|t| *t != "0")
+                    .map(|t| t.parse::<i32>())
+                    .collect::<Result<_, _>>()
+                    .map_err(|_| ProofError::Malformed { line: lineno, msg: format!("bad drup literal in: {trimmed}") })?;
+                drup.push(lits);
+                continue;
+            }
+            // Plain "0" line = empty DRUP step (empty clause in proof)
+            if trimmed == "0" && status == Some(Status::Unsat) {
+                drup.push(vec![]);
+                continue;
+            }
+
             // Clause line: space-separated literals terminated by 0
             if num_vars.is_some() {
                 let lits: Result<Vec<i32>, _> = trimmed
@@ -135,13 +161,20 @@ impl ProofFile {
             }
         }
 
-        Ok(ProofFile { num_vars, clauses, status, model })
+        Ok(ProofFile { num_vars, clauses, status, model, drup })
     }
 
     /// Verify the proof. Returns `Ok(())` if the proof is valid.
     pub fn verify(&self) -> Result<(), ProofError> {
         match self.status {
-            Status::Unsat => Err(ProofError::UnsatNotSupported),
+            Status::Unsat => {
+                if self.drup.is_empty() {
+                    return Err(ProofError::UnsatNotSupported);
+                }
+                crate::drup::verify_drup(self.num_vars, &self.clauses, &self.drup)
+                    .map(|_| ())
+                    .map_err(ProofError::Drup)
+            }
             Status::Sat => {
                 let ok = crate::model::check_dimacs_model(self.num_vars, &self.clauses, &self.model)?;
                 if ok {
@@ -151,6 +184,57 @@ impl ProofFile {
                 }
             }
         }
+    }
+
+    /// Serialize an UNSAT proof (original clauses + DRUP steps) to the
+    /// `.rmproof` text format. Suitable for writing to a file.
+    pub fn write_unsat(
+        num_vars: u32,
+        clauses: &[Vec<i32>],
+        drup: &[Vec<i32>],
+        mut out: impl std::io::Write,
+    ) -> std::io::Result<()> {
+        writeln!(out, "c reasonmesh proof v0.2")?;
+        writeln!(out, "p cnf {} {}", num_vars, clauses.len())?;
+        for clause in clauses {
+            let s: Vec<String> = clause.iter().map(|l| l.to_string()).collect();
+            writeln!(out, "{} 0", s.join(" "))?;
+        }
+        writeln!(out, "s UNSAT")?;
+        for step in drup {
+            if step.is_empty() {
+                writeln!(out, "0")?;
+            } else {
+                let s: Vec<String> = step.iter().map(|l| l.to_string()).collect();
+                writeln!(out, "d {} 0", s.join(" "))?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Serialize a SAT proof (original clauses + model) to the `.rmproof`
+    /// text format.
+    pub fn write_sat(
+        num_vars: u32,
+        clauses: &[Vec<i32>],
+        model: &[bool],
+        mut out: impl std::io::Write,
+    ) -> std::io::Result<()> {
+        writeln!(out, "c reasonmesh proof v0.2")?;
+        writeln!(out, "p cnf {} {}", num_vars, clauses.len())?;
+        for clause in clauses {
+            let s: Vec<String> = clause.iter().map(|l| l.to_string()).collect();
+            writeln!(out, "{} 0", s.join(" "))?;
+        }
+        writeln!(out, "s SAT")?;
+        let lits: Vec<String> = (1..=num_vars as usize)
+            .map(|v| {
+                let val = model.get(v).copied().unwrap_or(false);
+                if val { v.to_string() } else { format!("-{v}") }
+            })
+            .collect();
+        writeln!(out, "v {} 0", lits.join(" "))?;
+        Ok(())
     }
 }
 
