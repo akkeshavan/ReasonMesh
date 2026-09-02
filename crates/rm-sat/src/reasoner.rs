@@ -152,6 +152,23 @@ impl CdclReasoner {
         }
     }
 
+    /// Drain and export in one pass, avoiding KnowledgeObject allocation when the
+    /// policy will reject everything (e.g. isolated portfolio with `max_items == 0`).
+    ///
+    /// Use this instead of the `export(&self, policy)` trait method when `&mut self`
+    /// is available (i.e. from `drain_export_import`). It is strictly more efficient
+    /// because it skips the allocation+drop cycle for clauses that will never be sent.
+    pub fn drain_and_export(&mut self, policy: &ExportPolicy) -> KnowledgeBatch {
+        if policy.max_items == 0 {
+            // Isolated portfolio: discard the solver's outbox without building objects.
+            self.solver.drain_learned();
+            return KnowledgeBatch::new();
+        }
+        // Sharing portfolio: convert to KnowledgeObjects, then apply the policy filter.
+        self.drain_learned_to_pending();
+        self.export(policy).unwrap_or_default()
+    }
+
     fn to_partial_model(&self, m: &crate::model::Model) -> PartialModel {
         let mut assignments = vec![Some(false); m.num_vars() as usize + 1];
         for v in 1..=m.num_vars() {
@@ -236,7 +253,9 @@ impl Reasoner for CdclReasoner {
             budget.max_conflicts,
             deadline,
         );
-        self.drain_learned_to_pending();
+        // Drain is now lazy: the worker calls drain_and_export() between steps
+        // rather than eagerly building KnowledgeObjects on every chunk boundary.
+        // This avoids thousands of unnecessary allocations for isolated workers.
 
         if self.work.is_cancelled() {
             return Ok(ReasonerEvent::Cancelled);
@@ -426,7 +445,9 @@ mod tests {
             })
             .unwrap();
 
-        let batch = r.export(&ExportPolicy::default()).unwrap();
+        // drain_and_export() performs the lazy drain from the solver's outbox
+        // and then applies the policy filter in one pass.
+        let batch = r.drain_and_export(&ExportPolicy::default());
         assert!(!batch.is_empty());
         // Everything exported carries ctx assumptions (or fewer).
         for obj in &batch {
@@ -434,14 +455,13 @@ mod tests {
             assert!(obj.assumptions.iter().all(|l| r.ctx.contains(l)));
         }
 
-        // Re-export with the watermark past everything: nothing returned.
+        // Re-export with the watermark past everything: the outbox is empty
+        // (already drained above) and pending is now empty too.
         let max_id = batch.iter().map(|o| o.id).max().unwrap();
-        let empty = r
-            .export(&ExportPolicy {
-                watermark: max_id,
-                ..ExportPolicy::default()
-            })
-            .unwrap();
+        let empty = r.drain_and_export(&ExportPolicy {
+            watermark: max_id,
+            ..ExportPolicy::default()
+        });
         assert!(empty.is_empty());
     }
 

@@ -317,8 +317,13 @@ fn run_worker(
                 };
             }
             Ok(ReasonerEvent::UnsatLocal { .. }) => {
-                // Complete solver: cube is closed. Let peers keep searching the
-                // rest of the space; signal so the caller can drop this cube.
+                // Complete solver: cube is closed.
+                // In a flat portfolio (root cube, no assumptions), this closes the
+                // whole formula — signal shutdown so sibling workers abort instead
+                // of running to their own independent conclusion.
+                if assumptions.is_empty() {
+                    shutdown.store(true, Ordering::SeqCst);
+                }
                 return WorkerOutcome::Unsat {
                     worker,
                     stats: fold_stats(reasoner.solver(), &shared),
@@ -368,14 +373,13 @@ fn drain_export_import(
     cfg: &WorkerConfig,
     acc: &mut WorkerStats,
 ) {
-    if let Ok(batch) = reasoner.export(&cfg.export_policy) {
-        acc.exported += batch.len() as u64;
-        if !batch.is_empty() {
-            match bus.publish(Scope::Process, batch) {
-                Ok(handle) => acc.published += handle.enqueued as u64,
-                Err(BusError::BufferFull) => {}
-                Err(e) => log::warn!("bus publish failed: {e}"),
-            }
+    let batch = reasoner.drain_and_export(&cfg.export_policy);
+    acc.exported += batch.len() as u64;
+    if !batch.is_empty() {
+        match bus.publish(Scope::Process, batch) {
+            Ok(handle) => acc.published += handle.enqueued as u64,
+            Err(BusError::BufferFull) => {}
+            Err(e) => log::warn!("bus publish failed: {e}"),
         }
     }
     match bus.poll(PollBudget::default()) {

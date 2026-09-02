@@ -248,7 +248,24 @@ impl CdclSolver {
             return SolveResult::Unsat;
         }
 
-        self.base_level = self.assignment.current_level();
+        // Determine the restart floor for this call.
+        //
+        // When assumptions are empty this call may be a *resumption* of an
+        // interrupted search (e.g. chunked worker steps). In that case the
+        // current decision level is > 0, but restarts must still go all the
+        // way back to level 0 — otherwise each chunk traps restarts at the
+        // depth they entered, VSIDS diversification stops working, and search
+        // performance degrades badly. Unconditionally keeping base_level = 0
+        // for assumption-free calls preserves this invariant.
+        //
+        // When assumptions are non-empty the floor must be at least the level
+        // at which the first assumption will be pushed, which is current_level
+        // + 1; we track that below via assumption_floor.
+        self.base_level = if assumptions.is_empty() {
+            0
+        } else {
+            self.assignment.current_level()
+        };
 
         // Settle all level-0 propagation *before* pushing assumptions.
         //
@@ -262,6 +279,10 @@ impl CdclSolver {
         // to a fixed point at level 0 first makes every assumption-level wake
         // trigger on a literal assigned at the current level, restoring the
         // invariant.
+        //
+        // For resumed assumption-free searches the BCP queue is already empty
+        // (the prior step() call left no pending propagations), so this is a
+        // fast no-op. For the initial call it performs the needed settlement.
         if self.base_level == 0 && self.propagate().is_some() {
             self.assignment.backtrack_to(0);
             return SolveResult::Unsat;
@@ -305,9 +326,6 @@ impl CdclSolver {
                     break SolveResult::Unsat;
                 }
                 self.conflicts += 1;
-                if self.conflicts - conflicts_at_entry > max_conflicts {
-                    break SolveResult::Unknown;
-                }
 
                 let (learnt, mut backjump_level) = self.analyze(conflict_cr);
                 // Never backjump below the assumption levels.

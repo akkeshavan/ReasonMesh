@@ -1,0 +1,42 @@
+# G2 gate (§18): strong-scaling baseline — single worker, selective sharing.
+# This is the PAR-2 reference point for the scaling curves (RQ2).
+schema_version = 1
+name = "g2-scaling-1w"
+description = "G2 scaling: 1 worker deterministic baseline on mixed hard set (60s timeout)"
+
+[solver]
+workers = 1
+seed = 1
+deterministic = true
+clause_sharing = true
+export_min_utility = 0.25
+import_min_utility = 0.143
+max_conflicts_per_problem = 10000000
+timeout_secs = 60
+
+[output]
+dir = "results/g2/1w"
+trace = false
+
+[[problems]]
+name = "php-9-8"
+file = "../benchmarks/g1/php-9-8.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "php-10-9"
+file = "../benchmarks/g1/php-10-9.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "php-11-10"
+file = "../benchmarks/g1/php-11-10.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "r3sat-238-2"
+file = "../benchmarks/g2/r3sat-238-2.cnf"
+
+[[problems]]
+name = "r3sat-240-r425"
+file = "../benchmarks/g2/r3sat-240-r425.cnf"
