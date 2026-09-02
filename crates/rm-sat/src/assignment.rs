@@ -132,7 +132,6 @@ impl Assignment {
         let target = if (level as usize) < self.trail_lim.len() {
             self.trail_lim[level as usize]
         } else {
-            // level >= current_level: nothing to undo
             return;
         };
         for lit in self.trail.drain(target..) {

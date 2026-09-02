@@ -160,8 +160,6 @@ impl PartitionTree {
             node.status = NodeStatus::Open;
             Ok(())
         } else {
-            // Only leaves can be reopened; interior nodes have children that
-            // remain the authoritative work units.
             Err(SchedulerError::NotLeaf(id))
         }
     }
@@ -224,7 +222,6 @@ impl PartitionTree {
             p.cube.clone()
         };
 
-        // Verify the certificate against the parent region before recording.
         certificate.verify(&parent_cube, &literals)?;
 
         let mut child_ids = Vec::with_capacity(literals.len());
@@ -241,8 +238,7 @@ impl PartitionTree {
         if let Some(p) = self.nodes.get_mut(&parent) {
             p.children = child_ids.clone();
             p.coverage = Some(certificate);
-            // Once split, the parent is no longer a dispatchable unit.
-            p.status = NodeStatus::Assigned; // interior sentinel
+            p.status = NodeStatus::Assigned;
         }
         Ok(child_ids)
     }

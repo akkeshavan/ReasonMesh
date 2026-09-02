@@ -123,9 +123,11 @@ impl Scheduler {
     /// Cancel all outstanding work: trip the global token and the per-unit
     /// tokens, then release every lease. Used on validated SAT or orchestrator
     /// shutdown.
+    ///
+    /// Uses `Ordering::Release` so the store pairs with the `Acquire`/`SeqCst`
+    /// loads in worker loops and the cancellation is visible before any
+    /// subsequent memory operations.
     pub fn cancel_all(&mut self) {
-        // Release pairs with the Acquire/SeqCst loads in worker loops so the
-        // cancellation is visible before any subsequent memory operations.
         self.shutdown.store(true, Ordering::Release);
         for lease in self.leases.drain_all() {
             lease.work_unit.shutdown.store(true, Ordering::Release);

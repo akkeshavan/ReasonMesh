@@ -60,9 +60,6 @@ impl Builder {
                 self.dag.intern_apply(dag_op, children)
             }
             TermInner::FunCall(name, args) => {
-                // A user function with arguments is lowered as a bit-vector
-                // variable of the declared result width (the argument binding
-                // is out of QF_BV's practical scope here).
                 let children: Vec<NodeId> = args.iter().map(|a| self.lower(a)).collect();
                 let width = term.sort.as_bitvec();
                 let id = *self.var_ids.entry(name.clone()).or_insert_with(|| {

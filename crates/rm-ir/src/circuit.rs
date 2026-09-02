@@ -140,7 +140,6 @@ impl Circuit {
     }
 
     pub fn mux(&mut self, sel: GateId, a: GateId, b: GateId) -> GateId {
-        // (sel ? a : b) == (sel & a) | (!sel & b)
         let sel_a = self.and(sel, a);
         let nsel = self.not(sel);
         let nsel_b = self.and(nsel, b);

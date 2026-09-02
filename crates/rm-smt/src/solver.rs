@@ -47,9 +47,8 @@ impl SmtSolver {
         Ok(SmtSolver { raw: text.to_owned() })
     }
 
-    /// Extract the set-logic name from the raw text with a simple scan.
+    /// Extract the set-logic name from the raw text by scanning for `(set-logic <symbol>)`.
     fn logic(&self) -> Option<String> {
-        // Look for `(set-logic <symbol>)` anywhere in the text.
         let tokens = rm_syntax::lex(&self.raw).ok()?;
         let exprs = rm_syntax::parse_program(&tokens).ok()?;
         for expr in &exprs {

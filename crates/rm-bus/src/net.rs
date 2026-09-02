@@ -119,7 +119,6 @@ impl FrameReader {
         r: &mut dyn Read,
         max_frame: usize,
     ) -> std::io::Result<Option<(u32, Vec<u8>)>> {
-        // Accumulate the 8-byte header.
         while self.buf.len() < 8 {
             let want = 8 - self.buf.len();
             let mut chunk = [0u8; 8];
@@ -139,7 +138,6 @@ impl FrameReader {
         }
         self.buf.drain(..8);
 
-        // Accumulate the payload.
         while self.buf.len() < len {
             let mut chunk = [0u8; 8192];
             let want = (len - self.buf.len()).min(chunk.len());

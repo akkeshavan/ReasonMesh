@@ -68,7 +68,6 @@ pub fn parse_dimacs(input: &str) -> Result<DimacsCnf, DimacsError> {
             continue;
         }
 
-        // A clause line: sequence of nonzero literals terminated by 0.
         let mut clause = Vec::new();
         for tok in line.split_whitespace() {
             let lit: i32 = tok.parse().map_err(|_| DimacsError::MalformedHeader)?;

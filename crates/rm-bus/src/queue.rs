@@ -84,17 +84,13 @@ impl Queue {
         let ck = conclusion_key(&obj);
         let key = canonical_key(&obj);
 
-        // Hard dedup: identical conclusion + assumptions already buffered.
         if self.keys.contains(&key) {
             return Ok(InsertOutcome::Duplicate);
         }
 
         if obj.is_unconditional() {
-            // §12.4: an unconditional version supersedes buffered conditionals
-            // of the same conclusion.
             let superseded = self.remove_conditionals(ck);
             if self.unconditional.contains(&ck) {
-                // We already hold the stronger version.
                 return Ok(InsertOutcome::Redundant);
             }
             let evicted = self.make_room(obj.utility)?;
@@ -107,7 +103,6 @@ impl Queue {
             })
         } else {
             if self.unconditional.contains(&ck) {
-                // A conditional is redundant while the unconditional exists.
                 return Ok(InsertOutcome::Redundant);
             }
             let evicted = self.make_room(obj.utility)?;

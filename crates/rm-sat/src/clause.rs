@@ -124,8 +124,6 @@ impl ClauseDb {
         watches.clear();
         for (idx, slot) in self.clauses.iter().enumerate() {
             if let Some(c) = slot {
-                // Mirrors the add_clause convention: watches[(¬w).raw()] is
-                // consulted when w is propagated false.
                 watches.watch(c.lits[0].negate(), ClauseRef(idx as u32));
                 watches.watch(c.lits[1].negate(), ClauseRef(idx as u32));
             }
