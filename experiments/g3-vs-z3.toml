@@ -1,0 +1,53 @@
+# G3 gate: ReasonMesh parallel (AKX clause sharing) vs Z3 single-threaded baseline.
+#
+# Comparison: Z3 4.16 (single-threaded DIMACS) vs ReasonMesh 2-worker selective
+# sharing. Z3 does not support effective parallel SAT on DIMACS input; this
+# is the standard "our parallel solver vs the incumbent single-threaded tool" claim.
+#
+# Run on server hardware (Hetzner CCX33+) for the paper — laptop numbers are
+# indicative only. See experiments/data/g3/ for collected results.
+schema_version = 1
+name = "g3-vs-z3"
+description = "G3: ReasonMesh 2w-selective vs Z3 single-threaded on mixed hard set"
+
+[solver]
+workers = 2
+seed = 1
+deterministic = false
+clause_sharing = true
+export_min_utility = 0.25
+import_min_utility = 0.143
+max_conflicts_per_problem = 10000000
+timeout_secs = 60
+
+[output]
+dir = "results/g3"
+trace = false
+
+[[baselines]]
+name = "z3-1t"
+binary = "z3"
+args = ["-dimacs"]
+
+[[problems]]
+name = "php-9-8"
+file = "../benchmarks/g1/php-9-8.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "php-10-9"
+file = "../benchmarks/g1/php-10-9.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "php-11-10"
+file = "../benchmarks/g1/php-11-10.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "r3sat-238-2"
+file = "../benchmarks/g2/r3sat-238-2.cnf"
+
+[[problems]]
+name = "r3sat-240-r425"
+file = "../benchmarks/g2/r3sat-240-r425.cnf"

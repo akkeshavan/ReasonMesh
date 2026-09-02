@@ -1,0 +1,209 @@
+{
+  "schema_version": 1,
+  "manifest": "g3-vs-z3",
+  "solver_version": "0.1.0",
+  "git_revision": "unknown",
+  "run_wall": {
+    "secs": 93,
+    "nanos": 345044917
+  },
+  "problems": [
+    {
+      "name": "php-9-8",
+      "outcome": "Unsat",
+      "expected": "unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 537097583
+      },
+      "timed_out": false,
+      "conflicts": 82146,
+      "decisions": 84950,
+      "propagations": 989270,
+      "restarts": 254,
+      "knowledge": {
+        "exported": 3336,
+        "published": 3334,
+        "received": 3334,
+        "applied": 3334,
+        "buffered": 0,
+        "discarded": 0,
+        "bus_published": 3334,
+        "bus_deduplicated": 2,
+        "bus_evicted": 0,
+        "bus_backpressure": 0
+      },
+      "baselines": [
+        {
+          "name": "z3-1t",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 165033791
+          },
+          "timed_out": false
+        }
+      ]
+    },
+    {
+      "name": "php-10-9",
+      "outcome": "Unsat",
+      "expected": "unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 8,
+        "nanos": 702554542
+      },
+      "timed_out": false,
+      "conflicts": 530739,
+      "decisions": 546736,
+      "propagations": 6666972,
+      "restarts": 1272,
+      "knowledge": {
+        "exported": 10274,
+        "published": 10274,
+        "received": 10274,
+        "applied": 10270,
+        "buffered": 0,
+        "discarded": 4,
+        "bus_published": 10274,
+        "bus_deduplicated": 0,
+        "bus_evicted": 0,
+        "bus_backpressure": 0
+      },
+      "baselines": [
+        {
+          "name": "z3-1t",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 1,
+            "nanos": 145903208
+          },
+          "timed_out": false
+        }
+      ]
+    },
+    {
+      "name": "php-11-10",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 60,
+        "nanos": 267761500
+      },
+      "timed_out": true,
+      "conflicts": 1690911,
+      "decisions": 1732424,
+      "propagations": 21339367,
+      "restarts": 3608,
+      "knowledge": {
+        "exported": 3405,
+        "published": 3405,
+        "received": 3405,
+        "applied": 3405,
+        "buffered": 0,
+        "discarded": 0,
+        "bus_published": 3405,
+        "bus_deduplicated": 0,
+        "bus_evicted": 0,
+        "bus_backpressure": 0
+      },
+      "baselines": [
+        {
+          "name": "z3-1t",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 3,
+            "nanos": 332928041
+          },
+          "timed_out": false
+        }
+      ]
+    },
+    {
+      "name": "r3sat-238-2",
+      "outcome": "Unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 6,
+        "nanos": 103894750
+      },
+      "timed_out": false,
+      "conflicts": 406066,
+      "decisions": 484968,
+      "propagations": 16429574,
+      "restarts": 1020,
+      "knowledge": {
+        "exported": 6094,
+        "published": 6040,
+        "received": 6040,
+        "applied": 6040,
+        "buffered": 0,
+        "discarded": 0,
+        "bus_published": 6040,
+        "bus_deduplicated": 54,
+        "bus_evicted": 0,
+        "bus_backpressure": 0
+      },
+      "baselines": [
+        {
+          "name": "z3-1t",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 1,
+            "nanos": 265162417
+          },
+          "timed_out": false
+        }
+      ]
+    },
+    {
+      "name": "r3sat-240-r425",
+      "outcome": "Unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 9,
+        "nanos": 311090459
+      },
+      "timed_out": false,
+      "conflicts": 520291,
+      "decisions": 619895,
+      "propagations": 21520050,
+      "restarts": 1239,
+      "knowledge": {
+        "exported": 7916,
+        "published": 7864,
+        "received": 7864,
+        "applied": 7864,
+        "buffered": 0,
+        "discarded": 0,
+        "bus_published": 7864,
+        "bus_deduplicated": 52,
+        "bus_evicted": 0,
+        "bus_backpressure": 0
+      },
+      "baselines": [
+        {
+          "name": "z3-1t",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 2,
+            "nanos": 509623208
+          },
+          "timed_out": false
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "problems": 5,
+    "solved": 4,
+    "unsolved": 1,
+    "solved_total_ns": 24654637334,
+    "par2_ns": 144654637334,
+    "par10_ns": 624654637334,
+    "timeout_ns": 60000000000
+  }
+}

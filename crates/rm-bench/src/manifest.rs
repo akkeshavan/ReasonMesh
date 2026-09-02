@@ -122,6 +122,23 @@ impl Default for OutputConfig {
     }
 }
 
+/// An external solver run alongside ReasonMesh for comparison.
+///
+/// The runner invokes `{binary} {cnf_file} {args...}` with the same
+/// per-problem timeout as the manifest's `solver.timeout_secs`. Output is
+/// parsed for DIMACS competition-format verdicts (`s SATISFIABLE` /
+/// `s UNSATISFIABLE`). Missing binary → verdict recorded as Unknown.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BaselineConfig {
+    /// Short label used in results (e.g. `"z3-1t"`).
+    pub name: String,
+    /// Executable name or absolute path (resolved via PATH).
+    pub binary: String,
+    /// Arguments appended after the CNF file path.
+    #[serde(default)]
+    pub args: Vec<String>,
+}
+
 /// A complete benchmark run description.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Manifest {
@@ -133,6 +150,10 @@ pub struct Manifest {
     pub solver: SolverConfig,
     #[serde(default)]
     pub output: OutputConfig,
+    /// External solvers to run in parallel with ReasonMesh for comparison.
+    /// Each baseline runs on every problem with the same timeout.
+    #[serde(default)]
+    pub baselines: Vec<BaselineConfig>,
     #[serde(default)]
     pub problems: Vec<Problem>,
 }

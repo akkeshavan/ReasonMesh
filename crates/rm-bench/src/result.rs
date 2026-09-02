@@ -30,6 +30,15 @@ pub struct KnowledgeMetrics {
     pub bus_backpressure: u64,
 }
 
+/// Outcome of one external baseline solver on one problem.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BaselineResult {
+    pub name: String,
+    pub outcome: Outcome,
+    pub wall: Duration,
+    pub timed_out: bool,
+}
+
 /// Result of solving a single problem.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ProblemResult {
@@ -50,6 +59,9 @@ pub struct ProblemResult {
     /// §16.2 knowledge-exchange diagnostics; set on multi-worker runs only.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub knowledge: Option<KnowledgeMetrics>,
+    /// External baseline results for this problem (empty when no baselines configured).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub baselines: Vec<BaselineResult>,
     /// Trace file written for this problem, if requested.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trace: Option<String>,

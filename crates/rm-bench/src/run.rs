@@ -8,16 +8,17 @@
 //! true` is the clause-sharing portfolio (baseline 3), `false` an isolated
 //! portfolio (baseline 2) — the G1-gate control (§18).
 
-use crate::manifest::{Expected, Manifest, Problem};
-use crate::result::{KnowledgeMetrics, ManifestRun, ProblemResult, RunSummary};
+use crate::manifest::{BaselineConfig, Expected, Manifest, Problem};
+use crate::result::{BaselineResult, KnowledgeMetrics, ManifestRun, ProblemResult, RunSummary};
 use rm_akx::literal::Literal;
 use rm_akx::{ExportPolicy, ImportPolicy, WorkBudget};
 use rm_proof::model::check_dimacs_model;
 use rm_sat::{parse_dimacs, CdclSolver, SolveResult};
 use rm_telemetry::{EventKind, Outcome, RunMeta, TraceError, TraceWriter};
 use rm_worker::{Problem as WorkerProblem, WorkerConfig, WorkerOutcome, WorkerPool, WorkerStats};
-use std::io::BufWriter;
+use std::io::{BufWriter, Read};
 use std::path::Path;
+use std::process::Stdio;
 use std::time::{Duration, Instant};
 use thiserror::Error;
 
@@ -208,6 +209,12 @@ fn solve_problem(manifest: &Manifest, problem: &Problem) -> Result<ProblemResult
         None
     };
 
+    let baselines = manifest
+        .baselines
+        .iter()
+        .map(|b| run_baseline(b, &problem.file, Duration::from_secs(manifest.solver.timeout_secs)))
+        .collect();
+
     Ok(ProblemResult {
         name: problem.name.clone(),
         outcome,
@@ -220,6 +227,7 @@ fn solve_problem(manifest: &Manifest, problem: &Problem) -> Result<ProblemResult
         propagations: counters.propagations,
         restarts: counters.restarts,
         knowledge: None,
+        baselines,
         trace,
     })
 }
@@ -373,6 +381,12 @@ fn solve_problem_pool(
         None
     };
 
+    let baselines = manifest
+        .baselines
+        .iter()
+        .map(|b| run_baseline(b, &problem.file, Duration::from_secs(manifest.solver.timeout_secs)))
+        .collect();
+
     Ok(ProblemResult {
         name: problem.name.clone(),
         outcome,
@@ -385,6 +399,7 @@ fn solve_problem_pool(
         propagations: counters.propagations,
         restarts: counters.restarts,
         knowledge: Some(knowledge),
+        baselines,
         trace,
     })
 }
@@ -395,6 +410,99 @@ fn stats_of(outcome: &WorkerOutcome) -> &WorkerStats {
         | WorkerOutcome::Unsat { stats, .. }
         | WorkerOutcome::Aborted { stats, .. } => stats,
     }
+}
+
+/// Run one external baseline solver on a single CNF file and return its verdict
+/// and wall time. Invocation: `{binary} {cnf_path} {args...}`.
+///
+/// Output is parsed for DIMACS competition-format lines:
+///   `s SATISFIABLE`   → Sat
+///   `s UNSATISFIABLE` → Unsat
+/// Anything else (crash, unparseable output) → Unknown.
+///
+/// The process is killed if it exceeds `timeout`; stdout is drained
+/// concurrently so the child never blocks on a full pipe.
+fn run_baseline(b: &BaselineConfig, cnf_path: &Path, timeout: Duration) -> BaselineResult {
+    let mut child = match std::process::Command::new(&b.binary)
+        .arg(cnf_path)
+        .args(&b.args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(_) => {
+            return BaselineResult {
+                name: b.name.clone(),
+                outcome: rm_telemetry::Outcome::Unknown,
+                wall: Duration::ZERO,
+                timed_out: false,
+            }
+        }
+    };
+
+    // Drain stdout in a background thread so the child never blocks on a full
+    // pipe buffer regardless of how much it writes.
+    let stdout_handle = child.stdout.take().map(|out| {
+        std::thread::spawn(move || {
+            let mut buf = String::new();
+            let _ = std::io::BufReader::new(out).read_to_string(&mut buf);
+            buf
+        })
+    });
+
+    let start = Instant::now();
+    let deadline = start + timeout;
+    let mut timed_out = false;
+
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) => {
+                if Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    timed_out = true;
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            Err(_) => break,
+        }
+    }
+
+    let wall = start.elapsed();
+    let stdout = stdout_handle
+        .and_then(|h| h.join().ok())
+        .unwrap_or_default();
+
+    let outcome = if timed_out {
+        rm_telemetry::Outcome::Unknown
+    } else {
+        parse_dimacs_verdict(&stdout)
+    };
+
+    BaselineResult {
+        name: b.name.clone(),
+        outcome,
+        wall,
+        timed_out,
+    }
+}
+
+/// Parse a DIMACS competition-format answer line.
+/// `s SATISFIABLE` → Sat, `s UNSATISFIABLE` → Unsat, anything else → Unknown.
+fn parse_dimacs_verdict(output: &str) -> rm_telemetry::Outcome {
+    for line in output.lines() {
+        let t = line.trim();
+        if t.eq_ignore_ascii_case("s satisfiable") || t.eq_ignore_ascii_case("sat") {
+            return rm_telemetry::Outcome::Sat;
+        }
+        if t.eq_ignore_ascii_case("s unsatisfiable") || t.eq_ignore_ascii_case("unsat") {
+            return rm_telemetry::Outcome::Unsat;
+        }
+    }
+    rm_telemetry::Outcome::Unknown
 }
 
 fn write_problem_trace(
@@ -508,6 +616,7 @@ mod tests {
                 dir: dir.0.join("out"),
                 trace: true,
             },
+            baselines: vec![],
             problems,
         }
     }
@@ -531,6 +640,7 @@ mod tests {
                 dir: dir.0.join("out"),
                 trace: false,
             },
+            baselines: vec![],
             problems,
         }
     }
@@ -728,5 +838,103 @@ mod tests {
             run.problems[0].knowledge.is_some(),
             "sharing runs must report knowledge-exchange metrics"
         );
+    }
+
+    /// Baseline runner: parse_dimacs_verdict must recognise both verdict styles.
+    #[test]
+    fn parse_dimacs_verdict_recognises_sat_and_unsat() {
+        use rm_telemetry::Outcome;
+        assert_eq!(
+            parse_dimacs_verdict("s SATISFIABLE\nv 1 -2 0\n"),
+            Outcome::Sat
+        );
+        assert_eq!(
+            parse_dimacs_verdict("s UNSATISFIABLE\n"),
+            Outcome::Unsat
+        );
+        assert_eq!(parse_dimacs_verdict("SAT\n"), Outcome::Sat);
+        assert_eq!(parse_dimacs_verdict("UNSAT\n"), Outcome::Unsat);
+        assert_eq!(parse_dimacs_verdict(""), Outcome::Unknown);
+        assert_eq!(parse_dimacs_verdict("error: timeout\n"), Outcome::Unknown);
+    }
+
+    /// Baseline runner: a non-existent binary returns Unknown with zero wall time,
+    /// not a panic or run error.
+    #[test]
+    fn baseline_missing_binary_returns_unknown() {
+        use crate::manifest::BaselineConfig;
+        let b = BaselineConfig {
+            name: "no-such-solver".into(),
+            binary: "/no/such/binary".into(),
+            args: vec![],
+        };
+        let result = run_baseline(&b, Path::new("/tmp/x.cnf"), Duration::from_secs(1));
+        assert_eq!(result.outcome, rm_telemetry::Outcome::Unknown);
+        assert!(!result.timed_out);
+    }
+
+    /// Baseline runner: a real Z3 invocation returns the correct verdict.
+    /// Skipped if Z3 is not on PATH.
+    #[test]
+    fn baseline_z3_solves_small_instances() {
+        use crate::manifest::BaselineConfig;
+        if which_z3().is_none() {
+            eprintln!("skipping: z3 not on PATH");
+            return;
+        }
+
+        let dir = TempDir::new("z3baseline");
+        let sat_path = dir.write("sat.cnf", "p cnf 2 1\n1 2 0\n");
+        let unsat_path = dir.write("unsat.cnf", "p cnf 2 4\n1 2 0\n1 -2 0\n-1 2 0\n-1 -2 0\n");
+
+        let b = BaselineConfig {
+            name: "z3".into(),
+            binary: "z3".into(),
+            args: vec!["-dimacs".into()],
+        };
+
+        let r = run_baseline(&b, &sat_path, Duration::from_secs(10));
+        assert_eq!(r.outcome, rm_telemetry::Outcome::Sat, "z3 should find SAT");
+        assert!(!r.timed_out);
+
+        let r = run_baseline(&b, &unsat_path, Duration::from_secs(10));
+        assert_eq!(r.outcome, rm_telemetry::Outcome::Unsat, "z3 should prove UNSAT");
+        assert!(!r.timed_out);
+    }
+
+    /// Baseline runner: timeout kills the process and returns Unknown + timed_out=true.
+    #[test]
+    fn baseline_timeout_kills_process() {
+        if which_z3().is_none() {
+            eprintln!("skipping: z3 not on PATH");
+            return;
+        }
+        // php-3-2 UNSAT — too small to actually time out, so use `sleep` instead.
+        // On systems without sleep(1), this test just passes vacuously.
+        if std::process::Command::new("sleep").arg("--version").output().is_err() {
+            return;
+        }
+        use crate::manifest::BaselineConfig;
+        let b = BaselineConfig {
+            name: "sleep".into(),
+            binary: "sleep".into(),
+            args: vec![],
+        };
+        // run_baseline prepends the path as the first arg, so the command
+        // becomes `sleep 10` — a 10-second sleep that our 200ms timeout kills.
+        let start = std::time::Instant::now();
+        let r = run_baseline(&b, Path::new("10"), Duration::from_millis(200));
+        assert!(start.elapsed() < Duration::from_secs(2), "should have killed quickly");
+        assert!(r.timed_out);
+        assert_eq!(r.outcome, rm_telemetry::Outcome::Unknown);
+    }
+
+    fn which_z3() -> Option<std::path::PathBuf> {
+        std::env::var_os("PATH")
+            .and_then(|p| {
+                std::env::split_paths(&p)
+                    .map(|d| d.join("z3"))
+                    .find(|p| p.exists())
+            })
     }
 }
