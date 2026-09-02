@@ -13,7 +13,7 @@ use crate::result::{BaselineResult, KnowledgeMetrics, ManifestRun, ProblemResult
 use rm_akx::literal::Literal;
 use rm_akx::{ExportPolicy, ImportPolicy, WorkBudget};
 use rm_proof::model::check_dimacs_model;
-use rm_sat::{parse_dimacs, CdclSolver, SolveResult};
+use rm_sat::{parse_dimacs, CdclSolver, DimacsCnf, SolveResult};
 use rm_telemetry::{EventKind, Outcome, RunMeta, TraceError, TraceWriter};
 use rm_worker::{Problem as WorkerProblem, WorkerConfig, WorkerOutcome, WorkerPool, WorkerStats};
 use std::io::{BufWriter, Read};
@@ -127,6 +127,50 @@ pub fn run_manifest(manifest: &Manifest) -> Result<ManifestRun, RunError> {
     })
 }
 
+fn dimacs_lit(l: i32) -> Literal {
+    if l > 0 { Literal::positive(l as u32) } else { Literal::negative((-l) as u32) }
+}
+
+fn check_model(raw: &[bool], cnf: &DimacsCnf, problem_name: &str) -> Result<(), RunError> {
+    match check_dimacs_model(cnf.num_vars, &cnf.clauses, raw) {
+        Ok(true) => Ok(()),
+        Ok(false) | Err(_) => {
+            Err(RunError::InvalidModel { problem: problem_name.to_string() })
+        }
+    }
+}
+
+fn expected_matches(expect: Option<Expected>, outcome: Outcome) -> bool {
+    match expect {
+        Some(e) => matches!(
+            (e, outcome),
+            (Expected::Sat, Outcome::Sat) | (Expected::Unsat, Outcome::Unsat)
+        ),
+        None => true,
+    }
+}
+
+fn maybe_write_trace(
+    manifest: &Manifest,
+    problem: &Problem,
+    outcome: Outcome,
+    counters: RunCounters,
+    model_raw: &Option<Vec<bool>>,
+) -> Result<Option<String>, RunError> {
+    if !manifest.output.trace {
+        return Ok(None);
+    }
+    let trace_path = manifest.output.dir.join(format!("{}.rmtrace", problem.name));
+    write_problem_trace(&trace_path, manifest, problem, outcome, counters, model_raw)
+        .map_err(|source| RunError::Trace { problem: problem.name.clone(), source })?;
+    Ok(Some(trace_path.display().to_string()))
+}
+
+fn collect_baselines(manifest: &Manifest, problem: &Problem) -> Vec<BaselineResult> {
+    let timeout = Duration::from_secs(manifest.solver.timeout_secs);
+    manifest.baselines.iter().map(|b| run_baseline(b, &problem.file, timeout)).collect()
+}
+
 fn solve_problem(manifest: &Manifest, problem: &Problem) -> Result<ProblemResult, RunError> {
     let start = Instant::now();
     let input = std::fs::read_to_string(&problem.file).map_err(|source| RunError::Read {
@@ -137,46 +181,40 @@ fn solve_problem(manifest: &Manifest, problem: &Problem) -> Result<ProblemResult
         problem: problem.name.clone(),
         source,
     })?;
-
     if manifest.solver.workers > 1 {
         return solve_problem_pool(manifest, problem, &cnf, start);
     }
+    run_single_solver(manifest, problem, &cnf, start)
+}
 
+fn build_cdcl_solver(cnf: &DimacsCnf) -> CdclSolver {
     let mut solver = CdclSolver::new(cnf.num_vars);
     for clause in &cnf.clauses {
-        let lits: Vec<Literal> = clause
-            .iter()
-            .map(|&l| {
-                if l > 0 {
-                    Literal::positive(l as u32)
-                } else {
-                    Literal::negative((-l) as u32)
-                }
-            })
-            .collect();
+        let lits: Vec<Literal> = clause.iter().map(|&l| dimacs_lit(l)).collect();
         solver.add_clause(&lits);
     }
+    solver
+}
 
-    let budget = manifest
-        .solver
-        .max_conflicts_per_problem
-        .unwrap_or(u64::MAX);
+fn run_single_solver(
+    manifest: &Manifest,
+    problem: &Problem,
+    cnf: &DimacsCnf,
+    start: Instant,
+) -> Result<ProblemResult, RunError> {
+    let mut solver = build_cdcl_solver(cnf);
+    let budget = manifest.solver.max_conflicts_per_problem.unwrap_or(u64::MAX);
     let timeout = Duration::from_secs(manifest.solver.timeout_secs);
     let deadline = start.checked_add(timeout);
+
     let (outcome, model_raw) = match solver.solve_with_deadline(&[], budget, deadline) {
         SolveResult::Sat(m) => {
             let mut raw = vec![false; cnf.num_vars as usize + 1];
             for v in 1..=cnf.num_vars {
                 raw[v as usize] = m.value_of(v);
             }
-            match check_dimacs_model(cnf.num_vars, &cnf.clauses, &raw) {
-                Ok(true) => (Outcome::Sat, Some(raw)),
-                Ok(false) | Err(_) => {
-                    return Err(RunError::InvalidModel {
-                        problem: problem.name.clone(),
-                    });
-                }
-            }
+            check_model(&raw, cnf, &problem.name)?;
+            (Outcome::Sat, Some(raw))
         }
         SolveResult::Unsat => (Outcome::Unsat, None),
         SolveResult::Unknown => (Outcome::Unknown, None),
@@ -184,42 +222,15 @@ fn solve_problem(manifest: &Manifest, problem: &Problem) -> Result<ProblemResult
 
     let wall = start.elapsed();
     let timed_out = wall >= timeout && outcome == Outcome::Unknown;
-    let matches_expected = match problem.expect {
-        Some(e) => matches!(
-            (e, outcome),
-            (Expected::Sat, Outcome::Sat) | (Expected::Unsat, Outcome::Unsat)
-        ),
-        None => true,
-    };
-
     let counters = RunCounters::from(&solver);
-    let trace = if manifest.output.trace {
-        let trace_path = manifest
-            .output
-            .dir
-            .join(format!("{}.rmtrace", problem.name));
-        write_problem_trace(&trace_path, manifest, problem, outcome, counters, &model_raw).map_err(
-            |source| RunError::Trace {
-                problem: problem.name.clone(),
-                source,
-            },
-        )?;
-        Some(trace_path.display().to_string())
-    } else {
-        None
-    };
-
-    let baselines = manifest
-        .baselines
-        .iter()
-        .map(|b| run_baseline(b, &problem.file, Duration::from_secs(manifest.solver.timeout_secs)))
-        .collect();
+    let trace = maybe_write_trace(manifest, problem, outcome, counters, &model_raw)?;
+    let baselines = collect_baselines(manifest, problem);
 
     Ok(ProblemResult {
         name: problem.name.clone(),
         outcome,
         expected: problem.expect,
-        matches_expected,
+        matches_expected: expected_matches(problem.expect, outcome),
         wall,
         timed_out,
         conflicts: counters.conflicts,
@@ -232,40 +243,8 @@ fn solve_problem(manifest: &Manifest, problem: &Problem) -> Result<ProblemResult
     })
 }
 
-/// Multi-worker solve path (spec §16.3 baselines 2 and 3): `num_workers`
-/// CDCL reasoners on a shared in-process bus. With `clause_sharing` every
-/// worker exports and imports learned clauses; without it the workers are an
-/// isolated portfolio (the G1-gate control, §18). Any per-worker SAT model is
-/// still independently validated before being reported.
-fn solve_problem_pool(
-    manifest: &Manifest,
-    problem: &Problem,
-    cnf: &rm_sat::DimacsCnf,
-    start: Instant,
-) -> Result<ProblemResult, RunError> {
-    let clauses: Vec<Vec<Literal>> = cnf
-        .clauses
-        .iter()
-        .map(|clause| {
-            clause
-                .iter()
-                .map(|&l| {
-                    if l > 0 {
-                        Literal::positive(l as u32)
-                    } else {
-                        Literal::negative((-l) as u32)
-                    }
-                })
-                .collect()
-        })
-        .collect();
-    let worker_problem = WorkerProblem::new(cnf.num_vars, clauses);
-    let timeout = Duration::from_secs(manifest.solver.timeout_secs);
-
-    // Baseline 2 (isolated) zeroes both policies: nothing is ever exported or
-    // imported. Baseline 3 (clause sharing) uses the manifest's knowledge
-    // utility thresholds (§16.3, §18 "fix knowledge utility").
-    let (export_policy, import_policy) = if manifest.solver.clause_sharing {
+fn build_sharing_policies(manifest: &Manifest) -> (ExportPolicy, ImportPolicy) {
+    if manifest.solver.clause_sharing {
         (
             ExportPolicy {
                 min_utility: manifest.solver.export_min_utility,
@@ -278,56 +257,30 @@ fn solve_problem_pool(
         )
     } else {
         (
-            ExportPolicy {
-                max_items: 0,
-                ..ExportPolicy::default()
-            },
-            ImportPolicy {
-                max_items: 0,
-                ..ImportPolicy::default()
-            },
+            ExportPolicy { max_items: 0, ..ExportPolicy::default() },
+            ImportPolicy { max_items: 0, ..ImportPolicy::default() },
         )
-    };
+    }
+}
 
-    let config = WorkerConfig {
-        num_workers: manifest.solver.workers as usize,
-        // The step budget is the *chunk* cadence that paces asynchronous
-        // clause exchange (§16.3): short conflict/wall slices so workers drain
-        // and import continuously instead of in one whole-problem step. The
-        // per-problem conflict cap is enforced as a cumulative run budget.
-        step_budget: WorkBudget::default(),
-        export_policy,
-        import_policy,
-        seed: manifest.solver.seed,
-        conflict_budget: manifest.solver.max_conflicts_per_problem,
-        ..WorkerConfig::default()
-    };
-    let pool = WorkerPool::new(worker_problem, config);
-    let outcomes = pool.run(&[], Some(timeout));
-
-    // Collapse worker outcomes into a single verdict. Workers solve the root
-    // cube (no assumptions), so any validated SAT or a closed cube decides.
+fn collect_pool_outcome(
+    outcomes: &[WorkerOutcome],
+    cnf: &DimacsCnf,
+    problem_name: &str,
+) -> Result<(Outcome, Option<Vec<bool>>, RunCounters), RunError> {
     let mut outcome = Outcome::Unknown;
     let mut model_raw: Option<Vec<bool>> = None;
     let mut counters = RunCounters::default();
-    for o in &outcomes {
+    for o in outcomes {
         match o {
             WorkerOutcome::Sat { model, .. } if outcome != Outcome::Sat => {
                 let mut raw = vec![false; cnf.num_vars as usize + 1];
                 for v in 1..=cnf.num_vars {
                     raw[v as usize] = model.get(v).unwrap_or(false);
                 }
-                match check_dimacs_model(cnf.num_vars, &cnf.clauses, &raw) {
-                    Ok(true) => {
-                        outcome = Outcome::Sat;
-                        model_raw = Some(raw);
-                    }
-                    Ok(false) | Err(_) => {
-                        return Err(RunError::InvalidModel {
-                            problem: problem.name.clone(),
-                        });
-                    }
-                }
+                check_model(&raw, cnf, problem_name)?;
+                outcome = Outcome::Sat;
+                model_raw = Some(raw);
             }
             WorkerOutcome::Unsat { .. } if outcome == Outcome::Unknown => {
                 outcome = Outcome::Unsat;
@@ -336,11 +289,12 @@ fn solve_problem_pool(
         }
         counters = sum_counters(counters, RunCounters::from(*stats_of(o)));
     }
+    Ok((outcome, model_raw, counters))
+}
 
-    // Aggregate the §16.2 knowledge-exchange diagnostics: what each worker
-    // exported/imported plus what the shared bus actually did.
+fn aggregate_knowledge_metrics(outcomes: &[WorkerOutcome], pool: &WorkerPool) -> KnowledgeMetrics {
     let mut knowledge = KnowledgeMetrics::default();
-    for o in &outcomes {
+    for o in outcomes {
         let s = stats_of(o);
         knowledge.exported += s.exported;
         knowledge.published += s.published;
@@ -354,44 +308,54 @@ fn solve_problem_pool(
     knowledge.bus_deduplicated = bus.deduplicated;
     knowledge.bus_evicted = bus.evicted;
     knowledge.bus_backpressure = bus.backpressure;
+    knowledge
+}
+
+/// Multi-worker solve path (spec §16.3 baselines 2 and 3): `num_workers`
+/// CDCL reasoners on a shared in-process bus. With `clause_sharing` every
+/// worker exports and imports learned clauses; without it the workers are an
+/// isolated portfolio (the G1-gate control, §18). Any per-worker SAT model is
+/// still independently validated before being reported.
+fn solve_problem_pool(
+    manifest: &Manifest,
+    problem: &Problem,
+    cnf: &DimacsCnf,
+    start: Instant,
+) -> Result<ProblemResult, RunError> {
+    let clauses: Vec<Vec<Literal>> = cnf
+        .clauses
+        .iter()
+        .map(|clause| clause.iter().map(|&l| dimacs_lit(l)).collect())
+        .collect();
+    let worker_problem = WorkerProblem::new(cnf.num_vars, clauses);
+    let timeout = Duration::from_secs(manifest.solver.timeout_secs);
+
+    let (export_policy, import_policy) = build_sharing_policies(manifest);
+    let config = WorkerConfig {
+        num_workers: manifest.solver.workers as usize,
+        step_budget: WorkBudget::default(),
+        export_policy,
+        import_policy,
+        seed: manifest.solver.seed,
+        conflict_budget: manifest.solver.max_conflicts_per_problem,
+        ..WorkerConfig::default()
+    };
+    let pool = WorkerPool::new(worker_problem, config);
+    let outcomes = pool.run(&[], Some(timeout));
+
+    let (outcome, model_raw, counters) = collect_pool_outcome(&outcomes, cnf, &problem.name)?;
+    let knowledge = aggregate_knowledge_metrics(&outcomes, &pool);
 
     let wall = start.elapsed();
     let timed_out = wall >= timeout && outcome == Outcome::Unknown;
-    let matches_expected = match problem.expect {
-        Some(e) => matches!(
-            (e, outcome),
-            (Expected::Sat, Outcome::Sat) | (Expected::Unsat, Outcome::Unsat)
-        ),
-        None => true,
-    };
-
-    let trace = if manifest.output.trace {
-        let trace_path = manifest
-            .output
-            .dir
-            .join(format!("{}.rmtrace", problem.name));
-        write_problem_trace(&trace_path, manifest, problem, outcome, counters, &model_raw).map_err(
-            |source| RunError::Trace {
-                problem: problem.name.clone(),
-                source,
-            },
-        )?;
-        Some(trace_path.display().to_string())
-    } else {
-        None
-    };
-
-    let baselines = manifest
-        .baselines
-        .iter()
-        .map(|b| run_baseline(b, &problem.file, Duration::from_secs(manifest.solver.timeout_secs)))
-        .collect();
+    let trace = maybe_write_trace(manifest, problem, outcome, counters, &model_raw)?;
+    let baselines = collect_baselines(manifest, problem);
 
     Ok(ProblemResult {
         name: problem.name.clone(),
         outcome,
         expected: problem.expect,
-        matches_expected,
+        matches_expected: expected_matches(problem.expect, outcome),
         wall,
         timed_out,
         conflicts: counters.conflicts,
@@ -409,6 +373,23 @@ fn stats_of(outcome: &WorkerOutcome) -> &WorkerStats {
         WorkerOutcome::Sat { stats, .. }
         | WorkerOutcome::Unsat { stats, .. }
         | WorkerOutcome::Aborted { stats, .. } => stats,
+    }
+}
+
+fn wait_or_kill(child: &mut std::process::Child, deadline: Instant) -> bool {
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => return false,
+            Ok(None) => {
+                if Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return true;
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            Err(_) => return false,
+        }
     }
 }
 
@@ -441,8 +422,6 @@ fn run_baseline(b: &BaselineConfig, cnf_path: &Path, timeout: Duration) -> Basel
         }
     };
 
-    // Drain stdout in a background thread so the child never blocks on a full
-    // pipe buffer regardless of how much it writes.
     let stdout_handle = child.stdout.take().map(|out| {
         std::thread::spawn(move || {
             let mut buf = String::new();
@@ -452,42 +431,17 @@ fn run_baseline(b: &BaselineConfig, cnf_path: &Path, timeout: Duration) -> Basel
     });
 
     let start = Instant::now();
-    let deadline = start + timeout;
-    let mut timed_out = false;
-
-    loop {
-        match child.try_wait() {
-            Ok(Some(_)) => break,
-            Ok(None) => {
-                if Instant::now() >= deadline {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    timed_out = true;
-                    break;
-                }
-                std::thread::sleep(Duration::from_millis(50));
-            }
-            Err(_) => break,
-        }
-    }
-
+    let timed_out = wait_or_kill(&mut child, start + timeout);
     let wall = start.elapsed();
-    let stdout = stdout_handle
-        .and_then(|h| h.join().ok())
-        .unwrap_or_default();
 
+    let stdout = stdout_handle.and_then(|h| h.join().ok()).unwrap_or_default();
     let outcome = if timed_out {
         rm_telemetry::Outcome::Unknown
     } else {
         parse_dimacs_verdict(&stdout)
     };
 
-    BaselineResult {
-        name: b.name.clone(),
-        outcome,
-        wall,
-        timed_out,
-    }
+    BaselineResult { name: b.name.clone(), outcome, wall, timed_out }
 }
 
 /// Parse a DIMACS competition-format answer line.
@@ -503,6 +457,30 @@ fn parse_dimacs_verdict(output: &str) -> rm_telemetry::Outcome {
         }
     }
     rm_telemetry::Outcome::Unknown
+}
+
+fn record_sat_model_knowledge<W: std::io::Write>(
+    tw: &mut TraceWriter<W>,
+    raw: &[bool],
+) -> Result<(), TraceError> {
+    let lits: Vec<Literal> = raw
+        .iter()
+        .enumerate()
+        .filter(|&(i, _)| i > 0)
+        .map(|(v, &val)| {
+            if val { Literal::positive(v as u32) } else { Literal::negative(v as u32) }
+        })
+        .collect();
+    tw.record(
+        rm_akx::reasoner::WorkerId(0),
+        EventKind::KnowledgeGenerated {
+            id: rm_akx::knowledge::KnowledgeId(0),
+            kind: rm_akx::knowledge::KnowledgeKindTag::ModelFragment,
+            size: lits.len(),
+            lbd: 0,
+        },
+    )
+    .map(|_| ())
 }
 
 fn write_problem_trace(
@@ -521,12 +499,7 @@ fn write_problem_trace(
         manifest.solver.seed,
     );
     let mut tw = TraceWriter::new(&mut writer, meta)?;
-    tw.record(
-        rm_akx::reasoner::WorkerId(0),
-        EventKind::Phase {
-            name: "root".into(),
-        },
-    )?;
+    tw.record(rm_akx::reasoner::WorkerId(0), EventKind::Phase { name: "root".into() })?;
     tw.record(
         rm_akx::reasoner::WorkerId(0),
         EventKind::SearchSummary {
@@ -537,35 +510,11 @@ fn write_problem_trace(
         },
     )?;
     if outcome == Outcome::Sat {
-        // Record the model as a model-fragment knowledge object for provenance.
         if let Some(raw) = model_raw {
-            let lits: Vec<rm_akx::literal::Literal> = raw
-                .iter()
-                .enumerate()
-                .filter(|&(i, _)| i > 0)
-                .map(|(v, &val)| {
-                    if val {
-                        Literal::positive(v as u32)
-                    } else {
-                        Literal::negative(v as u32)
-                    }
-                })
-                .collect();
-            tw.record(
-                rm_akx::reasoner::WorkerId(0),
-                EventKind::KnowledgeGenerated {
-                    id: rm_akx::knowledge::KnowledgeId(0),
-                    kind: rm_akx::knowledge::KnowledgeKindTag::ModelFragment,
-                    size: lits.len(),
-                    lbd: 0,
-                },
-            )?;
+            record_sat_model_knowledge(&mut tw, raw)?;
         }
     }
-    tw.record(
-        rm_akx::reasoner::WorkerId(0),
-        EventKind::RunFinished { outcome },
-    )?;
+    tw.record(rm_akx::reasoner::WorkerId(0), EventKind::RunFinished { outcome })?;
     let _ = &mut writer;
     Ok(())
 }

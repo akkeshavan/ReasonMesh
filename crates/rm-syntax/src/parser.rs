@@ -380,23 +380,39 @@ fn bool_leaf() -> Term {
     Term { sort: SortExpr::Bool, inner: TermInner::True }
 }
 
+fn parse_symbol_term(s: &str, symbols: &Symbols) -> Term {
+    match s {
+        "true" => bool_leaf(),
+        "false" => Term { sort: SortExpr::Bool, inner: TermInner::False },
+        name => {
+            let sort = symbols.constants.get(name).cloned().unwrap_or(SortExpr::Bool);
+            Term { sort, inner: TermInner::Variable(name.to_string()) }
+        }
+    }
+}
+
+fn parse_implies_term(items: &[SExpr], symbols: &Symbols) -> Result<Term, ParseError> {
+    require_len(items, 3, "=>")?;
+    let a = parse_term(&items[1], symbols)?;
+    let b = parse_term(&items[2], symbols)?;
+    let na = Term { sort: SortExpr::Bool, inner: TermInner::Not(Box::new(a)) };
+    Ok(Term { sort: SortExpr::Bool, inner: TermInner::Or(vec![na, b]) })
+}
+
+fn parse_xor_term(items: &[SExpr], symbols: &Symbols) -> Result<Term, ParseError> {
+    require_len(items, 3, "xor")?;
+    let a = parse_term(&items[1], symbols)?;
+    let b = parse_term(&items[2], symbols)?;
+    let eq = Term { sort: SortExpr::Bool, inner: TermInner::Eq(Box::new(a), Box::new(b)) };
+    Ok(Term { sort: SortExpr::Bool, inner: TermInner::Not(Box::new(eq)) })
+}
+
 fn parse_term(expr: &SExpr, symbols: &Symbols) -> Result<Term, ParseError> {
     if let Some(lit) = parse_bv_literal(expr)? {
         return Ok(lit);
     }
     if let SExpr::Atom(Atom::Symbol(s)) = expr {
-        return match s.as_str() {
-            "true" => Ok(bool_leaf()),
-            "false" => Ok(Term { sort: SortExpr::Bool, inner: TermInner::False }),
-            name => {
-                let sort = symbols
-                    .constants
-                    .get(name)
-                    .cloned()
-                    .unwrap_or(SortExpr::Bool);
-                Ok(Term { sort, inner: TermInner::Variable(name.to_string()) })
-            }
-        };
+        return Ok(parse_symbol_term(s.as_str(), symbols));
     }
 
     let items = match expr {
@@ -414,57 +430,29 @@ fn parse_term(expr: &SExpr, symbols: &Symbols) -> Result<Term, ParseError> {
 
     let head = match &items[0] {
         SExpr::Atom(Atom::Symbol(s)) => s.as_str(),
-        _ => {
-            return Err(unexpected(
-                0,
-                format!("expected operator, found {}", describe(&items[0])),
-            ))
-        }
+        _ => return Err(unexpected(0, format!("expected operator, found {}", describe(&items[0])))),
     };
 
-    if "not" == head {
-        require_len(items, 2, "not")?;
-        let inner = Box::new(parse_term(&items[1], symbols)?);
-        return Ok(Term { sort: SortExpr::Bool, inner: TermInner::Not(inner) });
+    match head {
+        "not" => {
+            require_len(items, 2, "not")?;
+            let inner = Box::new(parse_term(&items[1], symbols)?);
+            Ok(Term { sort: SortExpr::Bool, inner: TermInner::Not(inner) })
+        }
+        "and" | "or" => {
+            let terms: Vec<Term> = items[1..].iter().map(|t| parse_term(t, symbols)).collect::<Result<_, _>>()?;
+            let inner = if head == "and" { TermInner::And(terms) } else { TermInner::Or(terms) };
+            Ok(Term { sort: SortExpr::Bool, inner })
+        }
+        "=>" => parse_implies_term(items, symbols),
+        "xor" => parse_xor_term(items, symbols),
+        "=" | "distinct" | "ite" => parse_bool_core(head, &items[1..], symbols),
+        h if is_bv_op(h) => parse_bv_app(bv_op_from(h), &items[1..], symbols),
+        h => {
+            let args: Vec<Term> = items[1..].iter().map(|t| parse_term(t, symbols)).collect::<Result<_, _>>()?;
+            Ok(Term { sort: SortExpr::Bool, inner: TermInner::FunCall(h.to_string(), args) })
+        }
     }
-    if "and" == head || "or" == head {
-        let terms: Vec<Term> = items[1..].iter().map(|t| parse_term(t, symbols)).collect::<Result<_, _>>()?;
-        let inner = if head == "and" { TermInner::And(terms) } else { TermInner::Or(terms) };
-        return Ok(Term { sort: SortExpr::Bool, inner });
-    }
-    if "=>" == head {
-        require_len(items, 3, "=>")?;
-        let a = parse_term(&items[1], symbols)?;
-        let b = parse_term(&items[2], symbols)?;
-        let na = Term { sort: SortExpr::Bool, inner: TermInner::Not(Box::new(a)) };
-        return Ok(Term {
-            sort: SortExpr::Bool,
-            inner: TermInner::Or(vec![na, b]),
-        });
-    }
-    if "xor" == head {
-        require_len(items, 3, "xor")?;
-        let a = parse_term(&items[1], symbols)?;
-        let b = parse_term(&items[2], symbols)?;
-        let eq = Term { sort: SortExpr::Bool, inner: TermInner::Eq(Box::new(a), Box::new(b)) };
-        return Ok(Term {
-            sort: SortExpr::Bool,
-            inner: TermInner::Not(Box::new(eq)),
-        });
-    }
-    if "=" == head || "distinct" == head || "ite" == head {
-        return parse_bool_core(head, &items[1..], symbols);
-    }
-
-    if is_bv_op(head) {
-        return parse_bv_app(bv_op_from(head), &items[1..], symbols);
-    }
-
-    let args: Vec<Term> = items[1..].iter().map(|t| parse_term(t, symbols)).collect::<Result<_, _>>()?;
-    Ok(Term {
-        sort: SortExpr::Bool,
-        inner: TermInner::FunCall(head.to_string(), args),
-    })
 }
 
 fn parse_bool_core(name: &str, args: &[SExpr], symbols: &Symbols) -> Result<Term, ParseError> {

@@ -91,135 +91,148 @@ fn is_symbol_char(c: char) -> bool {
     is_symbol_start(c) || c.is_ascii_digit()
 }
 
+type Chars<'a> = std::iter::Peekable<std::str::CharIndices<'a>>;
+
+fn skip_line_comment(chars: &mut Chars) {
+    for (_, c) in chars.by_ref() {
+        if c == '\n' {
+            break;
+        }
+    }
+}
+
+fn lex_numeral(start: usize, first: char, chars: &mut Chars) -> Result<Token, LexError> {
+    let mut n = (first as u128) - ('0' as u128);
+    loop {
+        match chars.peek() {
+            Some((_, d)) if d.is_ascii_digit() => {
+                n = n
+                    .checked_mul(10)
+                    .and_then(|x| x.checked_add((*d as u128) - ('0' as u128)))
+                    .ok_or(LexError::NumeralOverflow(start))?;
+                chars.next();
+            }
+            _ => break,
+        }
+    }
+    Ok(Token::Numeral(n, start))
+}
+
+fn lex_hex(start: usize, chars: &mut Chars) -> Result<Token, LexError> {
+    let mut s = String::new();
+    while let Some((_, d)) = chars.peek() {
+        if d.is_ascii_hexdigit() {
+            s.push(*d);
+            chars.next();
+        } else {
+            break;
+        }
+    }
+    if s.is_empty() { return Err(LexError::EmptyRadix(start)); }
+    Ok(Token::Hex(s, start))
+}
+
+fn lex_bin(start: usize, chars: &mut Chars) -> Result<Token, LexError> {
+    let mut s = String::new();
+    while let Some((_, d)) = chars.peek() {
+        if *d == '0' || *d == '1' {
+            s.push(*d);
+            chars.next();
+        } else {
+            break;
+        }
+    }
+    if s.is_empty() { return Err(LexError::EmptyRadix(start)); }
+    Ok(Token::Bin(s, start))
+}
+
+fn lex_radix(start: usize, chars: &mut Chars) -> Result<Token, LexError> {
+    let (_, r) = chars.next().ok_or(LexError::BadRadix(start))?;
+    match r {
+        'x' => lex_hex(start, chars),
+        'b' => lex_bin(start, chars),
+        _ => Err(LexError::BadRadix(start)),
+    }
+}
+
+fn lex_keyword(start: usize, chars: &mut Chars) -> Token {
+    let mut s = String::new();
+    while let Some((_, d)) = chars.peek() {
+        if is_symbol_char(*d) {
+            s.push(*d);
+            chars.next();
+        } else {
+            break;
+        }
+    }
+    Token::Keyword(s, start)
+}
+
+fn lex_quoted_symbol(start: usize, chars: &mut Chars) -> Result<Token, LexError> {
+    let mut s = String::new();
+    let mut closed = false;
+    for (_, c) in chars.by_ref() {
+        if c == '|' {
+            closed = true;
+            break;
+        }
+        s.push(c);
+    }
+    if !closed { return Err(LexError::UnterminatedSymbol(start)); }
+    Ok(Token::Symbol(s, start))
+}
+
+fn lex_string(start: usize, chars: &mut Chars) -> Result<Token, LexError> {
+    let mut s = String::new();
+    let mut closed = false;
+    while let Some((_, c)) = chars.next() {
+        if c == '"' {
+            if matches!(chars.peek(), Some((_, '"'))) {
+                s.push('"');
+                chars.next();
+                continue;
+            }
+            closed = true;
+            break;
+        }
+        s.push(c);
+    }
+    if !closed { return Err(LexError::UnterminatedString(start)); }
+    Ok(Token::Str(s, start))
+}
+
+fn lex_plain_symbol(start: usize, first: char, src: &str, chars: &mut Chars) -> Token {
+    let mut end = start + first.len_utf8();
+    while let Some((j, d)) = chars.peek() {
+        if is_symbol_char(*d) {
+            end = j + d.len_utf8();
+            chars.next();
+        } else {
+            break;
+        }
+    }
+    Token::Symbol(src[start..end].to_string(), start)
+}
+
 /// Tokenize a whole SMT-LIB source string.
 pub fn lex(src: &str) -> Result<Vec<Token>, LexError> {
     let mut tokens = Vec::new();
     let mut chars = src.char_indices().peekable();
     while let Some((i, c)) = chars.next() {
-        match c {
-            ' ' | '\t' | '\r' | '\n' => {}
-            ';' => {
-                for (_, c2) in chars.by_ref() {
-                    if c2 == '\n' {
-                        break;
-                    }
-                }
-            }
-            '(' => tokens.push(Token::Lparen(i)),
-            ')' => tokens.push(Token::Rparen(i)),
-            '0'..='9' => {
-                let mut n = (c as u128) - ('0' as u128);
-                loop {
-                    match chars.peek() {
-                        Some((_, d)) if d.is_ascii_digit() => {
-                            n = n
-                                .checked_mul(10)
-                                .and_then(|x| x.checked_add((*d as u128) - ('0' as u128)))
-                                .ok_or(LexError::NumeralOverflow(i))?;
-                            chars.next();
-                        }
-                        _ => break,
-                    }
-                }
-                tokens.push(Token::Numeral(n, i));
-            }
-            '#' => {
-                let radix = chars.next().ok_or(LexError::BadRadix(i))?;
-                match radix.1 {
-                    'x' => {
-                        let mut s = String::new();
-                        while let Some((_, d)) = chars.peek() {
-                            if d.is_ascii_hexdigit() {
-                                s.push(*d);
-                                chars.next();
-                            } else {
-                                break;
-                            }
-                        }
-                        if s.is_empty() {
-                            return Err(LexError::EmptyRadix(i));
-                        }
-                        tokens.push(Token::Hex(s, i));
-                    }
-                    'b' => {
-                        let mut s = String::new();
-                        while let Some((_, d)) = chars.peek() {
-                            if *d == '0' || *d == '1' {
-                                s.push(*d);
-                                chars.next();
-                            } else {
-                                break;
-                            }
-                        }
-                        if s.is_empty() {
-                            return Err(LexError::EmptyRadix(i));
-                        }
-                        tokens.push(Token::Bin(s, i));
-                    }
-                    _ => return Err(LexError::BadRadix(i)),
-                }
-            }
-            ':' => {
-                let mut s = String::new();
-                while let Some((_, d)) = chars.peek() {
-                    if is_symbol_char(*d) {
-                        s.push(*d);
-                        chars.next();
-                    } else {
-                        break;
-                    }
-                }
-                tokens.push(Token::Keyword(s, i));
-            }
-            '|' => {
-                let mut s = String::new();
-                let mut closed = false;
-                for (_, c2) in chars.by_ref() {
-                    if c2 == '|' {
-                        closed = true;
-                        break;
-                    }
-                    s.push(c2);
-                }
-                if !closed {
-                    return Err(LexError::UnterminatedSymbol(i));
-                }
-                tokens.push(Token::Symbol(s, i));
-            }
-            '"' => {
-                let mut s = String::new();
-                let mut closed = false;
-                while let Some((_, c2)) = chars.next() {
-                    if c2 == '"' {
-                        if matches!(chars.peek(), Some((_, '"'))) {
-                            s.push('"');
-                            chars.next();
-                            continue;
-                        }
-                        closed = true;
-                        break;
-                    }
-                    s.push(c2);
-                }
-                if !closed {
-                    return Err(LexError::UnterminatedString(i));
-                }
-                tokens.push(Token::Str(s, i));
-            }
-            c if is_symbol_start(c) => {
-                let mut end = i + c.len_utf8();
-                while let Some((j, d)) = chars.peek() {
-                    if is_symbol_char(*d) {
-                        end = j + d.len_utf8();
-                        chars.next();
-                    } else {
-                        break;
-                    }
-                }
-                tokens.push(Token::Symbol(src[i..end].to_string(), i));
-            }
+        let tok = match c {
+            ' ' | '\t' | '\r' | '\n' => continue,
+            ';' => { skip_line_comment(&mut chars); continue; }
+            '(' => Token::Lparen(i),
+            ')' => Token::Rparen(i),
+            '0'..='9' => lex_numeral(i, c, &mut chars)?,
+            '#' => lex_radix(i, &mut chars)?,
+            ':' => lex_keyword(i, &mut chars),
+            '|' => lex_quoted_symbol(i, &mut chars)?,
+            '"' => lex_string(i, &mut chars)?,
+            c if is_symbol_start(c) => lex_plain_symbol(i, c, src, &mut chars),
             other => return Err(LexError::UnexpectedChar(other, i)),
-        }
+        };
+        tokens.push(tok);
     }
     Ok(tokens)
 }

@@ -149,6 +149,75 @@ impl Orchestrator {
         Ok(o)
     }
 
+    fn find_lease_for_node(
+        &self,
+        worker: u32,
+        node: NodeId,
+    ) -> Result<u64, OrchestratorError> {
+        self.scheduler
+            .leases()
+            .leases_for_worker(worker)
+            .into_iter()
+            .find(|id| self.scheduler.leases().get(*id).is_some_and(|l| l.node_id == node))
+            .ok_or(OrchestratorError::Scheduler(SchedulerError::UnknownNode(node)))
+    }
+
+    fn replay_dispatch(
+        &mut self,
+        worker: u32,
+        node: NodeId,
+        budget_ms: u64,
+        budget_conflicts: u64,
+        now: Instant,
+    ) -> Result<(), OrchestratorError> {
+        let budget = WorkBudget { max_conflicts: budget_conflicts, max_ms: budget_ms };
+        let lease = self.scheduler.dispatch(worker, budget, now)?;
+        if lease.node_id != node {
+            return Err(OrchestratorError::Scheduler(SchedulerError::Finished(format!(
+                "WAL replay dispatched {node:?}, scheduler picked {node:?}"
+            ))));
+        }
+        Ok(())
+    }
+
+    fn replay_result(
+        &mut self,
+        worker: u32,
+        node: NodeId,
+        outcome: WalOutcome,
+    ) -> Result<(), OrchestratorError> {
+        let lease_id = self.find_lease_for_node(worker, node)?;
+        let result = match outcome {
+            WalOutcome::Sat => NodeResult::Sat,
+            WalOutcome::Unsat => NodeResult::Unsat,
+            WalOutcome::Cancelled => NodeResult::Cancelled,
+        };
+        self.scheduler.on_result(lease_id, worker, result)?;
+        Ok(())
+    }
+
+    fn replay_split(
+        &mut self,
+        worker: u32,
+        node: NodeId,
+        children: Vec<NodeId>,
+        literals: Vec<Literal>,
+    ) -> Result<(), OrchestratorError> {
+        let lease_id = self.find_lease_for_node(worker, node)?;
+        let cert = CoverageCertificate::tautology(literals).map_err(|_| {
+            OrchestratorError::Scheduler(SchedulerError::Finished(
+                "WAL split certificate invalid".into(),
+            ))
+        })?;
+        let got = self.scheduler.split(lease_id, worker, cert.literals.clone(), cert)?;
+        if got != children {
+            return Err(OrchestratorError::Scheduler(SchedulerError::Finished(
+                "WAL split produced different children".into(),
+            )));
+        }
+        Ok(())
+    }
+
     /// Apply a WAL entry during standby replay. Node ids are re-derived by
     /// re-running the deterministic scheduler operations.
     fn apply_replay(&mut self, entry: WalEntry) -> Result<(), OrchestratorError> {
@@ -157,11 +226,7 @@ impl Orchestrator {
             WalEntry::WorkerAdmitted { worker } => {
                 self.workers.insert(
                     worker,
-                    WorkerRecord {
-                        worker_id: worker,
-                        last_heartbeat: now,
-                        dead: false,
-                    },
+                    WorkerRecord { worker_id: worker, last_heartbeat: now, dead: false },
                 );
             }
             WalEntry::Heartbeat { worker } => {
@@ -169,76 +234,14 @@ impl Orchestrator {
                     r.last_heartbeat = now;
                 }
             }
-            WalEntry::Dispatch {
-                worker,
-                node,
-                budget_ms,
-                budget_conflicts,
-            } => {
-                let budget = WorkBudget {
-                    max_conflicts: budget_conflicts,
-                    max_ms: budget_ms,
-                };
-                let lease = self.scheduler.dispatch(worker, budget, now)?;
-                if lease.node_id != node {
-                    return Err(OrchestratorError::Scheduler(
-                        SchedulerError::Finished(format!(
-                            "WAL replay dispatched {node:?}, scheduler picked {node:?}"
-                        )),
-                    ));
-                }
+            WalEntry::Dispatch { worker, node, budget_ms, budget_conflicts } => {
+                self.replay_dispatch(worker, node, budget_ms, budget_conflicts, now)?;
             }
-            WalEntry::Result {
-                worker,
-                node,
-                outcome,
-            } => {
-                let lease_id = self
-                    .scheduler
-                    .leases()
-                    .leases_for_worker(worker)
-                    .into_iter()
-                    .find(|id| {
-                        self.scheduler.leases().get(*id).is_some_and(|l| l.node_id == node)
-                    })
-                    .ok_or({
-                        OrchestratorError::Scheduler(SchedulerError::UnknownNode(node))
-                    })?;
-                let result = match outcome {
-                    WalOutcome::Sat => NodeResult::Sat,
-                    WalOutcome::Unsat => NodeResult::Unsat,
-                    WalOutcome::Cancelled => NodeResult::Cancelled,
-                };
-                self.scheduler.on_result(lease_id, worker, result)?;
+            WalEntry::Result { worker, node, outcome } => {
+                self.replay_result(worker, node, outcome)?;
             }
-            WalEntry::Split {
-                worker,
-                node,
-                children,
-                literals,
-            } => {
-                let lease_id = self
-                    .scheduler
-                    .leases()
-                    .leases_for_worker(worker)
-                    .into_iter()
-                    .find(|id| {
-                        self.scheduler.leases().get(*id).is_some_and(|l| l.node_id == node)
-                    })
-                    .ok_or({
-                        OrchestratorError::Scheduler(SchedulerError::UnknownNode(node))
-                    })?;
-                let cert = CoverageCertificate::tautology(literals).map_err(|_| {
-                    OrchestratorError::Scheduler(SchedulerError::Finished(
-                        "WAL split certificate invalid".into(),
-                    ))
-                })?;
-                let got = self.scheduler.split(lease_id, worker, cert.literals.clone(), cert)?;
-                if got != children {
-                    return Err(OrchestratorError::Scheduler(SchedulerError::Finished(
-                        "WAL split produced different children".into(),
-                    )));
-                }
+            WalEntry::Split { worker, node, children, literals } => {
+                self.replay_split(worker, node, children, literals)?;
             }
             WalEntry::WorkerDead { worker } => {
                 if let Some(r) = self.workers.get_mut(&worker) {

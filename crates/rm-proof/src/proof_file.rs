@@ -66,12 +66,71 @@ pub enum Status {
     Unsat,
 }
 
+fn parse_pcnf_header(rest: &str, lineno: usize) -> Result<u32, ProofError> {
+    let parts: Vec<&str> = rest.split_whitespace().collect();
+    if parts.len() < 2 {
+        return Err(ProofError::Malformed { line: lineno, msg: "p cnf needs two integers".into() });
+    }
+    parts[0]
+        .parse()
+        .map_err(|_| ProofError::Malformed { line: lineno, msg: "bad num_vars".into() })
+}
+
+fn parse_model_line(rest: &str, lineno: usize) -> Result<Vec<i32>, ProofError> {
+    let mut lits = Vec::new();
+    for tok in rest.split_whitespace() {
+        let lit: i32 = tok
+            .parse()
+            .map_err(|_| ProofError::Malformed { line: lineno, msg: format!("bad literal: {tok}") })?;
+        if lit == 0 { break; }
+        lits.push(lit);
+    }
+    Ok(lits)
+}
+
+fn parse_drup_line(rest: &str, lineno: usize, trimmed: &str) -> Result<Vec<i32>, ProofError> {
+    rest.split_whitespace()
+        .take_while(|t| *t != "0")
+        .map(|t| t.parse::<i32>())
+        .collect::<Result<_, _>>()
+        .map_err(|_| ProofError::Malformed {
+            line: lineno,
+            msg: format!("bad drup literal in: {trimmed}"),
+        })
+}
+
+fn parse_clause_line(trimmed: &str, lineno: usize) -> Result<Option<Vec<i32>>, ProofError> {
+    let lits: Result<Vec<i32>, _> = trimmed
+        .split_whitespace()
+        .take_while(|t| *t != "0")
+        .map(|t| t.parse::<i32>())
+        .collect();
+    match lits {
+        Ok(ls) if !ls.is_empty() => Ok(Some(ls)),
+        Ok(_) => Ok(None),
+        Err(_) => Err(ProofError::Malformed { line: lineno, msg: format!("bad clause: {trimmed}") }),
+    }
+}
+
+fn build_proof_model(num_vars: u32, model_lits: Vec<i32>) -> Result<Vec<bool>, ProofError> {
+    let mut model = vec![false; num_vars as usize + 1];
+    for lit in model_lits {
+        let var = lit.unsigned_abs();
+        if var > num_vars {
+            return Err(ProofError::ModelTooLarge { declared: num_vars, found: var });
+        }
+        if var > 0 {
+            model[var as usize] = lit > 0;
+        }
+    }
+    Ok(model)
+}
+
 impl ProofFile {
     /// Parse an `.rmproof` file from a reader.
     pub fn parse<R: Read>(reader: R) -> Result<ProofFile, ProofError> {
         let reader = BufReader::new(reader);
         let mut num_vars: Option<u32> = None;
-        let mut _num_clauses: Option<u32> = None;
         let mut clauses: Vec<Vec<i32>> = Vec::new();
         let mut status: Option<Status> = None;
         let mut model_lits: Vec<i32> = Vec::new();
@@ -85,78 +144,34 @@ impl ProofFile {
             if trimmed.is_empty() || trimmed.starts_with("c ") || trimmed == "c" {
                 continue;
             }
-
             if let Some(rest) = trimmed.strip_prefix("p cnf ") {
-                let parts: Vec<&str> = rest.split_whitespace().collect();
-                if parts.len() < 2 {
-                    return Err(ProofError::Malformed { line: lineno, msg: "p cnf needs two integers".into() });
-                }
-                num_vars = Some(parts[0].parse().map_err(|_| ProofError::Malformed { line: lineno, msg: "bad num_vars".into() })?);
-                _num_clauses = Some(parts[1].parse().map_err(|_| ProofError::Malformed { line: lineno, msg: "bad num_clauses".into() })?);
+                num_vars = Some(parse_pcnf_header(rest, lineno)?);
                 continue;
             }
-
-            if trimmed == "s SAT" {
-                status = Some(Status::Sat);
-                continue;
-            }
-            if trimmed == "s UNSAT" {
-                status = Some(Status::Unsat);
-                continue;
-            }
-
+            if trimmed == "s SAT" { status = Some(Status::Sat); continue; }
+            if trimmed == "s UNSAT" { status = Some(Status::Unsat); continue; }
             if let Some(rest) = trimmed.strip_prefix("v ") {
-                for tok in rest.split_whitespace() {
-                    let lit: i32 = tok.parse().map_err(|_| ProofError::Malformed { line: lineno, msg: format!("bad literal: {tok}") })?;
-                    if lit == 0 { break; }
-                    model_lits.push(lit);
-                }
+                model_lits.extend(parse_model_line(rest, lineno)?);
                 continue;
             }
-
             if let Some(rest) = trimmed.strip_prefix("d ") {
-                let lits: Vec<i32> = rest
-                    .split_whitespace()
-                    .take_while(|t| *t != "0")
-                    .map(|t| t.parse::<i32>())
-                    .collect::<Result<_, _>>()
-                    .map_err(|_| ProofError::Malformed { line: lineno, msg: format!("bad drup literal in: {trimmed}") })?;
-                drup.push(lits);
+                drup.push(parse_drup_line(rest, lineno, trimmed)?);
                 continue;
             }
             if trimmed == "0" && status == Some(Status::Unsat) {
                 drup.push(vec![]);
                 continue;
             }
-
             if num_vars.is_some() {
-                let lits: Result<Vec<i32>, _> = trimmed
-                    .split_whitespace()
-                    .take_while(|t| *t != "0")
-                    .map(|t| t.parse::<i32>())
-                    .collect();
-                match lits {
-                    Ok(ls) if !ls.is_empty() => clauses.push(ls),
-                    Ok(_) => {}
-                    Err(_) => return Err(ProofError::Malformed { line: lineno, msg: format!("bad clause: {trimmed}") }),
+                if let Some(ls) = parse_clause_line(trimmed, lineno)? {
+                    clauses.push(ls);
                 }
             }
         }
 
         let num_vars = num_vars.ok_or(ProofError::MissingHeader)?;
         let status = status.ok_or(ProofError::MissingStatus)?;
-
-        let mut model = vec![false; num_vars as usize + 1];
-        for lit in model_lits {
-            let var = lit.unsigned_abs();
-            if var > num_vars {
-                return Err(ProofError::ModelTooLarge { declared: num_vars, found: var });
-            }
-            if var > 0 {
-                model[var as usize] = lit > 0;
-            }
-        }
-
+        let model = build_proof_model(num_vars, model_lits)?;
         Ok(ProofFile { num_vars, clauses, status, model, drup })
     }
 

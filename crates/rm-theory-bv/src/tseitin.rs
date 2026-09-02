@@ -4,6 +4,93 @@
 use rm_akx::literal::Literal;
 use rm_ir::{Circuit, Gate, GateId};
 
+fn alloc_gate_var(enc: &mut EncodedCnf) -> u32 {
+    enc.num_vars += 1;
+    let g = enc.num_vars;
+    enc.gate_var.push(g);
+    g
+}
+
+fn encode_input(enc: &mut EncodedCnf, idx: u32) {
+    let var = idx + 1;
+    enc.gate_var.push(var);
+    enc.num_vars = enc.num_vars.max(var);
+}
+
+fn encode_const(enc: &mut EncodedCnf, v: bool) {
+    let g = alloc_gate_var(enc);
+    let lit = if v { Literal::positive(g) } else { Literal::negative(g) };
+    enc.clauses.push(vec![lit]);
+}
+
+fn encode_not(enc: &mut EncodedCnf, a: GateId) {
+    let g = alloc_gate_var(enc);
+    let ga = enc.gate_var[a.0 as usize];
+    enc.clauses.push(vec![Literal::negative(g), Literal::negative(ga)]);
+    enc.clauses.push(vec![Literal::positive(g), Literal::positive(ga)]);
+}
+
+fn encode_and(enc: &mut EncodedCnf, a: GateId, b: GateId) {
+    let g = alloc_gate_var(enc);
+    let ga = enc.gate_var[a.0 as usize];
+    let gb = enc.gate_var[b.0 as usize];
+    enc.clauses.push(vec![Literal::negative(g), Literal::positive(ga)]);
+    enc.clauses.push(vec![Literal::negative(g), Literal::positive(gb)]);
+    enc.clauses
+        .push(vec![Literal::negative(ga), Literal::negative(gb), Literal::positive(g)]);
+}
+
+fn encode_or(enc: &mut EncodedCnf, a: GateId, b: GateId) {
+    let g = alloc_gate_var(enc);
+    let ga = enc.gate_var[a.0 as usize];
+    let gb = enc.gate_var[b.0 as usize];
+    enc.clauses.push(vec![Literal::negative(ga), Literal::positive(g)]);
+    enc.clauses.push(vec![Literal::negative(gb), Literal::positive(g)]);
+    enc.clauses
+        .push(vec![Literal::positive(ga), Literal::positive(gb), Literal::negative(g)]);
+}
+
+fn encode_xor(enc: &mut EncodedCnf, a: GateId, b: GateId) {
+    let g = alloc_gate_var(enc);
+    let ga = enc.gate_var[a.0 as usize];
+    let gb = enc.gate_var[b.0 as usize];
+    enc.clauses
+        .push(vec![Literal::positive(ga), Literal::positive(gb), Literal::negative(g)]);
+    enc.clauses
+        .push(vec![Literal::negative(ga), Literal::negative(gb), Literal::negative(g)]);
+    enc.clauses
+        .push(vec![Literal::positive(ga), Literal::negative(gb), Literal::positive(g)]);
+    enc.clauses
+        .push(vec![Literal::negative(ga), Literal::positive(gb), Literal::positive(g)]);
+}
+
+fn encode_mux(enc: &mut EncodedCnf, sel: GateId, a: GateId, b: GateId) {
+    let g = alloc_gate_var(enc);
+    let gs = enc.gate_var[sel.0 as usize];
+    let ga = enc.gate_var[a.0 as usize];
+    let gb = enc.gate_var[b.0 as usize];
+    enc.clauses
+        .push(vec![Literal::negative(gs), Literal::negative(ga), Literal::positive(g)]);
+    enc.clauses
+        .push(vec![Literal::positive(gs), Literal::negative(gb), Literal::positive(g)]);
+    enc.clauses
+        .push(vec![Literal::negative(g), Literal::positive(gs), Literal::negative(ga)]);
+    enc.clauses
+        .push(vec![Literal::negative(g), Literal::negative(gs), Literal::positive(gb)]);
+}
+
+fn encode_orn(enc: &mut EncodedCnf, children: &[GateId]) {
+    let g = alloc_gate_var(enc);
+    for &c in children {
+        let gc = enc.gate_var[c.0 as usize];
+        enc.clauses.push(vec![Literal::negative(g), Literal::positive(gc)]);
+    }
+    let mut clause: Vec<Literal> =
+        children.iter().map(|&c| Literal::negative(enc.gate_var[c.0 as usize])).collect();
+    clause.push(Literal::positive(g));
+    enc.clauses.push(clause);
+}
+
 /// A CNF encoding: every gate gets a Boolean variable; primary inputs get
 /// their own variable (index = input index).
 pub struct EncodedCnf {
@@ -25,142 +112,18 @@ impl EncodedCnf {
         };
         for gate in circuit.gates() {
             match gate {
-                Gate::Input(idx) => {
-                    // Variables are 1-based; input i maps to variable i+1.
-                    let var = *idx + 1;
-                    enc.gate_var.push(var);
-                    enc.num_vars = enc.num_vars.max(var);
-                }
-                Gate::Const(v) => {
-                    enc.num_vars += 1;
-                    let var = enc.num_vars;
-                    enc.gate_var.push(var);
-                    let lit = if *v { Literal::positive(var) } else { Literal::negative(var) };
-                    enc.clauses.push(vec![lit]);
-                }
-                Gate::Not(a) => {
-                    enc.num_vars += 1;
-                    let g = enc.num_vars;
-                    enc.gate_var.push(g);
-                    let ga = enc.gate_var[a.0 as usize];
-                    // g <-> ~a
-                    enc.clauses.push(vec![Literal::negative(g), Literal::negative(ga)]);
-                    enc.clauses.push(vec![Literal::positive(g), Literal::positive(ga)]);
-                }
-                Gate::And(a, b) => {
-                    enc.num_vars += 1;
-                    let g = enc.num_vars;
-                    enc.gate_var.push(g);
-                    let ga = enc.gate_var[a.0 as usize];
-                    let gb = enc.gate_var[b.0 as usize];
-                    // g -> a, g -> b
-                    enc.clauses.push(vec![Literal::negative(g), Literal::positive(ga)]);
-                    enc.clauses.push(vec![Literal::negative(g), Literal::positive(gb)]);
-                    // a & b -> g
-                    enc.clauses.push(vec![
-                        Literal::negative(ga),
-                        Literal::negative(gb),
-                        Literal::positive(g),
-                    ]);
-                }
-                Gate::Or(a, b) => {
-                    enc.num_vars += 1;
-                    let g = enc.num_vars;
-                    enc.gate_var.push(g);
-                    let ga = enc.gate_var[a.0 as usize];
-                    let gb = enc.gate_var[b.0 as usize];
-                    // a -> g, b -> g
-                    enc.clauses.push(vec![Literal::negative(ga), Literal::positive(g)]);
-                    enc.clauses.push(vec![Literal::negative(gb), Literal::positive(g)]);
-                    // g -> a | b
-                    enc.clauses.push(vec![
-                        Literal::positive(ga),
-                        Literal::positive(gb),
-                        Literal::negative(g),
-                    ]);
-                }
-                Gate::Xor(a, b) => {
-                    enc.num_vars += 1;
-                    let g = enc.num_vars;
-                    enc.gate_var.push(g);
-                    let ga = enc.gate_var[a.0 as usize];
-                    let gb = enc.gate_var[b.0 as usize];
-                    // g <-> a xor b
-                    enc.clauses.push(vec![
-                        Literal::positive(ga),
-                        Literal::positive(gb),
-                        Literal::negative(g),
-                    ]);
-                    enc.clauses.push(vec![
-                        Literal::negative(ga),
-                        Literal::negative(gb),
-                        Literal::negative(g),
-                    ]);
-                    enc.clauses.push(vec![
-                        Literal::positive(ga),
-                        Literal::negative(gb),
-                        Literal::positive(g),
-                    ]);
-                    enc.clauses.push(vec![
-                        Literal::negative(ga),
-                        Literal::positive(gb),
-                        Literal::positive(g),
-                    ]);
-                }
-                Gate::Mux(sel, a, b) => {
-                    // g <-> (sel & a) | (~sel & b)
-                    enc.num_vars += 1;
-                    let g = enc.num_vars;
-                    enc.gate_var.push(g);
-                    let gs = enc.gate_var[sel.0 as usize];
-                    let ga = enc.gate_var[a.0 as usize];
-                    let gb = enc.gate_var[b.0 as usize];
-                    // sel & a -> g
-                    enc.clauses.push(vec![
-                        Literal::negative(gs),
-                        Literal::negative(ga),
-                        Literal::positive(g),
-                    ]);
-                    // ~sel & b -> g
-                    enc.clauses.push(vec![
-                        Literal::positive(gs),
-                        Literal::negative(gb),
-                        Literal::positive(g),
-                    ]);
-                    // g -> (sel & a) | (~sel & b)
-                    enc.clauses.push(vec![
-                        Literal::negative(g),
-                        Literal::positive(gs),
-                        Literal::negative(ga),
-                    ]);
-                    enc.clauses.push(vec![
-                        Literal::negative(g),
-                        Literal::negative(gs),
-                        Literal::positive(gb),
-                    ]);
-                    // a | b -> g? Not needed: sel and ~sel partition truth.
-                }
-                Gate::OrN(children) => {
-                    enc.num_vars += 1;
-                    let g = enc.num_vars;
-                    enc.gate_var.push(g);
-                    // g -> each child
-                    for &c in children {
-                        let gc = enc.gate_var[c.0 as usize];
-                        enc.clauses.push(vec![Literal::negative(g), Literal::positive(gc)]);
-                    }
-                    // all children -> g
-                    let mut clause: Vec<Literal> =
-                        children.iter().map(|&c| Literal::negative(enc.gate_var[c.0 as usize])).collect();
-                    clause.push(Literal::positive(g));
-                    enc.clauses.push(clause);
-                }
+                Gate::Input(idx) => encode_input(&mut enc, *idx),
+                Gate::Const(v) => encode_const(&mut enc, *v),
+                Gate::Not(a) => encode_not(&mut enc, *a),
+                Gate::And(a, b) => encode_and(&mut enc, *a, *b),
+                Gate::Or(a, b) => encode_or(&mut enc, *a, *b),
+                Gate::Xor(a, b) => encode_xor(&mut enc, *a, *b),
+                Gate::Mux(sel, a, b) => encode_mux(&mut enc, *sel, *a, *b),
+                Gate::OrN(children) => encode_orn(&mut enc, children),
             }
         }
-        // Assert the roots.
         for &r in roots {
-            let g = enc.gate_var[r.0 as usize];
-            enc.clauses.push(vec![Literal::positive(g)]);
+            enc.clauses.push(vec![Literal::positive(enc.gate_var[r.0 as usize])]);
         }
         enc
     }
