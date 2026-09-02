@@ -22,6 +22,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crossbeam_channel::{unbounded, Receiver, Sender};
+use std::sync::atomic::AtomicBool;
 
 use crate::{BusError, KnowledgeBus, PollBudget, PublishHandle};
 use rm_akx::{BusMetrics, KnowledgeBatch, KnowledgeObject, Scope};
@@ -44,6 +45,10 @@ pub struct NetConfig {
     pub max_compat: u32,
     /// Reject frames larger than this.
     pub max_frame: usize,
+    /// Maximum number of `KnowledgeObject`s buffered in the incoming queue
+    /// before oldest items are evicted. Bounds memory usage under high
+    /// inbound throughput.
+    pub max_incoming: usize,
 }
 
 impl Default for NetConfig {
@@ -53,14 +58,23 @@ impl Default for NetConfig {
             min_compat: SCHEMA_VERSION,
             max_compat: SCHEMA_VERSION,
             max_frame: DEFAULT_MAX_FRAME,
+            max_incoming: 65_536,
         }
     }
 }
 
 /// A peer connection's write side. Frames are queued on a channel and drained
 /// by a writer thread so `publish` never blocks on I/O.
+///
+/// Frames are `Arc<Vec<u8>>` so `publish` pays one allocation regardless of
+/// how many peers receive the same frame.
+///
+/// `writer_alive` is set to `false` by the writer thread on exit so that
+/// `publish` can detect dead connections and prune them from the peer list
+/// without waiting for the reader to also finish.
 struct Peer {
-    writer: Sender<Vec<u8>>,
+    writer: Sender<Arc<Vec<u8>>>,
+    writer_alive: Arc<AtomicBool>,
     handle: Option<std::thread::JoinHandle<()>>,
 }
 
@@ -80,6 +94,8 @@ pub struct NetBus {
     schema_rejected: AtomicU64,
     bytes_serialized: AtomicU64,
     bytes_received: AtomicU64,
+    /// Items dropped from the incoming queue because it was at `max_incoming`.
+    incoming_dropped: AtomicU64,
 }
 
 // ---------------------------------------------------------------------------
@@ -185,10 +201,17 @@ impl NetBus {
     /// Bind the accept loop on `addr`; returns a handle to the shared node.
     pub fn bind(addr: SocketAddr, cfg: NetConfig) -> std::io::Result<Arc<NetBus>> {
         let listener = TcpListener::bind(addr)?;
+        Ok(NetBus::bind_listener(listener, cfg))
+    }
+
+    /// Start the accept loop on an already-bound `TcpListener`. This avoids
+    /// the bind-then-connect TOCTOU window in test helpers that must reserve a
+    /// port before handing the address to a client.
+    pub fn bind_listener(listener: TcpListener, cfg: NetConfig) -> Arc<NetBus> {
         let node = Arc::new(NetBus::node(cfg));
         let accept_node = Arc::clone(&node);
         std::thread::spawn(move || accept_node.accept_loop(listener));
-        Ok(node)
+        node
     }
 
     /// Connect to a peer at `addr`. Returns a handle sharing this node's
@@ -264,6 +287,7 @@ impl NetBus {
             schema_rejected: AtomicU64::new(0),
             bytes_serialized: AtomicU64::new(0),
             bytes_received: AtomicU64::new(0),
+            incoming_dropped: AtomicU64::new(0),
         }
     }
 
@@ -295,19 +319,23 @@ impl NetBus {
 
     /// Register a connected peer: spawn its reader and writer threads.
     fn add_peer(self: &Arc<Self>, stream: Arc<TcpStream>) {
-        let (tx, rx) = unbounded::<Vec<u8>>();
-        {
-            let mut peers = self.peers.lock().unwrap();
-            peers.retain(|p| p.handle.as_ref().is_some_and(|h| !h.is_finished()));
-        }
+        let (tx, rx) = unbounded::<Arc<Vec<u8>>>();
+        let writer_alive = Arc::new(AtomicBool::new(true));
         let reader = self.spawn_reader(Arc::clone(&stream));
-        let writer = self.spawn_writer(stream, rx);
+        let _writer = self.spawn_writer(stream, rx, Arc::clone(&writer_alive));
+        // _writer handle is intentionally dropped (detached). Liveness is
+        // tracked via `writer_alive` so `publish` can prune stale entries.
         let mut peers = self.peers.lock().unwrap();
+        // Prune peers whose reader finished or whose writer channel closed.
+        peers.retain(|p| {
+            p.writer_alive.load(Ordering::Acquire)
+                || p.handle.as_ref().is_some_and(|h| !h.is_finished())
+        });
         peers.push(Peer {
             writer: tx,
+            writer_alive,
             handle: Some(reader),
         });
-        drop(writer); // writer is detached
     }
 
     fn spawn_reader(self: &Arc<Self>, stream: Arc<TcpStream>) -> std::thread::JoinHandle<()> {
@@ -327,6 +355,20 @@ impl NetBus {
                         match postcard::from_bytes::<KnowledgeBatch>(&payload) {
                             Ok(batch) => {
                                 let mut q = node.incoming.lock().unwrap();
+                                // Enforce the incoming queue capacity. Evict
+                                // oldest items first (they are least likely to
+                                // be useful once fresher clauses are available).
+                                let max = node.config.max_incoming;
+                                let headroom = max.saturating_sub(q.len());
+                                let will_drop = batch.len().saturating_sub(headroom);
+                                if will_drop > 0 {
+                                    let excess = (q.len() + batch.len()).saturating_sub(max);
+                                    for _ in 0..excess {
+                                        q.pop_front();
+                                    }
+                                    node.incoming_dropped
+                                        .fetch_add(will_drop as u64, Ordering::Relaxed);
+                                }
                                 q.extend(batch);
                             }
                             Err(_) => {
@@ -344,15 +386,18 @@ impl NetBus {
     fn spawn_writer(
         self: &Arc<Self>,
         stream: Arc<TcpStream>,
-        rx: Receiver<Vec<u8>>,
+        rx: Receiver<Arc<Vec<u8>>>,
+        alive: Arc<AtomicBool>,
     ) -> std::thread::JoinHandle<()> {
         std::thread::spawn(move || {
             while let Ok(frame) = rx.recv() {
-                // `Write` is implemented for `&TcpStream`.
                 if (&*stream).write_all(&frame).is_err() {
                     break;
                 }
             }
+            // Signal liveness flag so `publish` prunes this peer promptly
+            // rather than accumulating false backpressure counts.
+            alive.store(false, Ordering::Release);
         })
     }
 }
@@ -369,15 +414,34 @@ impl KnowledgeBus for NetBus {
         frame.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
         frame.extend_from_slice(&bytes);
 
-        let peers = self.peers.lock().unwrap();
+        // Wrap in Arc so every peer channel clone is a pointer copy, not a
+        // full buffer copy. O(1) per peer instead of O(|frame|).
+        let frame = Arc::new(frame);
+
+        let mut peers = self.peers.lock().unwrap();
         let mut sent = 0usize;
-        for peer in peers.iter() {
-            if peer.writer.send(frame.clone()).is_ok() {
-                sent += 1;
-            } else {
-                self.backpressure.fetch_add(1, Ordering::Relaxed);
+        // `retain` both sends and prunes dead peers in one pass.
+        // A send failure on an unbounded channel means the receiver (writer
+        // thread) has exited — treat as a dead peer, not back-pressure.
+        peers.retain(|peer| {
+            // Drop peers whose reader finished AND writer died.
+            let reader_done = peer.handle.as_ref().is_some_and(|h| h.is_finished());
+            let writer_dead = !peer.writer_alive.load(Ordering::Acquire);
+            if reader_done && writer_dead {
+                return false;
             }
-        }
+            match peer.writer.send(Arc::clone(&frame)) {
+                Ok(_) => {
+                    sent += 1;
+                    true
+                }
+                Err(_) => {
+                    // Writer channel closed: writer thread has exited.
+                    // Remove the peer; remaining in-flight sends are lost.
+                    false
+                }
+            }
+        });
         self.published.fetch_add(1, Ordering::Relaxed);
         Ok(PublishHandle { enqueued: sent })
     }
@@ -401,6 +465,9 @@ impl KnowledgeBus for NetBus {
             polled_total: self.polled.load(Ordering::Relaxed),
             deduplicated: self.deduplicated.load(Ordering::Relaxed),
             schema_rejected: self.schema_rejected.load(Ordering::Relaxed),
+            // Incoming queue evictions are reported in `evicted` so operators
+            // can see when inbound throughput exceeds `max_incoming`.
+            evicted: self.incoming_dropped.load(Ordering::Relaxed),
             backpressure: self.backpressure.load(Ordering::Relaxed),
             bytes_serialized: self.bytes_serialized.load(Ordering::Relaxed),
             bytes_received: self.bytes_received.load(Ordering::Relaxed),
@@ -434,11 +501,14 @@ mod tests {
         }
     }
 
-    fn free_port() -> SocketAddr {
-        TcpListener::bind("127.0.0.1:0")
-            .unwrap()
-            .local_addr()
-            .unwrap()
+    /// Bind to an OS-assigned port and return both the listener and its address.
+    /// Keeping the listener open prevents another process from stealing the port
+    /// between our bind and the test's bind (TOCTOU fix). Pass the listener
+    /// directly to `NetBus::bind_listener`.
+    fn free_port() -> (TcpListener, SocketAddr) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        (listener, addr)
     }
 
     /// Poll until `batch` contains at least one object or `timeout` elapses.
@@ -494,8 +564,8 @@ mod tests {
 
     #[test]
     fn two_nodes_roundtrip() {
-        let addr = free_port();
-        let server = NetBus::bind(addr, NetConfig::default()).unwrap();
+        let (listener, addr) = free_port();
+        let server = NetBus::bind_listener(listener, NetConfig::default());
         let client = NetBus::connect(addr, NetConfig::default()).unwrap();
 
         client
@@ -520,8 +590,8 @@ mod tests {
 
     #[test]
     fn incompatible_schema_rejected() {
-        let addr = free_port();
-        let server = NetBus::bind(addr, NetConfig::default()).unwrap();
+        let (listener, addr) = free_port();
+        let server = NetBus::bind_listener(listener, NetConfig::default());
 
         let bad = NetConfig {
             schema_version: 999,

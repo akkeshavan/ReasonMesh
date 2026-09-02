@@ -26,6 +26,10 @@ use std::time::Duration;
 struct BroadcastBus {
     local: Arc<InprocBus>,
     export: Arc<InprocBus>,
+    /// Clauses that could not be enqueued in the export bus (buffer full).
+    /// These are never forwarded to remote peers. Tracked for operator
+    /// visibility — silent export loss was the original bug.
+    export_dropped: std::sync::atomic::AtomicU64,
 }
 
 impl BroadcastBus {
@@ -33,22 +37,41 @@ impl BroadcastBus {
         BroadcastBus {
             local: Arc::new(InprocBus::new(config)),
             export: Arc::new(InprocBus::new(config)),
+            export_dropped: std::sync::atomic::AtomicU64::new(0),
         }
     }
     fn export_bus(&self) -> Arc<InprocBus> { Arc::clone(&self.export) }
     fn local_bus(&self) -> Arc<InprocBus> { Arc::clone(&self.local) }
+    fn export_dropped_total(&self) -> u64 {
+        self.export_dropped.load(Ordering::Relaxed)
+    }
 }
 
 impl KnowledgeBus for BroadcastBus {
     fn publish(&self, scope: Scope, batch: KnowledgeBatch) -> Result<PublishHandle, BusError> {
-        let _ = self.export.publish(scope, batch.clone());
+        // Export bus: bridge reads this exclusively. Silently dropping here
+        // means those clauses are never shared with remote peers, so we count
+        // the loss explicitly rather than swallowing it.
+        match self.export.publish(scope, batch.clone()) {
+            Ok(_) => {}
+            Err(BusError::BufferFull) => {
+                self.export_dropped
+                    .fetch_add(batch.len() as u64, Ordering::Relaxed);
+            }
+            Err(_) => {}
+        }
+        // Local bus: workers read this; back-pressure propagates to caller.
         self.local.publish(scope, batch)
     }
     fn poll(&self, budget: PollBudget) -> Result<KnowledgeBatch, BusError> {
         self.local.poll(budget)
     }
     fn metrics(&self) -> BusMetrics {
-        self.local.metrics()
+        let mut m = self.local.metrics();
+        // Fold export drops into backpressure so the caller sees the full
+        // picture of clauses that did not reach the network.
+        m.backpressure += self.export_dropped.load(Ordering::Relaxed);
+        m
     }
 }
 /// Exit codes follow the SAT competition convention:
@@ -220,40 +243,64 @@ fn run_serve(
     // Bridge thread:
     //   export_bus → NetBus: forward locally learned clauses to all TCP peers
     //   NetBus → local_bus: inject peer clauses so local workers can import them
+    //
+    // The loop is event-driven: it only sleeps when both directions are idle,
+    // so clause bursts are drained at full speed without a fixed 50 ms lag
+    // between the export-forward and net-inject phases.
     let bridge_shutdown = Arc::new(AtomicBool::new(false));
-    {
+    let bridge_handle = {
         let net = Arc::clone(&net_bus);
         let shutdown = Arc::clone(&bridge_shutdown);
-        let interval = Duration::from_millis(bridge_ms);
+        let idle_interval = Duration::from_millis(bridge_ms);
         std::thread::Builder::new()
             .name("rm-bridge".into())
             .spawn(move || {
-                while !shutdown.load(Ordering::SeqCst) {
+                loop {
+                    if shutdown.load(Ordering::Acquire) {
+                        break;
+                    }
+                    let mut active = false;
                     if let Ok(batch) = export_bus.poll(PollBudget { max_items: 64 }) {
                         if !batch.is_empty() {
                             let _ = net.publish(Scope::Global, batch);
+                            active = true;
                         }
                     }
                     if let Ok(batch) = net.poll(PollBudget { max_items: 64 }) {
                         if !batch.is_empty() {
                             let _ = local_bus.publish(Scope::Process, batch);
+                            active = true;
                         }
                     }
-                    std::thread::sleep(interval);
+                    // Sleep only when both directions were idle. Under load the
+                    // bridge runs at full CPU speed; at rest it yields the core.
+                    if !active {
+                        std::thread::sleep(idle_interval);
+                    }
                 }
             })
-            .expect("spawn bridge thread");
-    }
+            .expect("spawn bridge thread")
+    };
 
     eprintln!("info: starting {num_workers} workers, timeout={timeout_secs}s");
     let outcomes = pool.run(&[], Some(Duration::from_secs(timeout_secs)));
-    bridge_shutdown.store(true, Ordering::SeqCst);
+    bridge_shutdown.store(true, Ordering::Release);
+    // Join the bridge so its panic (if any) surfaces here rather than being
+    // silently swallowed, and so TCP sockets are cleanly drained before exit.
+    bridge_handle.join().expect("bridge thread panicked");
 
     let nm = net_bus.metrics();
     eprintln!(
-        "info: net_bus published={} bytes_out={} bytes_in={}",
-        nm.published_total, nm.bytes_serialized, nm.bytes_received
+        "info: net_bus published={} bytes_out={} bytes_in={} incoming_evicted={}",
+        nm.published_total, nm.bytes_serialized, nm.bytes_received, nm.evicted
     );
+    let export_dropped = bcast.export_dropped_total();
+    if export_dropped > 0 {
+        eprintln!(
+            "warn: export_bus dropped {export_dropped} clause(s) — bridge could not keep up; \
+             consider reducing --workers or increasing --bridge-ms"
+        );
+    }
 
     let sat = outcomes.iter().any(|o| matches!(o, WorkerOutcome::Sat { .. }));
     let unsat = outcomes.iter().any(|o| matches!(o, WorkerOutcome::Unsat { .. }));

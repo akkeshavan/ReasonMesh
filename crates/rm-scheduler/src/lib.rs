@@ -124,9 +124,11 @@ impl Scheduler {
     /// tokens, then release every lease. Used on validated SAT or orchestrator
     /// shutdown.
     pub fn cancel_all(&mut self) {
-        self.shutdown.store(true, Ordering::Relaxed);
+        // Release pairs with the Acquire/SeqCst loads in worker loops so the
+        // cancellation is visible before any subsequent memory operations.
+        self.shutdown.store(true, Ordering::Release);
         for lease in self.leases.drain_all() {
-            lease.work_unit.shutdown.store(true, Ordering::Relaxed);
+            lease.work_unit.shutdown.store(true, Ordering::Release);
         }
     }
 
@@ -247,7 +249,7 @@ impl Scheduler {
         let mut reaped = 0;
         for id in expired {
             if let Some(lease) = self.leases.release(id) {
-                lease.work_unit.shutdown.store(true, Ordering::Relaxed);
+                lease.work_unit.shutdown.store(true, Ordering::Release);
                 if self.tree.reopen(lease.node_id).is_ok() {
                     reaped += 1;
                 }
@@ -264,7 +266,7 @@ impl Scheduler {
         let mut reaped = 0;
         for id in ids {
             if let Some(lease) = self.leases.release(id) {
-                lease.work_unit.shutdown.store(true, Ordering::Relaxed);
+                lease.work_unit.shutdown.store(true, Ordering::Release);
                 if self.tree.reopen(lease.node_id).is_ok() {
                     reaped += 1;
                 }
