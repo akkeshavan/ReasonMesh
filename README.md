@@ -34,7 +34,7 @@ A ReasonMesh solve has three layers:
 
 **The AKX bus** (`rm-bus`, `rm-akx`) sits between workers. When a worker learns a clause, it packages it as a `KnowledgeObject` tagged with a `Scope` and a `TrustLevel`, and publishes it. Workers poll the bus between CDCL steps. The `ImportGate` checks the assumption-scoped soundness predicate before applying any incoming knowledge. The bus applies utility-based eviction (`utility = 1 / (1 + LBD)`) so low-quality clauses are dropped before they consume buffer space.
 
-For the full architecture, see [`docs/architecture.md`](docs/architecture.md). For API and CLI usage, see [`docs/usage.md`](docs/usage.md).
+For the full architecture, see [`docs/architecture.md`](docs/architecture.md). For API and CLI usage, see [`docs/usage.md`](docs/usage.md). For the Lean 4 integration, see [`docs/lean.md`](docs/lean.md).
 
 ---
 
@@ -163,8 +163,6 @@ cd lean
 lake build
 ```
 
-Lake links against the shared library using the path baked into `lakefile.lean`. If your build is somewhere else, set `RM_API_LIB_DIR` before running `lake build`.
-
 **Step 3 — add `RmApi` as a Lake dependency in your project:**
 
 ```lean
@@ -183,7 +181,7 @@ example (x : UInt8) (h : x < 200) : x + 1 ≤ 200 := by
 
 -- Race N portfolio workers; useful when the goal's search space is irregular
 example (a b : UInt32) : (a &&& b) ||| (a ^^^ b) = a ||| b := by
-  rm_decide_par 8
+  rm_decide_par (8)
 
 -- Close all current goals in parallel (proof farm)
 example (x y : UInt32) (h1 : x < 100) (h2 : y < 100) : x < 1000 ∧ y < 1000 := by
@@ -198,6 +196,8 @@ example : True := by
 ```
 
 **A note on soundness:** `rm_decide` closes goals via `RmApi.rm_oracle`, an axiom that trusts the solver's UNSAT verdict. This is the same trust model as `native_decide` — you are trusting the solver's output, not a verified proof. Future work includes LRAT certificate verification that would eliminate the axiom entirely.
+
+See [`docs/lean.md`](docs/lean.md) for the complete reference: supported Lean fragment, programmatic API, batch proof farm, C FFI, and troubleshooting.
 
 ---
 
@@ -228,7 +228,7 @@ See `docs/usage.md` for the full HTTP API reference and both solving regimes (pr
 
 ## Research context
 
-The architecture is described in full in [`docs/architecture.md`](docs/architecture.md), including the rationale behind each major design decision. The `experiments/` directory contains benchmark manifests that compare clause-sharing vs. isolated portfolio modes across the G-series problem sets. The core question is whether AKX utility-filtered sharing produces measurable speedup over pure portfolio, and under what conditions it helps or hurts.
+The architecture is described in full in [`docs/architecture.md`](docs/architecture_spec.md), including the rationale behind each major design decision. The `experiments/` directory contains benchmark manifests that compare clause-sharing vs. isolated portfolio modes across the G-series problem sets. The core question is whether AKX utility-filtered sharing produces measurable speedup over pure portfolio, and under what conditions it helps or hurts.
 
 The codebase is structured to be a credible research artifact: benchmark results are reproducible via manifest files, the proof format is documented, and the telemetry system records enough information to replay any run.
 
