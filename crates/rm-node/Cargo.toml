@@ -1,0 +1,21 @@
+[package]
+name = "rm-node"
+description = "ReasonMesh distributed solver node — polls the coordinator for work, solves SMT-LIB 2 scripts, reports results"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "rm-node"
+path = "src/main.rs"
+
+[dependencies]
+rm-smt      = { workspace = true }
+serde       = { workspace = true }
+serde_json  = { workspace = true }
+thiserror   = { workspace = true }
+log         = { workspace = true }
+env_logger  = { workspace = true }
+clap        = { workspace = true }
+tokio       = { workspace = true }
+reqwest     = { workspace = true }

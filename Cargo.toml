@@ -19,6 +19,7 @@ members = [
     "crates/rm-telemetry",
     "crates/rm-bench",
     "crates/rm-coordinator",
+    "crates/rm-node",
     "crates/reasonmesh-cli",
 ]
 resolver = "2"
@@ -49,12 +50,14 @@ rm-proof     = { path = "crates/rm-proof" }
 rm-telemetry = { path = "crates/rm-telemetry" }
 rm-bench     = { path = "crates/rm-bench" }
 rm-coordinator = { path = "crates/rm-coordinator" }
+rm-node        = { path = "crates/rm-node" }
 
 # External crates
 crossbeam-channel = "0.5"
 tokio    = { version = "1", features = ["full"] }
 axum     = "0.7"
 uuid     = { version = "1", features = ["v4", "serde"] }
+reqwest  = { version = "0.12", features = ["json"] }
 clap              = { version = "4", features = ["derive"] }
 serde             = { version = "1", features = ["derive"] }
 serde_json        = "1"
