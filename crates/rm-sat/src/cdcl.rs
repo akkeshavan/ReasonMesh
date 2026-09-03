@@ -254,6 +254,10 @@ impl CdclSolver {
         };
 
         if self.base_level == 0 && self.settle_root_propagations() {
+            // Level-0 BCP derived False: formula is UNSAT without any search.
+            // Must emit the empty-clause proof entry here; the main loop's
+            // process_conflict_in_loop path is never reached in this case.
+            self.log_proof_empty();
             self.assignment.backtrack_to(0);
             return SolveResult::Unsat;
         }
@@ -304,6 +308,11 @@ impl CdclSolver {
             match self.assignment.literal_value(lit) {
                 Value::True => {}
                 Value::False => {
+                    // Assumption literal is already forced False at level 0:
+                    // the conjunction (formula ∧ assumptions) is UNSAT.
+                    // The empty-clause entry is missing from the two other
+                    // UNSAT paths; ensure it is logged here too.
+                    self.log_proof_empty();
                     self.assignment.backtrack_to(self.base_level);
                     return Some(SolveResult::Unsat);
                 }

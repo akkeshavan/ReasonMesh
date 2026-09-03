@@ -1,9 +1,10 @@
 [package]
 name = "rm-telemetry"
-description = "ReasonMesh: rm-telemetry"
+description = "Structured trace format (.rmtrace): event recording and replay for solver runs"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [dependencies]
 rm-akx    = { workspace = true }

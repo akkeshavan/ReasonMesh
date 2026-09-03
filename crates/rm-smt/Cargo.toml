@@ -1,9 +1,10 @@
 [package]
 name = "rm-smt"
-description = "ReasonMesh: SMT front end and solver facade (CDCL(T) integration)"
+description = "SMT-LIB 2 facade: dispatches QF_BV, QF_IDL, QF_UF, and QF_UFIDL to theory solvers"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [dependencies]
 rm-akx          = { workspace = true }

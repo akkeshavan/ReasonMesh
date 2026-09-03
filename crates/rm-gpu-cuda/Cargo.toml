@@ -1,9 +1,10 @@
 [package]
 name = "rm-gpu-cuda"
-description = "ReasonMesh: rm-gpu-cuda"
+description = "CUDA backend stub for GPU-accelerated CDCL (future milestone)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [dependencies]
 rm-akx    = { workspace = true }

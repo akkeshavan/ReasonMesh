@@ -1,6 +1,24 @@
+# Rust build output
 /target/
 **/*.rs.bk
+
+# macOS metadata
 .DS_Store
+
+# Scratch directories
 scratch/
+
+# ReasonMesh proof and trace artifacts
 *.rmtrace
 *.rmproof
+
+# TLA+ generated and binary files
+# tla2tools.jar is a tool dependency — download it separately (see tla/README.md)
+tla/tla2tools.jar
+# TLC disk-based state queue written during model checking
+tla/states/
+# TLC trace explorer outputs (generated when inspecting a counterexample in the Toolbox)
+tla/MC_TTrace_*.tla
+tla/MC_TTrace_*.bin
+tla/*.dot
+tla/*.out

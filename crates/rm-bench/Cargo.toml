@@ -1,9 +1,10 @@
 [package]
 name = "rm-bench"
-description = "ReasonMesh: rm-bench"
+description = "Benchmark manifest runner: TOML-driven experiment harness with baseline comparison"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [dependencies]
 rm-akx    = { workspace = true }

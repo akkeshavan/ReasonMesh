@@ -1,9 +1,10 @@
 [package]
 name = "rm-theory-arith"
-description = "ReasonMesh: rm-theory-arith"
+description = "Difference-logic arithmetic theory: QF_IDL and QF_RDL via Bellman-Ford"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [dependencies]
 rm-akx     = { workspace = true }

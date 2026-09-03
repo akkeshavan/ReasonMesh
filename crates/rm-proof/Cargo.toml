@@ -1,9 +1,10 @@
 [package]
 name = "rm-proof"
-description = "ReasonMesh: rm-proof"
+description = "Proof certificate format (.rmproof): DRUP/model recording and verification"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [dependencies]
 rm-akx    = { workspace = true }

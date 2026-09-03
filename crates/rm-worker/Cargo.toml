@@ -1,9 +1,10 @@
 [package]
 name = "rm-worker"
-description = "ReasonMesh: rm-worker"
+description = "Multi-thread CDCL worker pool with AKX clause sharing and portfolio diversification"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [dependencies]
 rm-akx    = { workspace = true }

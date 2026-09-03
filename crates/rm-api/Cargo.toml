@@ -1,9 +1,10 @@
 [package]
 name = "rm-api"
-description = "ReasonMesh: high-level solver API (z3-style programmatic interface + SMT-LIB 2 frontend)"
+description = "High-level solver API: programmatic Rust interface, SMT-LIB 2 frontend, and C FFI"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [lib]
 crate-type = ["cdylib", "rlib"]

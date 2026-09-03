@@ -4,6 +4,7 @@ description = "SMT-LIB 2.7 parser, sorts, and AST"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [dependencies]
 thiserror = { workspace = true }

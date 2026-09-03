@@ -1,9 +1,10 @@
 [package]
 name = "rm-gpu"
-description = "ReasonMesh: rm-gpu"
+description = "GPU worker interface stub (future milestone)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [dependencies]
 rm-akx    = { workspace = true }

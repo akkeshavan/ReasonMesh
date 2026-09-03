@@ -1,9 +1,10 @@
 [package]
 name = "rm-theory-bv"
-description = "ReasonMesh: bit-vector theory (bit-blasting + circuit path), Milestone M4"
+description = "Bit-vector theory: Tseitin bit-blasting and circuit encoding for QF_BV"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [dependencies]
 rm-akx    = { workspace = true }

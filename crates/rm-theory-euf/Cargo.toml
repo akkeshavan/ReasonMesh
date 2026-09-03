@@ -1,9 +1,10 @@
 [package]
 name = "rm-theory-euf"
-description = "ReasonMesh: rm-theory-euf"
+description = "Equality and uninterpreted functions theory: e-graph and congruence closure"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [dependencies]
 rm-akx     = { workspace = true }

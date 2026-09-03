@@ -1,9 +1,10 @@
 [package]
 name = "rm-coordinator"
-description = "ReasonMesh: distributed coordinator — HTTP work queue, cube-and-conquer, and proof farm"
+description = "Distributed coordinator: HTTP work queue for cube-and-conquer and proof farm regimes"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [[bin]]
 name = "rm-coordinator"

@@ -1,9 +1,10 @@
 [package]
 name = "rm-scheduler"
-description = "ReasonMesh: rm-scheduler"
+description = "Cube partition tree, task lease management, and coverage tracking for cube-and-conquer"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [dependencies]
 rm-akx    = { workspace = true }

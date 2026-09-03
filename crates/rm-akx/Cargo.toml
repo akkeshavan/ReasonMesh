@@ -4,6 +4,7 @@ description = "AKX knowledge model: types, import predicate, and export policies
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [dependencies]
 thiserror = { workspace = true }

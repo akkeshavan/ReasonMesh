@@ -1,9 +1,10 @@
 [package]
 name = "rm-orchestrator"
-description = "ReasonMesh: rm-orchestrator"
+description = "Local orchestrator: coordinates single-node parallel solving and cube decomposition"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [dependencies]
 rm-akx       = { workspace = true }

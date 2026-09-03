@@ -197,8 +197,26 @@ fn load_cnf_problem(file: &std::path::Path) -> Result<rm_worker::Problem, i32> {
 
 /// Connect to each peer address, retrying for up to 30 s so all nodes can
 /// start concurrently without a fixed leader.
-fn connect_peers(net: &Arc<rm_bus::net::NetBus>, peers: &[String]) -> Result<(), i32> {
+///
+/// `local_port` is used to detect and skip self-connections (I7 NoSelfForward):
+/// if a peer address parses as a loopback or unspecified IP on the same port,
+/// it would create a forwarding loop; we warn and skip it.  Hostname-based
+/// addresses that resolve to the local machine are not detected here — avoid
+/// passing the node's own hostname in `--peer`.
+fn connect_peers(
+    net: &Arc<rm_bus::net::NetBus>,
+    peers: &[String],
+    local_port: u16,
+) -> Result<(), i32> {
     for peer_str in peers {
+        // I7 guard: skip peers that would loop back to this node's own port.
+        if let Ok(addr) = peer_str.parse::<std::net::SocketAddr>() {
+            if addr.port() == local_port && (addr.ip().is_loopback() || addr.ip().is_unspecified())
+            {
+                eprintln!("warn: skipping self-peer {peer_str} — would create a forwarding loop");
+                continue;
+            }
+        }
         eprintln!("info: connecting to {peer_str} ...");
         match net.connect_peer_retry(peer_str, Duration::from_secs(30)) {
             Ok(()) => eprintln!("info: connected to {peer_str}"),
@@ -223,29 +241,54 @@ fn spawn_bridge_thread(
     net: Arc<rm_bus::net::NetBus>,
     shutdown: Arc<AtomicBool>,
     idle_ms: u64,
+    import_min_utility: f32,
 ) -> std::thread::JoinHandle<()> {
     let idle_interval = Duration::from_millis(idle_ms);
     std::thread::Builder::new()
         .name("rm-bridge".into())
-        .spawn(move || loop {
-            if shutdown.load(Ordering::Acquire) {
-                break;
-            }
-            let mut active = false;
-            if let Ok(batch) = export_bus.poll(PollBudget { max_items: 64 }) {
-                if !batch.is_empty() {
-                    let _ = net.publish(Scope::Global, batch);
-                    active = true;
+        .spawn(move || {
+            // Main loop: forward in both directions until shutdown is signalled.
+            loop {
+                if shutdown.load(Ordering::Acquire) {
+                    break;
+                }
+                let mut active = false;
+                if let Ok(batch) = export_bus.poll(PollBudget { max_items: 64 }) {
+                    if !batch.is_empty() {
+                        let _ = net.publish(Scope::Global, batch);
+                        active = true;
+                    }
+                }
+                if let Ok(batch) = net.poll(PollBudget { max_items: 64 }) {
+                    if !batch.is_empty() {
+                        // I6 (LocalQIntegrity): enforce the utility threshold on
+                        // the receive path.  Senders apply ExportPolicy, but a
+                        // misconfigured or future peer could transmit low-utility
+                        // clauses; drop them here before they enter local_bus.
+                        let filtered: Vec<_> = batch
+                            .into_iter()
+                            .filter(|obj| obj.utility >= import_min_utility)
+                            .collect();
+                        if !filtered.is_empty() {
+                            let _ = local_bus.publish(Scope::Process, filtered);
+                        }
+                        active = true;
+                    }
+                }
+                if !active {
+                    std::thread::sleep(idle_interval);
                 }
             }
-            if let Ok(batch) = net.poll(PollBudget { max_items: 64 }) {
-                if !batch.is_empty() {
-                    let _ = local_bus.publish(Scope::Process, batch);
-                    active = true;
+            // L1 (ClausesEventuallyForwarded): drain any clauses that arrived
+            // in the export queue between the last poll and the shutdown signal.
+            // Without this pass they would be silently dropped on pool teardown.
+            loop {
+                match export_bus.poll(PollBudget { max_items: 64 }) {
+                    Ok(batch) if !batch.is_empty() => {
+                        let _ = net.publish(Scope::Global, batch);
+                    }
+                    _ => break,
                 }
-            }
-            if !active {
-                std::thread::sleep(idle_interval);
             }
         })
         .expect("spawn bridge thread")
@@ -330,9 +373,14 @@ fn run_serve(
     };
     eprintln!("info: listening on 0.0.0.0:{port}");
 
-    if let Err(code) = connect_peers(&net_bus, peers) {
+    if let Err(code) = connect_peers(&net_bus, peers, port) {
         return code;
     }
+
+    // The import threshold mirrors the export threshold: we only accept from
+    // peers what we would send ourselves.  This enforces I6 (LocalQIntegrity)
+    // on the receive path symmetrically with the send-side ExportPolicy filter.
+    let import_min_utility = export_min_utility;
 
     let bridge_shutdown = Arc::new(AtomicBool::new(false));
     let bridge_handle = spawn_bridge_thread(
@@ -341,6 +389,7 @@ fn run_serve(
         Arc::clone(&net_bus),
         Arc::clone(&bridge_shutdown),
         bridge_ms,
+        import_min_utility,
     );
 
     eprintln!("info: starting {num_workers} workers, timeout={timeout_secs}s");

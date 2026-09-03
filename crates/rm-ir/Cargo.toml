@@ -4,6 +4,7 @@ description = "Interned term DAG and Boolean/circuit IR"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [dependencies]
 rm-syntax  = { workspace = true }

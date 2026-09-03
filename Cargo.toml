@@ -31,26 +31,27 @@ license = "MIT"
 repository = "https://github.com/reasonmesh/reasonmesh"
 
 [workspace.dependencies]
-# Internal crates
-rm-api      = { path = "crates/rm-api" }
-rm-akx      = { path = "crates/rm-akx" }
-rm-ir       = { path = "crates/rm-ir" }
-rm-syntax   = { path = "crates/rm-syntax" }
-rm-sat      = { path = "crates/rm-sat" }
-rm-smt      = { path = "crates/rm-smt" }
-rm-theory-euf   = { path = "crates/rm-theory-euf" }
-rm-theory-bv    = { path = "crates/rm-theory-bv" }
-rm-theory-arith = { path = "crates/rm-theory-arith" }
-rm-bus       = { path = "crates/rm-bus" }
-rm-scheduler = { path = "crates/rm-scheduler" }
-rm-worker    = { path = "crates/rm-worker" }
-rm-orchestrator = { path = "crates/rm-orchestrator" }
-rm-gpu       = { path = "crates/rm-gpu" }
-rm-proof     = { path = "crates/rm-proof" }
-rm-telemetry = { path = "crates/rm-telemetry" }
-rm-bench     = { path = "crates/rm-bench" }
-rm-coordinator = { path = "crates/rm-coordinator" }
-rm-node        = { path = "crates/rm-node" }
+# Internal crates — version required alongside path so crates.io can resolve
+# the dependency graph after `path` is stripped on publish.
+rm-api      = { path = "crates/rm-api",      version = "0.1.0" }
+rm-akx      = { path = "crates/rm-akx",      version = "0.1.0" }
+rm-ir       = { path = "crates/rm-ir",       version = "0.1.0" }
+rm-syntax   = { path = "crates/rm-syntax",   version = "0.1.0" }
+rm-sat      = { path = "crates/rm-sat",      version = "0.1.0" }
+rm-smt      = { path = "crates/rm-smt",      version = "0.1.0" }
+rm-theory-euf   = { path = "crates/rm-theory-euf",   version = "0.1.0" }
+rm-theory-bv    = { path = "crates/rm-theory-bv",    version = "0.1.0" }
+rm-theory-arith = { path = "crates/rm-theory-arith", version = "0.1.0" }
+rm-bus       = { path = "crates/rm-bus",      version = "0.1.0" }
+rm-scheduler = { path = "crates/rm-scheduler", version = "0.1.0" }
+rm-worker    = { path = "crates/rm-worker",   version = "0.1.0" }
+rm-orchestrator = { path = "crates/rm-orchestrator", version = "0.1.0" }
+rm-gpu       = { path = "crates/rm-gpu",      version = "0.1.0" }
+rm-proof     = { path = "crates/rm-proof",    version = "0.1.0" }
+rm-telemetry = { path = "crates/rm-telemetry", version = "0.1.0" }
+rm-bench     = { path = "crates/rm-bench",    version = "0.1.0" }
+rm-coordinator = { path = "crates/rm-coordinator", version = "0.1.0" }
+rm-node        = { path = "crates/rm-node",   version = "0.1.0" }
 
 # External crates
 crossbeam-channel = "0.5"

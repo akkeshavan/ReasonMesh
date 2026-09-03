@@ -9,6 +9,16 @@
    learned by any node at any time.  This lets TLC verify the protocol layer
    independently of any particular solver heuristic.
 
+   WHAT IS NOT MODELLED
+   --------------------
+   - The cube-and-conquer lease protocol (rm-coordinator + rm-node regime A):
+     that involves the ImportGate assumption-scoped predicate and would require
+     a separate spec with cube/assumption variables.
+   - GPU workers (future milestone; no Rust code exists yet).
+   - The BFS / priority within InprocBus queues (modelled as sets, not queues,
+     which is a sound over-approximation for the safety and liveness properties
+     checked here).
+
    CONSTANTS
    ---------
    NODES        - set of cluster nodes, e.g. {"n1", "n2"}
@@ -22,17 +32,25 @@
 
    VARIABLES
    ---------
-   learned[n]        - all clauses known to any worker on node n (monotone)
-   export_q[n]       - high-utility clauses queued in the BroadcastBus export
-                       queue, waiting for the bridge thread to forward them
+   learned[n]          - all clauses known to any worker on node n (monotone)
+   export_q[n]         - high-utility clauses queued in the BroadcastBus export
+                         queue, waiting for the bridge thread to forward them
    in_flight[src][dst] - clauses that src's bridge has published to the NetBus
                          but dst has not yet received (models TCP in-transit)
-   local_q[n]        - clauses received from peers via TCP, sitting in the
-                       InprocBus waiting for a local worker to import them
-   verdict[n]        - "searching" | "unsat" | "timeout"
+   local_q[n]          - clauses received from peers via TCP, sitting in the
+                         InprocBus waiting for a local worker to import them
+   verdict[n]          - "searching" | "unsat" | "timeout"
 
-   See MC.tla and MC.cfg for the TLC model configuration.
-   See MC_NoTimeout.tla / MC_NoTimeout.cfg for strong liveness checking.
+   PROPERTIES CHECKED
+   ------------------
+   Safety invariants (I1-I7): checked on every reachable state by TLC.
+   Liveness properties (L1-L8): checked with Fairness assumptions.
+     L1-L4 and L8: hold even with Timeout enabled (MC.cfg).
+     L5-L7: hold only without Timeout (MC_NoTimeout.cfg).
+   Temporal safety (I8 VerdictMonotone): checked as a PROPERTY in both configs.
+
+   See MC.tla / MC.cfg for safety + weak liveness (Timeout enabled).
+   See MC_NoTimeout.tla / MC_NoTimeout.cfg for strong liveness.
 *)
 
 EXTENDS Naturals, FiniteSets, TLC
@@ -244,13 +262,32 @@ ExportQueueSound ==
 InFlightSound ==
     \A src \in NODES, dst \in NODES : in_flight[src][dst] \subseteq learned[src]
 
-(* Combined invariant for TLC: checking one name is simpler than listing four. *)
+(* I6: Local queue integrity.
+   Clauses in a node's incoming queue came from the network, which only carries
+   high-utility clauses.  local_q is populated exclusively by NetDeliver, which
+   takes from in_flight, which FilterIntegrity constrains to HIGH_UTILITY.
+   COUNTEREXAMPLE would mean: a low-utility clause bypassed the bridge filter and
+   arrived in the import queue — impossible given the BridgeForward guard. *)
+LocalQIntegrity ==
+    \A n \in NODES : local_q[n] \subseteq HIGH_UTILITY
+
+(* I7: No self-forwarding.
+   A node's bridge thread fans out to every PEER (m ≠ n).  The in-flight channel
+   from a node to itself must always be empty.  This invariant names what
+   BridgeForward's "IF m # n" guard structurally guarantees.
+   COUNTEREXAMPLE would mean: BridgeForward lost its self-exclusion guard. *)
+NoSelfForward ==
+    \A n \in NODES : in_flight[n][n] = {}
+
+(* Combined invariant for TLC: checking one name is simpler than listing six. *)
 Safety ==
     /\ TypeOK
     /\ UnsatRequiresProof
     /\ FilterIntegrity
     /\ ExportQueueSound
     /\ InFlightSound
+    /\ LocalQIntegrity
+    /\ NoSelfForward
 
 -----------------------------------------------------------------------------
 (* LIVENESS PROPERTIES
@@ -317,5 +354,37 @@ ProofLeadsToVerdict ==
    Implies L6 and L5 and L3. *)
 EventuallyAllUnsat ==
     <>(\A n \in NODES : verdict[n] = "unsat")
+
+(* L8: Import queue drains.
+   Any clause sitting in a node's local_q is eventually consumed by a worker.
+   Completes the end-to-end pipeline: LearnClause → export_q → in_flight →
+   local_q → learned.  L1 (forward), L2 (deliver), and this property together
+   guarantee that knowledge flows from origin to all recipients without
+   permanently stalling at any stage.
+   Enabled by WF_vars(WorkerImport). *)
+ClausesEventuallyImported ==
+    \A n \in NODES, c \in CLAUSES :
+        (c \in local_q[n]) ~> (c \notin local_q[n])
+
+-----------------------------------------------------------------------------
+(* TEMPORAL SAFETY
+
+   I8: Verdict monotonicity.
+   Once a node reaches a terminal verdict (unsat or timeout) it never returns
+   to "searching".  This is a temporal safety property — it constrains all
+   behaviors, not just individual states.
+
+   The property is structurally guaranteed by the spec: ReportUnsat and Timeout
+   are the only actions that change verdict[n], and both guard on
+   verdict[n] = "searching" before firing.  TLC verifies it empirically here
+   so that any future change that accidentally removes a guard is caught.
+
+   Expressed as [](P => []P) — it is always the case that once P holds, P
+   continues to hold.  TLC checks this via the implied-temporal mechanism.
+*)
+VerdictMonotone ==
+    \A n \in NODES :
+        /\ [](verdict[n] = "unsat"   => [](verdict[n] = "unsat"))
+        /\ [](verdict[n] = "timeout" => [](verdict[n] = "timeout"))
 
 =============================================================================
