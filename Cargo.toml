@@ -18,6 +18,7 @@ members = [
     "crates/rm-proof",
     "crates/rm-telemetry",
     "crates/rm-bench",
+    "crates/rm-coordinator",
     "crates/reasonmesh-cli",
 ]
 resolver = "2"
@@ -47,9 +48,13 @@ rm-gpu       = { path = "crates/rm-gpu" }
 rm-proof     = { path = "crates/rm-proof" }
 rm-telemetry = { path = "crates/rm-telemetry" }
 rm-bench     = { path = "crates/rm-bench" }
+rm-coordinator = { path = "crates/rm-coordinator" }
 
 # External crates
 crossbeam-channel = "0.5"
+tokio    = { version = "1", features = ["full"] }
+axum     = "0.7"
+uuid     = { version = "1", features = ["v4", "serde"] }
 clap              = { version = "4", features = ["derive"] }
 serde             = { version = "1", features = ["derive"] }
 serde_json        = "1"
