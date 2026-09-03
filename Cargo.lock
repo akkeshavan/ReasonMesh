@@ -1313,6 +1313,7 @@ dependencies = [
  "log",
  "reqwest",
  "rm-smt",
+ "rm-syntax",
  "serde",
  "serde_json",
  "thiserror",

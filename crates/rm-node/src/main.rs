@@ -22,6 +22,7 @@
 //! to more nodes.
 
 mod loop_;
+mod lookahead;
 
 use clap::Parser;
 use std::time::Duration;
