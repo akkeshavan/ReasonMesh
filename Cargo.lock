@@ -457,6 +457,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "rm-api"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "rm-akx",
+ "rm-smt",
+ "rm-worker",
+ "smallvec",
+ "thiserror",
+]
+
+[[package]]
 name = "rm-bench"
 version = "0.1.0"
 dependencies = [

@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/rm-api",
     "crates/rm-syntax",
     "crates/rm-ir",
     "crates/rm-sat",
@@ -29,6 +30,7 @@ repository = "https://github.com/reasonmesh/reasonmesh"
 
 [workspace.dependencies]
 # Internal crates
+rm-api      = { path = "crates/rm-api" }
 rm-akx      = { path = "crates/rm-akx" }
 rm-ir       = { path = "crates/rm-ir" }
 rm-syntax   = { path = "crates/rm-syntax" }
