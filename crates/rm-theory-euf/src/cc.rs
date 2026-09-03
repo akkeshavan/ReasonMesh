@@ -80,7 +80,11 @@ enum UndoEntry {
 #[derive(Clone, Debug)]
 enum MergeReason {
     /// A SAT literal `eq(lhs, rhs)` was asserted directly.
-    Asserted { lhs: ENodeId, rhs: ENodeId, sat_lit: u32 },
+    Asserted {
+        lhs: ENodeId,
+        rhs: ENodeId,
+        sat_lit: u32,
+    },
     /// Two nodes merged by congruence (same func, args already equal).
     Congruence { n1: ENodeId, n2: ENodeId },
 }
@@ -131,7 +135,11 @@ impl CongruenceClosure {
         let idx = id.0 as usize;
         while self.uf.len() <= idx {
             let next = ENodeId(self.uf.len() as u32);
-            self.uf.push(UfNode { parent: next, rank: 0, size: 1 });
+            self.uf.push(UfNode {
+                parent: next,
+                rank: 0,
+                size: 1,
+            });
             self.explain_parent.push(None);
             self.use_list.push(Vec::new());
         }
@@ -151,7 +159,9 @@ impl CongruenceClosure {
         let mut cur = id;
         loop {
             let parent = self.uf[cur.0 as usize].parent;
-            if parent == cur { return cur; }
+            if parent == cur {
+                return cur;
+            }
             let grandparent = self.uf[parent.0 as usize].parent;
             self.uf[cur.0 as usize].parent = grandparent;
             cur = grandparent;
@@ -183,7 +193,12 @@ impl CongruenceClosure {
         };
         while self.undo.len() > target {
             match self.undo.pop().unwrap() {
-                UndoEntry::Union { child, old_parent, old_rank, old_size_root } => {
+                UndoEntry::Union {
+                    child,
+                    old_parent,
+                    old_rank,
+                    old_size_root,
+                } => {
                     let root = self.uf[child.0 as usize].parent;
                     self.uf[child.0 as usize].parent = old_parent;
                     self.uf[child.0 as usize].rank = old_rank;
@@ -222,7 +237,8 @@ impl CongruenceClosure {
         if rep_l == rep_r {
             return Ok(()); // already equal
         }
-        self.pending.push((lhs, rhs, MergeReason::Asserted { lhs, rhs, sat_lit }));
+        self.pending
+            .push((lhs, rhs, MergeReason::Asserted { lhs, rhs, sat_lit }));
         self.propagate(egraph)
     }
 
@@ -245,7 +261,11 @@ impl CongruenceClosure {
                 explanation: expl,
             });
         }
-        let (a, b) = if rep_l < rep_r { (rep_l, rep_r) } else { (rep_r, rep_l) };
+        let (a, b) = if rep_l < rep_r {
+            (rep_l, rep_r)
+        } else {
+            (rep_r, rep_l)
+        };
         self.diseqs.push((a, b, sat_lit));
         self.undo.push(UndoEntry::Diseq { lhs: a, rhs: b });
         Ok(())
@@ -259,9 +279,12 @@ impl CongruenceClosure {
         while let Some((a, b, reason)) = self.pending.pop() {
             let rep_a = self.find(a);
             let rep_b = self.find(b);
-            if rep_a == rep_b { continue; }
+            if rep_a == rep_b {
+                continue;
+            }
 
-            let (child, root) = if self.uf[rep_a.0 as usize].rank <= self.uf[rep_b.0 as usize].rank {
+            let (child, root) = if self.uf[rep_a.0 as usize].rank <= self.uf[rep_b.0 as usize].rank
+            {
                 (rep_a, rep_b)
             } else {
                 (rep_b, rep_a)
@@ -288,7 +311,8 @@ impl CongruenceClosure {
             for &node_id in &child_use {
                 // Look up current canonical signature.
                 let node = egraph.node(node_id);
-                let canon: SmallVec<[ENodeId; 4]> = node.args.iter().map(|&a| self.find(a)).collect();
+                let canon: SmallVec<[ENodeId; 4]> =
+                    node.args.iter().map(|&a| self.find(a)).collect();
                 let sig_key = (node.func.0, canon.clone());
 
                 if let Some(&other) = self.sig_table.get(&sig_key) {
@@ -299,7 +323,10 @@ impl CongruenceClosure {
                             self.pending.push((
                                 node_id,
                                 other,
-                                MergeReason::Congruence { n1: node_id, n2: other },
+                                MergeReason::Congruence {
+                                    n1: node_id,
+                                    n2: other,
+                                },
                             ));
                         }
                     }
@@ -341,12 +368,7 @@ impl CongruenceClosure {
         Explanation { lhs, rhs, premises }
     }
 
-    fn collect_path(
-        &self,
-        mut a: ENodeId,
-        mut b: ENodeId,
-        premises: &mut Vec<ExplanationLit>,
-    ) {
+    fn collect_path(&self, mut a: ENodeId, mut b: ENodeId, premises: &mut Vec<ExplanationLit>) {
         let mut path_a = vec![a];
         let mut path_b = vec![b];
 
@@ -360,21 +382,29 @@ impl CongruenceClosure {
         }
 
         let set_a: rustc_hash::FxHashSet<ENodeId> = path_a.iter().copied().collect();
-        let lca = path_b.iter().find(|n| set_a.contains(n)).copied().unwrap_or(path_a[0]);
+        let lca = path_b
+            .iter()
+            .find(|n| set_a.contains(n))
+            .copied()
+            .unwrap_or(path_a[0]);
 
         let mut cur = path_a[0];
         while cur != lca {
             if let Some((next, reason)) = &self.explain_parent[cur.0 as usize] {
                 Self::add_reason_to_premises(reason, premises);
                 cur = *next;
-            } else { break; }
+            } else {
+                break;
+            }
         }
         let mut cur = path_b[0];
         while cur != lca {
             if let Some((next, reason)) = &self.explain_parent[cur.0 as usize] {
                 Self::add_reason_to_premises(reason, premises);
                 cur = *next;
-            } else { break; }
+            } else {
+                break;
+            }
         }
 
         premises.sort_by_key(|l| (l.lhs, l.rhs, l.sat_lit));
@@ -404,13 +434,9 @@ impl CongruenceClosure {
         egraph: &EGraph,
         lhs: ENodeId,
         rhs: ENodeId,
-        explanation: &Explanation,
+        _explanation: &Explanation,
     ) -> rm_akx::knowledge::TheoryLemma {
-        let conclusion = format!(
-            "{}={}",
-            egraph.node(lhs).func.0,
-            egraph.node(rhs).func.0
-        );
+        let conclusion = format!("{}={}", egraph.node(lhs).func.0, egraph.node(rhs).func.0);
         let theory_tag = "euf_congruence".to_string();
         rm_akx::knowledge::TheoryLemma {
             conclusion_bytes: conclusion.into_bytes(),
@@ -430,7 +456,9 @@ impl CongruenceClosure {
     /// How many distinct equivalence classes are there?
     pub fn num_classes(&mut self) -> usize {
         let n = self.uf.len();
-        (0..n).filter(|&i| self.find(ENodeId(i as u32)) == ENodeId(i as u32)).count()
+        (0..n)
+            .filter(|&i| self.find(ENodeId(i as u32)) == ENodeId(i as u32))
+            .count()
     }
 }
 
@@ -489,7 +517,10 @@ mod tests {
 
         // a = b → f(a) = f(b)
         cc.assert_eq(&eg, a, b, 0).unwrap();
-        assert!(cc.are_equal(fa, fb), "congruence: f(a)=f(b) should follow from a=b");
+        assert!(
+            cc.are_equal(fa, fb),
+            "congruence: f(a)=f(b) should follow from a=b"
+        );
     }
 
     #[test]
@@ -559,8 +590,10 @@ mod tests {
 
         let expl = cc.explain_equality(&eg, a, c);
         let lits = expl.sat_lits();
-        assert!(lits.contains(&10) || lits.contains(&11),
-            "explanation should reference the asserted sat lits, got: {lits:?}");
+        assert!(
+            lits.contains(&10) || lits.contains(&11),
+            "explanation should reference the asserted sat lits, got: {lits:?}"
+        );
     }
 
     #[test]

@@ -149,7 +149,11 @@ impl CdclSolver {
         lits.iter()
             .map(|l| {
                 let v = l.var() as i32;
-                if l.is_positive() { v } else { -v }
+                if l.is_positive() {
+                    v
+                } else {
+                    -v
+                }
             })
             .collect()
     }
@@ -294,10 +298,7 @@ impl CdclSolver {
     /// Returns `SolveResult::Unsat` immediately if any assumption literal is
     /// already assigned False (contradictory assumptions). Returns `None` if
     /// all assumptions are satisfied and search can continue.
-    fn push_assumptions_onto_trail(
-        &mut self,
-        assumptions: &[Literal],
-    ) -> Option<SolveResult> {
+    fn push_assumptions_onto_trail(&mut self, assumptions: &[Literal]) -> Option<SolveResult> {
         let mut pushed = 0u32;
         for &lit in assumptions {
             match self.assignment.literal_value(lit) {
@@ -378,11 +379,8 @@ impl CdclSolver {
         }
         if let Some(lit) = self.pick_branch() {
             self.assignment.new_decision_level();
-            self.assignment.assign(
-                lit,
-                self.assignment.current_level(),
-                ClauseRef::DECISION.0,
-            );
+            self.assignment
+                .assign(lit, self.assignment.current_level(), ClauseRef::DECISION.0);
             self.decisions += 1;
             None
         } else {

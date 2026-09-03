@@ -64,7 +64,7 @@ impl fmt::Display for SortExpr {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{parse_expr, lex, Atom, SExpr};
+    use crate::{lex, parse_expr, Atom, SExpr};
 
     fn parse_sort(s: &str) -> Result<SortExpr, super::super::ParseError> {
         let toks = lex(s).unwrap();

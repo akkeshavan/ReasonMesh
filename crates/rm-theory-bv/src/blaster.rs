@@ -46,9 +46,9 @@ impl Blaster {
         }
         let bits = match dag.get(id) {
             Node::BoolConst(v) => vec![self.circuit.const_gate(*v)],
-            Node::BvConst { width, value } => {
-                (0..*width).map(|i| self.circuit.const_gate(value.bit(i as usize))).collect()
-            }
+            Node::BvConst { width, value } => (0..*width)
+                .map(|i| self.circuit.const_gate(value.bit(i as usize)))
+                .collect(),
             Node::BoolVar { id: vid } => {
                 let (g, idx) = self.fresh_input();
                 self.var_inputs.entry(*vid).or_default().push(idx);
@@ -96,7 +96,10 @@ impl Blaster {
                 let c = self.blast(dag, children[0]);
                 let t = self.blast(dag, children[1]);
                 let e = self.blast(dag, children[2]);
-                t.iter().zip(&e).map(|(ti, ei)| self.circuit.mux(c[0], *ti, *ei)).collect()
+                t.iter()
+                    .zip(&e)
+                    .map(|(ti, ei)| self.circuit.mux(c[0], *ti, *ei))
+                    .collect()
             }
             BvNot => {
                 let a = self.blast(dag, children[0]);
@@ -110,7 +113,10 @@ impl Blaster {
                     BvOr => circuit.or(x, y),
                     _ => circuit.xor(x, y),
                 };
-                a.iter().zip(&b).map(|(x, y)| f(&mut self.circuit, *x, *y)).collect()
+                a.iter()
+                    .zip(&b)
+                    .map(|(x, y)| f(&mut self.circuit, *x, *y))
+                    .collect()
             }
             BvNeg => self.blast_neg(dag, children),
             BvAdd | BvSub => self.blast_add_sub(dag, children, op == BvSub),
@@ -135,7 +141,10 @@ impl Blaster {
             BvZeroExtend { amount } => {
                 let a = self.blast(dag, children[0]);
                 let mut bits = a;
-                bits.extend(std::iter::repeat_n(self.circuit.const_gate(false), amount as usize));
+                bits.extend(std::iter::repeat_n(
+                    self.circuit.const_gate(false),
+                    amount as usize,
+                ));
                 bits
             }
             BvSignExtend { amount } => {
@@ -189,7 +198,11 @@ impl Blaster {
         for i in 0..n {
             let shifted: Vec<GateId> = (0..n)
                 .map(|j| {
-                    let src = if j >= i { a[j - i] } else { self.circuit.const_gate(false) };
+                    let src = if j >= i {
+                        a[j - i]
+                    } else {
+                        self.circuit.const_gate(false)
+                    };
                     self.circuit.and(b[i], src)
                 })
                 .collect();
@@ -220,7 +233,11 @@ impl Blaster {
             }
             quot[i] = ge;
         }
-        if rem_only { rem } else { quot }
+        if rem_only {
+            rem
+        } else {
+            quot
+        }
     }
 
     fn blast_sdiv(&mut self, dag: &TermDag, children: &[NodeId], op: Op) -> Vec<GateId> {
@@ -239,14 +256,20 @@ impl Blaster {
                 let ones = self.ones(n);
                 let zero = self.circuit.const_gate(false);
                 let plus1 = self.add_cin(&inv, &ones, zero);
-                quot.iter().zip(&plus1).map(|(q, p)| self.circuit.mux(neg, *p, *q)).collect()
+                quot.iter()
+                    .zip(&plus1)
+                    .map(|(q, p)| self.circuit.mux(neg, *p, *q))
+                    .collect()
             }
             Op::BvSrem => {
                 let inv = self.bv_not(&rem);
                 let ones = self.ones(n);
                 let zero = self.circuit.const_gate(false);
                 let plus1 = self.add_cin(&inv, &ones, zero);
-                rem.iter().zip(&plus1).map(|(r, p)| self.circuit.mux(a_sign, *p, *r)).collect()
+                rem.iter()
+                    .zip(&plus1)
+                    .map(|(r, p)| self.circuit.mux(a_sign, *p, *r))
+                    .collect()
             }
             Op::BvSmod => {
                 let sign = b_sign;
@@ -254,7 +277,10 @@ impl Blaster {
                 let ones = self.ones(n);
                 let zero = self.circuit.const_gate(false);
                 let plus1 = self.add_cin(&inv, &ones, zero);
-                rem.iter().zip(&plus1).map(|(r, p)| self.circuit.mux(sign, *p, *r)).collect()
+                rem.iter()
+                    .zip(&plus1)
+                    .map(|(r, p)| self.circuit.mux(sign, *p, *r))
+                    .collect()
             }
             _ => unreachable!(),
         }
@@ -268,7 +294,9 @@ impl Blaster {
         let ones = self.ones(n);
         let zero = self.circuit.const_gate(false);
         let plus1 = self.add_cin(&inv, &ones, zero);
-        let out: Vec<GateId> = (0..n).map(|i| self.circuit.mux(sign, plus1[i], a[i])).collect();
+        let out: Vec<GateId> = (0..n)
+            .map(|i| self.circuit.mux(sign, plus1[i], a[i]))
+            .collect();
         (out, sign)
     }
 
@@ -281,10 +309,18 @@ impl Blaster {
             _ => self.circuit.const_gate(false),
         };
         let mut res = a;
-        let stages = if n == 0 { 0 } else { (usize::BITS - (n - 1).leading_zeros()) as usize };
+        let stages = if n == 0 {
+            0
+        } else {
+            (usize::BITS - (n - 1).leading_zeros()) as usize
+        };
         for stage in 0..stages {
             let amount = 1usize << stage;
-            let sel = if stage < sh.len() { sh[stage] } else { self.circuit.const_gate(false) };
+            let sel = if stage < sh.len() {
+                sh[stage]
+            } else {
+                self.circuit.const_gate(false)
+            };
             let shifted: Vec<GateId> = match op {
                 Op::BvShl => {
                     let mut v = vec![self.circuit.const_gate(false); amount];
@@ -298,7 +334,11 @@ impl Blaster {
                     v
                 }
             };
-            res = res.iter().zip(&shifted).map(|(r, s)| self.circuit.mux(sel, *s, *r)).collect();
+            res = res
+                .iter()
+                .zip(&shifted)
+                .map(|(r, s)| self.circuit.mux(sel, *s, *r))
+                .collect();
         }
         res
     }
@@ -402,7 +442,13 @@ impl Blaster {
     }
 
     /// Ripple-carry addition; returns (sum bits, carry out).
-    fn add_carry(&mut self, a: &[GateId], b: &[GateId], cin: GateId, n: usize) -> (Vec<GateId>, GateId) {
+    fn add_carry(
+        &mut self,
+        a: &[GateId],
+        b: &[GateId],
+        cin: GateId,
+        n: usize,
+    ) -> (Vec<GateId>, GateId) {
         let mut carry = cin;
         let mut sum = Vec::with_capacity(n);
         for i in 0..n {
@@ -475,7 +521,10 @@ mod tests {
         let (mut blaster, dag, root) = blast_script("(assert (and true false))");
         let bits = blaster.blast(&dag, root);
         assert_eq!(bits.len(), 1);
-        assert!(matches!(blaster.circuit.get(bits[0]), rm_ir::Gate::Const(false)));
+        assert!(matches!(
+            blaster.circuit.get(bits[0]),
+            rm_ir::Gate::Const(false)
+        ));
     }
 
     #[test]

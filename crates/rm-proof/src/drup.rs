@@ -62,14 +62,20 @@ pub fn verify_drup(
     for (step_idx, clause) in proof.iter().enumerate() {
         if clause.is_empty() {
             if !up_derives_empty(&db, &[]) {
-                return Err(DrupError::NotRup { step: step_idx, clause: clause.clone() });
+                return Err(DrupError::NotRup {
+                    step: step_idx,
+                    clause: clause.clone(),
+                });
             }
             return Ok(step_idx + 1);
         }
 
         let negated: Vec<i32> = clause.iter().map(|&l| -l).collect();
         if !up_derives_empty(&db, &negated) {
-            return Err(DrupError::NotRup { step: step_idx, clause: clause.clone() });
+            return Err(DrupError::NotRup {
+                step: step_idx,
+                clause: clause.clone(),
+            });
         }
 
         db.push(clause.clone());
@@ -185,8 +191,8 @@ mod tests {
         // Derived: (y) from first two by resolution; then empty from (y) and (¬y)
         let original = vec![vec![1, 2], vec![-1, 2], vec![-2]];
         let proof = vec![
-            vec![2],  // RUP: assuming ¬y, {x,y} becomes {x} and {¬x,y} becomes {¬x}, UP gives contradiction
-            vec![],   // empty clause
+            vec![2], // RUP: assuming ¬y, {x,y} becomes {x} and {¬x,y} becomes {¬x}, UP gives contradiction
+            vec![],  // empty clause
         ];
         let r = verify_drup(2, &original, &proof);
         assert!(r.is_ok(), "expected valid proof, got {r:?}");
@@ -197,28 +203,37 @@ mod tests {
         // Claim (x1) is RUP from (x1 ∨ x2) — it isn't.
         let original = vec![vec![1, 2]];
         let proof = vec![vec![1], vec![]];
-        assert!(matches!(verify_drup(2, &original, &proof), Err(DrupError::NotRup { .. })));
+        assert!(matches!(
+            verify_drup(2, &original, &proof),
+            Err(DrupError::NotRup { .. })
+        ));
     }
 
     #[test]
     fn missing_empty_clause() {
         let original = vec![vec![1]];
         let proof = vec![vec![1, 2]]; // no empty clause at end
-        assert!(matches!(verify_drup(2, &original, &proof), Err(DrupError::NoEmptyClause)));
+        assert!(matches!(
+            verify_drup(2, &original, &proof),
+            Err(DrupError::NoEmptyClause)
+        ));
     }
 
     #[test]
     fn empty_proof_rejected() {
         let original = vec![vec![1, 2]];
-        assert!(matches!(verify_drup(2, &original, &[]), Err(DrupError::EmptyProof)));
+        assert!(matches!(
+            verify_drup(2, &original, &[]),
+            Err(DrupError::EmptyProof)
+        ));
     }
 
     /// Cross-check: run the CDCL solver with proof logging on unsatisfiable
     /// instances, then verify the proof with this independent checker.
     #[test]
     fn cross_check_with_cdcl_proofs() {
-        use rm_sat::{parse_dimacs, CdclSolver, SolveResult};
         use rm_akx::literal::Literal;
+        use rm_sat::{parse_dimacs, CdclSolver, SolveResult};
 
         // Pigeonhole PHP(3,2): 3 pigeons, 2 holes — provably UNSAT.
         // p cnf 6 11 (variables x_ij for pigeon i in hole j)
@@ -238,14 +253,26 @@ mod tests {
         let mut solver = CdclSolver::new(cnf.num_vars);
         solver.enable_proof_logging();
         for clause in &cnf.clauses {
-            let lits: Vec<Literal> = clause.iter()
-                .map(|&l| if l > 0 { Literal::positive(l as u32) } else { Literal::negative((-l) as u32) })
+            let lits: Vec<Literal> = clause
+                .iter()
+                .map(|&l| {
+                    if l > 0 {
+                        Literal::positive(l as u32)
+                    } else {
+                        Literal::negative((-l) as u32)
+                    }
+                })
                 .collect();
             solver.add_clause(&lits);
         }
         assert_eq!(solver.solve(&[], u64::MAX), SolveResult::Unsat);
-        let proof = solver.take_proof_log().expect("proof log should be present");
-        assert!(!proof.is_empty(), "proof should have at least the empty clause");
+        let proof = solver
+            .take_proof_log()
+            .expect("proof log should be present");
+        assert!(
+            !proof.is_empty(),
+            "proof should have at least the empty clause"
+        );
         let result = verify_drup(cnf.num_vars, &cnf.clauses, &proof);
         assert!(result.is_ok(), "CDCL proof failed verification: {result:?}");
     }

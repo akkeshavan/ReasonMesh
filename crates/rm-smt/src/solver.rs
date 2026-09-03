@@ -1,11 +1,11 @@
 //! Facade over the theory solvers. Dispatches to the bit-blaster path for
 //! QF_BV and to the difference-logic path for QF_IDL/QF_RDL.
 
-use rm_syntax::Script;
-use rm_theory_bv::{BvModel, BvResult, BvSolver};
 use crate::cdclt::{solve_qf_ufidl, NoResult};
 use crate::dl::{solve_qf_idl, DlStatus};
 use crate::uf::{solve_qf_uf, UfStatus};
+use rm_syntax::Script;
+use rm_theory_bv::{BvModel, BvResult, BvSolver};
 
 /// Errors from the SMT solver facade.
 #[derive(Debug, thiserror::Error)]
@@ -44,7 +44,9 @@ pub struct SmtSolver {
 
 impl SmtSolver {
     pub fn parse(text: &str) -> Result<SmtSolver, SmtError> {
-        Ok(SmtSolver { raw: text.to_owned() })
+        Ok(SmtSolver {
+            raw: text.to_owned(),
+        })
     }
 
     /// Extract the set-logic name from the raw text by scanning for `(set-logic <symbol>)`.
@@ -52,7 +54,9 @@ impl SmtSolver {
         let tokens = rm_syntax::lex(&self.raw).ok()?;
         let exprs = rm_syntax::parse_program(&tokens).ok()?;
         for expr in &exprs {
-            let rm_syntax::SExpr::List(items) = expr else { continue };
+            let rm_syntax::SExpr::List(items) = expr else {
+                continue;
+            };
             if items.first().and_then(|e| e.symbol()) == Some("set-logic") {
                 if let Some(rm_syntax::SExpr::Atom(rm_syntax::Atom::Symbol(l))) = items.get(1) {
                     return Some(l.clone());
@@ -84,7 +88,11 @@ impl SmtSolver {
                     BvResult::Unsat => (SmtStatus::Unsat, None),
                     BvResult::Unknown => (SmtStatus::Unknown, None),
                 };
-                Ok(SmtResult { status, model, values })
+                Ok(SmtResult {
+                    status,
+                    model,
+                    values,
+                })
             }
             Some("QF_IDL") | Some("QF_RDL") => {
                 match solve_qf_idl(&self.raw).map_err(SmtError::Internal)? {
@@ -93,38 +101,61 @@ impl SmtSolver {
                             .into_iter()
                             .map(|(n, v)| (n, v.to_string()))
                             .collect();
-                        Ok(SmtResult { status: SmtStatus::Sat, model: None, values })
+                        Ok(SmtResult {
+                            status: SmtStatus::Sat,
+                            model: None,
+                            values,
+                        })
                     }
-                    (DlStatus::Unsat, _) => {
-                        Ok(SmtResult { status: SmtStatus::Unsat, model: None, values: Vec::new() })
-                    }
-                    (DlStatus::Unknown, _) => {
-                        Ok(SmtResult { status: SmtStatus::Unknown, model: None, values: Vec::new() })
-                    }
+                    (DlStatus::Unsat, _) => Ok(SmtResult {
+                        status: SmtStatus::Unsat,
+                        model: None,
+                        values: Vec::new(),
+                    }),
+                    (DlStatus::Unknown, _) => Ok(SmtResult {
+                        status: SmtStatus::Unknown,
+                        model: None,
+                        values: Vec::new(),
+                    }),
                 }
             }
-            Some("QF_UF") => {
-                match solve_qf_uf(&self.raw).map_err(SmtError::Internal)? {
-                    uf_result if uf_result.status == UfStatus::Sat => {
-                        let values = uf_result
-                            .model
-                            .into_iter()
-                            .collect();
-                        Ok(SmtResult { status: SmtStatus::Sat, model: None, values })
-                    }
-                    uf_result if uf_result.status == UfStatus::Unsat => {
-                        Ok(SmtResult { status: SmtStatus::Unsat, model: None, values: Vec::new() })
-                    }
-                    _ => Ok(SmtResult { status: SmtStatus::Unknown, model: None, values: Vec::new() }),
+            Some("QF_UF") => match solve_qf_uf(&self.raw).map_err(SmtError::Internal)? {
+                uf_result if uf_result.status == UfStatus::Sat => {
+                    let values = uf_result.model.into_iter().collect();
+                    Ok(SmtResult {
+                        status: SmtStatus::Sat,
+                        model: None,
+                        values,
+                    })
                 }
-            }
-            Some("QF_UFIDL") => {
-                match solve_qf_ufidl(&self.raw).map_err(SmtError::Internal)? {
-                    NoResult::Sat => Ok(SmtResult { status: SmtStatus::Sat, model: None, values: Vec::new() }),
-                    NoResult::Unsat => Ok(SmtResult { status: SmtStatus::Unsat, model: None, values: Vec::new() }),
-                    NoResult::Unknown => Ok(SmtResult { status: SmtStatus::Unknown, model: None, values: Vec::new() }),
-                }
-            }
+                uf_result if uf_result.status == UfStatus::Unsat => Ok(SmtResult {
+                    status: SmtStatus::Unsat,
+                    model: None,
+                    values: Vec::new(),
+                }),
+                _ => Ok(SmtResult {
+                    status: SmtStatus::Unknown,
+                    model: None,
+                    values: Vec::new(),
+                }),
+            },
+            Some("QF_UFIDL") => match solve_qf_ufidl(&self.raw).map_err(SmtError::Internal)? {
+                NoResult::Sat => Ok(SmtResult {
+                    status: SmtStatus::Sat,
+                    model: None,
+                    values: Vec::new(),
+                }),
+                NoResult::Unsat => Ok(SmtResult {
+                    status: SmtStatus::Unsat,
+                    model: None,
+                    values: Vec::new(),
+                }),
+                NoResult::Unknown => Ok(SmtResult {
+                    status: SmtStatus::Unknown,
+                    model: None,
+                    values: Vec::new(),
+                }),
+            },
             Some(other) => Err(SmtError::UnsupportedLogic(other.to_owned())),
         }
     }
@@ -226,7 +257,8 @@ mod tests {
 
     #[test]
     fn unsupported_logic_rejected() {
-        let s = SmtSolver::parse("(set-logic QF_LIA) (declare-const a Int) (assert (> a 0))").unwrap();
+        let s =
+            SmtSolver::parse("(set-logic QF_LIA) (declare-const a Int) (assert (> a 0))").unwrap();
         assert!(matches!(s.solve(1000), Err(SmtError::UnsupportedLogic(_))));
     }
 

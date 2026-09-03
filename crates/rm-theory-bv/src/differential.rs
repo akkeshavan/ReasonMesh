@@ -68,7 +68,11 @@ fn collect_vars(
 
 /// Reference implementations (u64, truncated to `width` bits).
 fn ref_bv(op: &str, width: u32, av: u64, bv: u64) -> bool {
-    let mask = if width >= 64 { u64::MAX } else { (1u64 << width) - 1 };
+    let mask = if width >= 64 {
+        u64::MAX
+    } else {
+        (1u64 << width) - 1
+    };
     let a = av & mask;
     let b = bv & mask;
     let sign = |v: u64| -> i64 {
@@ -142,7 +146,11 @@ fn differential_addition_circuit_eval() {
 }
 
 fn mask(width: u32) -> u64 {
-    if width >= 64 { u64::MAX } else { (1u64 << width) - 1 }
+    if width >= 64 {
+        u64::MAX
+    } else {
+        (1u64 << width) - 1
+    }
 }
 
 fn eval_add_eq(width: u32, av: u64, bv: u64, want: u64) -> bool {

@@ -288,7 +288,10 @@ fn validate_sat_and_finish(
         };
     }
     log::error!("worker {worker:?} returned an invalid model");
-    WorkerOutcome::Aborted { worker, stats: fold_stats(solver, shared) }
+    WorkerOutcome::Aborted {
+        worker,
+        stats: fold_stats(solver, shared),
+    }
 }
 
 fn finish_unsat(
@@ -301,7 +304,10 @@ fn finish_unsat(
     if assumptions.is_empty() {
         shutdown.store(true, Ordering::SeqCst);
     }
-    WorkerOutcome::Unsat { worker, stats: fold_stats(solver, shared) }
+    WorkerOutcome::Unsat {
+        worker,
+        stats: fold_stats(solver, shared),
+    }
 }
 
 fn run_worker(
@@ -328,12 +334,23 @@ fn run_worker(
     let mut ran_conflicts = 0u64;
     loop {
         if deadline.is_some_and(|d| started.elapsed() >= d) || shutdown.load(Ordering::SeqCst) {
-            return WorkerOutcome::Aborted { worker, stats: fold_stats(reasoner.solver(), &shared) };
+            return WorkerOutcome::Aborted {
+                worker,
+                stats: fold_stats(reasoner.solver(), &shared),
+            };
         }
         let conflicts_before = reasoner.solver().conflicts;
         match reasoner.step(cfg.step_budget) {
             Ok(ReasonerEvent::SatCandidate { model }) => {
-                return validate_sat_and_finish(&problem, &assumptions, worker, model, reasoner.solver(), &shared, &shutdown);
+                return validate_sat_and_finish(
+                    problem,
+                    &assumptions,
+                    worker,
+                    model,
+                    reasoner.solver(),
+                    &shared,
+                    &shutdown,
+                );
             }
             Ok(ReasonerEvent::UnsatLocal { .. }) => {
                 return finish_unsat(worker, &assumptions, reasoner.solver(), &shared, &shutdown);
@@ -342,16 +359,25 @@ fn run_worker(
                 ran_conflicts = ran_conflicts
                     .saturating_add(reasoner.solver().conflicts.saturating_sub(conflicts_before));
                 if cfg.conflict_budget.is_some_and(|cap| ran_conflicts >= cap) {
-                    return WorkerOutcome::Aborted { worker, stats: fold_stats(reasoner.solver(), &shared) };
+                    return WorkerOutcome::Aborted {
+                        worker,
+                        stats: fold_stats(reasoner.solver(), &shared),
+                    };
                 }
                 drain_export_import(&mut reasoner, &bus, &cfg, &mut shared);
             }
             Ok(ReasonerEvent::Cancelled) | Ok(ReasonerEvent::NeedWork) => {
-                return WorkerOutcome::Aborted { worker, stats: fold_stats(reasoner.solver(), &shared) };
+                return WorkerOutcome::Aborted {
+                    worker,
+                    stats: fold_stats(reasoner.solver(), &shared),
+                };
             }
             Ok(ReasonerEvent::InternalError(e)) | Err(e) => {
                 log::error!("worker {worker:?} failed: {e}");
-                return WorkerOutcome::Aborted { worker, stats: fold_stats(reasoner.solver(), &shared) };
+                return WorkerOutcome::Aborted {
+                    worker,
+                    stats: fold_stats(reasoner.solver(), &shared),
+                };
             }
         }
     }
@@ -386,8 +412,7 @@ fn drain_export_import(
                     Ok(st) => {
                         acc.applied += st.applied as u64;
                         acc.buffered += st.buffered as u64;
-                        acc.discarded +=
-                            (st.discarded_no_overlap + st.discarded_duplicate) as u64;
+                        acc.discarded += (st.discarded_no_overlap + st.discarded_duplicate) as u64;
                     }
                     Err(e) => log::warn!("bus import failed: {e}"),
                 }

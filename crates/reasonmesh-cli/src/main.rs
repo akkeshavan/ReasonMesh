@@ -1,6 +1,9 @@
 use clap::{Parser, Subcommand};
 use rm_akx::literal::Literal;
+use rm_akx::{BusMetrics, KnowledgeBatch, Scope};
 use rm_bench::{run_manifest, Manifest};
+use rm_bus::inproc::InprocBus;
+use rm_bus::{BusConfig, BusError, KnowledgeBus, PollBudget, PublishHandle};
 use rm_proof::model::check_dimacs_model;
 use rm_proof::proof_file::ProofFile as RmProofFile;
 use rm_proof::{ProofError, ProofFile, ProofStatus};
@@ -9,13 +12,10 @@ use rm_smt::{SmtError, SmtSolver, SmtStatus};
 use rm_telemetry::{
     now_nanos, Event, EventKind, Outcome, RunMeta, TraceError, TraceReader, TraceWriter,
 };
-use rm_bus::{BusConfig, BusError, KnowledgeBus, PollBudget, PublishHandle};
-use rm_bus::inproc::InprocBus;
-use rm_akx::{BusMetrics, KnowledgeBatch, Scope};
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 /// Dual-queue bus: workers publish to both a local bus (for intra-node sharing)
@@ -45,8 +45,12 @@ impl BroadcastBus {
             export_dropped: std::sync::atomic::AtomicU64::new(0),
         }
     }
-    fn export_bus(&self) -> Arc<InprocBus> { Arc::clone(&self.export) }
-    fn local_bus(&self) -> Arc<InprocBus> { Arc::clone(&self.local) }
+    fn export_bus(&self) -> Arc<InprocBus> {
+        Arc::clone(&self.export)
+    }
+    fn local_bus(&self) -> Arc<InprocBus> {
+        Arc::clone(&self.local)
+    }
     fn export_dropped_total(&self) -> u64 {
         self.export_dropped.load(Ordering::Relaxed)
     }
@@ -172,11 +176,22 @@ fn load_cnf_problem(file: &std::path::Path) -> Result<rm_worker::Problem, i32> {
         eprintln!("error: invalid DIMACS in {}: {e}", file.display());
         EXIT_INTERNAL_ERROR
     })?;
-    let clauses: Vec<Vec<Literal>> = cnf.clauses.iter().map(|clause| {
-        clause.iter().map(|&l| {
-            if l > 0 { Literal::positive(l as u32) } else { Literal::negative((-l) as u32) }
-        }).collect()
-    }).collect();
+    let clauses: Vec<Vec<Literal>> = cnf
+        .clauses
+        .iter()
+        .map(|clause| {
+            clause
+                .iter()
+                .map(|&l| {
+                    if l > 0 {
+                        Literal::positive(l as u32)
+                    } else {
+                        Literal::negative((-l) as u32)
+                    }
+                })
+                .collect()
+        })
+        .collect();
     Ok(Problem::new(cnf.num_vars, clauses))
 }
 
@@ -212,27 +227,25 @@ fn spawn_bridge_thread(
     let idle_interval = Duration::from_millis(idle_ms);
     std::thread::Builder::new()
         .name("rm-bridge".into())
-        .spawn(move || {
-            loop {
-                if shutdown.load(Ordering::Acquire) {
-                    break;
+        .spawn(move || loop {
+            if shutdown.load(Ordering::Acquire) {
+                break;
+            }
+            let mut active = false;
+            if let Ok(batch) = export_bus.poll(PollBudget { max_items: 64 }) {
+                if !batch.is_empty() {
+                    let _ = net.publish(Scope::Global, batch);
+                    active = true;
                 }
-                let mut active = false;
-                if let Ok(batch) = export_bus.poll(PollBudget { max_items: 64 }) {
-                    if !batch.is_empty() {
-                        let _ = net.publish(Scope::Global, batch);
-                        active = true;
-                    }
+            }
+            if let Ok(batch) = net.poll(PollBudget { max_items: 64 }) {
+                if !batch.is_empty() {
+                    let _ = local_bus.publish(Scope::Process, batch);
+                    active = true;
                 }
-                if let Ok(batch) = net.poll(PollBudget { max_items: 64 }) {
-                    if !batch.is_empty() {
-                        let _ = local_bus.publish(Scope::Process, batch);
-                        active = true;
-                    }
-                }
-                if !active {
-                    std::thread::sleep(idle_interval);
-                }
+            }
+            if !active {
+                std::thread::sleep(idle_interval);
             }
         })
         .expect("spawn bridge thread")
@@ -241,10 +254,16 @@ fn spawn_bridge_thread(
 /// Print the serve verdict based on the worker outcomes, returning an exit code.
 fn serve_verdict(outcomes: &[rm_worker::WorkerOutcome]) -> i32 {
     use rm_worker::WorkerOutcome;
-    if outcomes.iter().any(|o| matches!(o, WorkerOutcome::Sat { .. })) {
+    if outcomes
+        .iter()
+        .any(|o| matches!(o, WorkerOutcome::Sat { .. }))
+    {
         println!("s SATISFIABLE");
         EXIT_SAT
-    } else if outcomes.iter().any(|o| matches!(o, WorkerOutcome::Unsat { .. })) {
+    } else if outcomes
+        .iter()
+        .any(|o| matches!(o, WorkerOutcome::Unsat { .. }))
+    {
         println!("s UNSATISFIABLE");
         EXIT_UNSAT
     } else {
@@ -261,6 +280,7 @@ fn serve_verdict(outcomes: &[rm_worker::WorkerOutcome]) -> i32 {
 /// network queue at full speed whenever either is non-empty, sleeping only
 /// when both are idle. Only clauses with LBD ≤ `export_lbd` enter the
 /// cross-node export queue (HIGH_UTILITY filter from the TLA+ spec).
+#[allow(clippy::too_many_arguments)]
 fn run_serve(
     file: &std::path::Path,
     port: u16,
@@ -271,8 +291,8 @@ fn run_serve(
     bridge_ms: u64,
     export_lbd: u32,
 ) -> i32 {
-    use rm_bus::net::{NetBus, NetConfig};
     use rm_akx::ExportPolicy;
+    use rm_bus::net::{NetBus, NetConfig};
     use rm_worker::{WorkerConfig, WorkerPool};
 
     let problem = match load_cnf_problem(file) {
@@ -371,7 +391,11 @@ fn build_dimacs_solver(cnf: &DimacsCnf, with_proof: bool) -> CdclSolver {
         let lits: Vec<Literal> = clause
             .iter()
             .map(|&l| {
-                if l > 0 { Literal::positive(l as u32) } else { Literal::negative((-l) as u32) }
+                if l > 0 {
+                    Literal::positive(l as u32)
+                } else {
+                    Literal::negative((-l) as u32)
+                }
             })
             .collect();
         solver.add_clause(&lits);
@@ -406,7 +430,9 @@ fn handle_sat_model(
             Ok(Outcome::Sat)
         }
         Ok(false) => {
-            eprintln!("error: solver returned a model that FAILS independent validation; this is a bug");
+            eprintln!(
+                "error: solver returned a model that FAILS independent validation; this is a bug"
+            );
             Err(EXIT_INTERNAL_ERROR)
         }
         Err(e) => {
@@ -421,15 +447,28 @@ fn record_solve_events(solver: &CdclSolver, outcome: Outcome, events: &mut Vec<E
     let mut seq = events.len() as u64;
     let mut push = |events: &mut Vec<Event>, kind: EventKind| {
         seq += 1;
-        events.push(Event { seq, worker: 0, at_nanos: now_nanos(), kind });
+        events.push(Event {
+            seq,
+            worker: 0,
+            at_nanos: now_nanos(),
+            kind,
+        });
     };
-    push(events, EventKind::Phase { name: "root".into() });
-    push(events, EventKind::SearchSummary {
-        decisions: solver.decisions,
-        propagations: solver.propagations,
-        conflicts: solver.conflicts,
-        restarts: solver.restarts,
-    });
+    push(
+        events,
+        EventKind::Phase {
+            name: "root".into(),
+        },
+    );
+    push(
+        events,
+        EventKind::SearchSummary {
+            decisions: solver.decisions,
+            propagations: solver.propagations,
+            conflicts: solver.conflicts,
+            restarts: solver.restarts,
+        },
+    );
     push(events, EventKind::RunFinished { outcome });
 }
 
@@ -526,9 +565,19 @@ fn run_smt_solve(
     let mut seq = events.len() as u64;
     let mut push = |events: &mut Vec<Event>, kind: EventKind| {
         seq += 1;
-        events.push(Event { seq, worker: 0, at_nanos: now_nanos(), kind });
+        events.push(Event {
+            seq,
+            worker: 0,
+            at_nanos: now_nanos(),
+            kind,
+        });
     };
-    push(&mut events, EventKind::Phase { name: "root".into() });
+    push(
+        &mut events,
+        EventKind::Phase {
+            name: "root".into(),
+        },
+    );
 
     let (code, outcome) = match status {
         SmtStatus::Sat => {
@@ -577,7 +626,10 @@ fn write_trace(
 
 /// Write a proof file, reporting errors to stderr (non-fatal — the solve
 /// result is still printed correctly even if proof writing fails).
-fn emit_proof_file(path: &std::path::Path, write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>) {
+fn emit_proof_file(
+    path: &std::path::Path,
+    write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
+) {
     match std::fs::File::create(path) {
         Ok(f) => {
             let mut w = std::io::BufWriter::new(f);
@@ -585,7 +637,10 @@ fn emit_proof_file(path: &std::path::Path, write: impl FnOnce(&mut dyn std::io::
                 eprintln!("warning: could not write proof to {}: {e}", path.display());
             }
         }
-        Err(e) => eprintln!("warning: could not create proof file {}: {e}", path.display()),
+        Err(e) => eprintln!(
+            "warning: could not create proof file {}: {e}",
+            path.display()
+        ),
     }
 }
 
@@ -606,19 +661,25 @@ fn run_check_proof(path: &std::path::Path) -> i32 {
         }
     };
     match proof.verify() {
-        Ok(()) => {
-            match proof.status {
-                ProofStatus::Sat => {
-                    println!("VALID SAT model ({} vars, {} clauses)", proof.num_vars, proof.clauses.len());
-                    EXIT_SAT
-                }
-                ProofStatus::Unsat => {
-                    let steps = proof.drup.len();
-                    println!("VALID UNSAT proof ({} vars, {} clauses, {steps} DRUP steps)", proof.num_vars, proof.clauses.len());
-                    EXIT_UNSAT
-                }
+        Ok(()) => match proof.status {
+            ProofStatus::Sat => {
+                println!(
+                    "VALID SAT model ({} vars, {} clauses)",
+                    proof.num_vars,
+                    proof.clauses.len()
+                );
+                EXIT_SAT
             }
-        }
+            ProofStatus::Unsat => {
+                let steps = proof.drup.len();
+                println!(
+                    "VALID UNSAT proof ({} vars, {} clauses, {steps} DRUP steps)",
+                    proof.num_vars,
+                    proof.clauses.len()
+                );
+                EXIT_UNSAT
+            }
+        },
         Err(ProofError::UnsatNotSupported) => {
             eprintln!("check-proof: UNSAT status declared but no DRUP steps found in file");
             EXIT_UNKNOWN
@@ -671,7 +732,12 @@ fn main() {
             proof_out,
         } => {
             let workers = if deterministic { 1 } else { workers };
-            log::info!("solve: {} workers={} seed={}", file.display(), workers, seed);
+            log::info!(
+                "solve: {} workers={} seed={}",
+                file.display(),
+                workers,
+                seed
+            );
             let _ = no_gpu;
 
             let command_line = std::env::args().collect::<Vec<_>>().join(" ");

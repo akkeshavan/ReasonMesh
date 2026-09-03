@@ -10,10 +10,10 @@ use std::time::Duration;
 /// Response from `GET /v1/work`.
 #[derive(Debug, Deserialize)]
 pub struct WorkItem {
-    pub task_id:       String,
-    pub script:        String,
+    pub task_id: String,
+    pub script: String,
     pub max_conflicts: u64,
-    pub lease_ttl_ms:  u64,
+    pub lease_ttl_ms: u64,
 }
 
 // ── Solve outcome ─────────────────────────────────────────────────────────────
@@ -37,30 +37,30 @@ pub enum SolveOutcome {
 impl SolveOutcome {
     fn code(&self) -> u32 {
         match self {
-            SolveOutcome::Sat(_)    => 0,
-            SolveOutcome::Unsat     => 1,
-            SolveOutcome::Split(_)  => 2,
-            SolveOutcome::Unknown   => 2,
+            SolveOutcome::Sat(_) => 0,
+            SolveOutcome::Unsat => 1,
+            SolveOutcome::Split(_) => 2,
+            SolveOutcome::Unknown => 2,
         }
     }
     fn model(&self) -> &str {
         match self {
             SolveOutcome::Sat(m) => m,
-            _                    => "",
+            _ => "",
         }
     }
     fn split(&self) -> Option<Vec<String>> {
         match self {
             SolveOutcome::Split(b) => Some(b.clone()),
-            _                      => None,
+            _ => None,
         }
     }
     fn label(&self) -> &'static str {
         match self {
-            SolveOutcome::Sat(_)   => "SAT",
-            SolveOutcome::Unsat    => "UNSAT",
+            SolveOutcome::Sat(_) => "SAT",
+            SolveOutcome::Unsat => "UNSAT",
             SolveOutcome::Split(_) => "SPLIT",
-            SolveOutcome::Unknown  => "UNKNOWN",
+            SolveOutcome::Unknown => "UNKNOWN",
         }
     }
 }
@@ -69,12 +69,12 @@ impl SolveOutcome {
 
 /// Pings `/v1/heartbeat` every 15 seconds, forever.
 pub async fn heartbeat_loop(
-    client:    reqwest::Client,
-    coord:     String,
+    client: reqwest::Client,
+    coord: String,
     worker_id: u32,
-    retry:     Duration,
+    retry: Duration,
 ) {
-    let url  = format!("{coord}/v1/heartbeat");
+    let url = format!("{coord}/v1/heartbeat");
     let body = serde_json::json!({ "worker_id": worker_id });
     loop {
         match client.post(&url).json(&body).send().await {
@@ -92,20 +92,20 @@ pub async fn heartbeat_loop(
 /// Runs forever: poll → solve + look-ahead → report.
 pub async fn solve_loop(client: reqwest::Client, args: Args, worker_id: u32) {
     let work_url = format!("{}/v1/work", args.coordinator);
-    let retry    = Duration::from_millis(args.retry_ms);
+    let retry = Duration::from_millis(args.retry_ms);
 
     loop {
         // ── Step 1: long-poll ─────────────────────────────────────────────────
         let resp = match client
             .get(&work_url)
             .query(&[
-                ("worker_id",    worker_id.to_string()),
+                ("worker_id", worker_id.to_string()),
                 ("long_poll_ms", args.long_poll_ms.to_string()),
             ])
             .send()
             .await
         {
-            Ok(r)  => r,
+            Ok(r) => r,
             Err(e) => {
                 log::warn!("GET /v1/work: {e}; retrying in {retry:?}");
                 tokio::time::sleep(retry).await;
@@ -124,7 +124,7 @@ pub async fn solve_loop(client: reqwest::Client, args: Args, worker_id: u32) {
         }
 
         let item: WorkItem = match resp.json().await {
-            Ok(w)  => w,
+            Ok(w) => w,
             Err(e) => {
                 log::warn!("parse work response: {e}");
                 continue;
@@ -133,23 +133,26 @@ pub async fn solve_loop(client: reqwest::Client, args: Args, worker_id: u32) {
 
         log::info!(
             "task {} received: {} chars, budget={}",
-            item.task_id, item.script.len(), item.max_conflicts,
+            item.task_id,
+            item.script.len(),
+            item.max_conflicts,
         );
 
         // ── Step 2: lease renewal (concurrent with solving) ───────────────────
         let renew_handle = {
-            let client   = client.clone();
-            let coord    = args.coordinator.clone();
-            let task_id  = item.task_id.clone();
+            let client = client.clone();
+            let coord = args.coordinator.clone();
+            let task_id = item.task_id.clone();
             let interval = Duration::from_millis((item.lease_ttl_ms / 2).max(5_000));
             tokio::spawn(async move {
-                let url  = format!("{coord}/v1/work/{task_id}/renew");
+                let url = format!("{coord}/v1/work/{task_id}/renew");
                 let body = serde_json::json!({ "worker_id": worker_id });
                 loop {
                     tokio::time::sleep(interval).await;
                     match client.post(&url).json(&body).send().await {
-                        Ok(r) if r.status().is_success() =>
-                            log::debug!("lease renewed for {task_id}"),
+                        Ok(r) if r.status().is_success() => {
+                            log::debug!("lease renewed for {task_id}")
+                        }
                         Ok(r) => log::warn!("lease renew {task_id}: {}", r.status()),
                         Err(e) => log::warn!("lease renew {task_id}: {e}"),
                     }
@@ -158,18 +161,16 @@ pub async fn solve_loop(client: reqwest::Client, args: Args, worker_id: u32) {
         };
 
         // ── Step 3: solve + look-ahead (blocking thread) ──────────────────────
-        let script        = item.script.clone();
+        let script = item.script.clone();
         let max_conflicts = item.max_conflicts;
 
-        let outcome = tokio::task::spawn_blocking(move || {
-            solve_with_lookahead(&script, max_conflicts)
-        })
-        .await;
+        let outcome =
+            tokio::task::spawn_blocking(move || solve_with_lookahead(&script, max_conflicts)).await;
 
         renew_handle.abort();
 
         let outcome = match outcome {
-            Ok(o)  => o,
+            Ok(o) => o,
             Err(e) => {
                 log::error!("solver thread panicked for task {}: {e}", item.task_id);
                 SolveOutcome::Unknown
@@ -179,7 +180,7 @@ pub async fn solve_loop(client: reqwest::Client, args: Args, worker_id: u32) {
         log::info!("task {} → {}", item.task_id, outcome.label());
 
         // ── Step 4: report result ─────────────────────────────────────────────
-        let result_url  = format!("{}/v1/work/{}/result", args.coordinator, item.task_id);
+        let result_url = format!("{}/v1/work/{}/result", args.coordinator, item.task_id);
         let result_body = serde_json::json!({
             "worker_id": worker_id,
             "code":      outcome.code(),
@@ -188,8 +189,9 @@ pub async fn solve_loop(client: reqwest::Client, args: Args, worker_id: u32) {
         });
 
         match client.post(&result_url).json(&result_body).send().await {
-            Ok(r) if r.status().is_success() =>
-                log::debug!("task {} result accepted", item.task_id),
+            Ok(r) if r.status().is_success() => {
+                log::debug!("task {} result accepted", item.task_id)
+            }
             Ok(r) => log::warn!("POST result for {}: {}", item.task_id, r.status()),
             Err(e) => log::warn!("POST result for {}: {e}", item.task_id),
         }
@@ -202,7 +204,11 @@ pub async fn solve_loop(client: reqwest::Client, args: Args, worker_id: u32) {
 /// Returns 0 if `max_conflicts` is 0 (unlimited main budget) — in that case
 /// the main solve should never be UNKNOWN, so probing is moot.
 fn probe_budget(max_conflicts: u64) -> u64 {
-    if max_conflicts == 0 { 0 } else { (max_conflicts / 8).clamp(200, 2_000) }
+    if max_conflicts == 0 {
+        0
+    } else {
+        (max_conflicts / 8).clamp(200, 2_000)
+    }
 }
 
 /// Run the solver; if UNKNOWN, run the look-ahead and return `Split` or `Unknown`.
@@ -212,7 +218,7 @@ pub fn solve_with_lookahead(script: &str, max_conflicts: u64) -> SolveOutcome {
     use rm_smt::{SmtError, SmtStatus};
 
     let solver = match rm_smt::SmtSolver::parse(script) {
-        Ok(s)  => s,
+        Ok(s) => s,
         Err(e) => {
             log::warn!("parse error: {e}");
             return SolveOutcome::Unknown;
@@ -232,7 +238,9 @@ pub fn solve_with_lookahead(script: &str, max_conflicts: u64) -> SolveOutcome {
         SmtStatus::Unsat => SolveOutcome::Unsat,
 
         SmtStatus::Sat => {
-            let model = result.values.iter()
+            let model = result
+                .values
+                .iter()
                 .map(|(n, v)| format!("({n} {v})"))
                 .collect::<Vec<_>>()
                 .join(" ");
@@ -266,19 +274,20 @@ mod tests {
 
     #[test]
     fn unsat_returns_unsat() {
-        let s =
-            "(set-logic QF_BV)\n\
+        let s = "(set-logic QF_BV)\n\
              (declare-const x (_ BitVec 4))\n\
              (assert (= x #b0000))\n\
              (assert (= x #b1111))\n\
              (check-sat)\n";
-        assert!(matches!(solve_with_lookahead(s, 10_000), SolveOutcome::Unsat));
+        assert!(matches!(
+            solve_with_lookahead(s, 10_000),
+            SolveOutcome::Unsat
+        ));
     }
 
     #[test]
     fn sat_returns_sat_with_model() {
-        let s =
-            "(set-logic QF_BV)\n\
+        let s = "(set-logic QF_BV)\n\
              (declare-const x (_ BitVec 8))\n\
              (assert (bvult x (_ bv10 8)))\n\
              (check-sat)\n";
@@ -290,19 +299,24 @@ mod tests {
 
     #[test]
     fn idl_unsat() {
-        let s =
-            "(set-logic QF_IDL)\n\
+        let s = "(set-logic QF_IDL)\n\
              (declare-const x Int)\n\
              (declare-const y Int)\n\
              (assert (<= (- x y) 1))\n\
              (assert (<= (- y x) -3))\n\
              (check-sat)\n";
-        assert!(matches!(solve_with_lookahead(s, 10_000), SolveOutcome::Unsat));
+        assert!(matches!(
+            solve_with_lookahead(s, 10_000),
+            SolveOutcome::Unsat
+        ));
     }
 
     #[test]
     fn parse_error_returns_unknown() {
-        assert!(matches!(solve_with_lookahead("((((", 100), SolveOutcome::Unknown));
+        assert!(matches!(
+            solve_with_lookahead("((((", 100),
+            SolveOutcome::Unknown
+        ));
     }
 
     #[test]
@@ -330,8 +344,7 @@ mod tests {
         // Force a split by using a tiny budget on a non-trivial BV problem
         // with multiple variables so the look-ahead has something to choose.
         // We run with a tiny conflict budget hoping to get UNKNOWN.
-        let s =
-            "(set-logic QF_BV)\n\
+        let s = "(set-logic QF_BV)\n\
              (declare-const a (_ BitVec 32))\n\
              (declare-const b (_ BitVec 32))\n\
              (assert (= (bvadd a b) (_ bv0 32)))\n\
@@ -351,9 +364,9 @@ mod tests {
 
     #[test]
     fn probe_budget_scaling() {
-        assert_eq!(probe_budget(0),       0,    "unlimited main budget → no probing");
-        assert_eq!(probe_budget(1_600),   200,  "1600/8 = 200");
-        assert_eq!(probe_budget(8_000),   1_000);
+        assert_eq!(probe_budget(0), 0, "unlimited main budget → no probing");
+        assert_eq!(probe_budget(1_600), 200, "1600/8 = 200");
+        assert_eq!(probe_budget(8_000), 1_000);
         assert_eq!(probe_budget(100_000), 2_000, "capped at 2000");
     }
 }

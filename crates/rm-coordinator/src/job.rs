@@ -10,29 +10,33 @@ use serde::{Deserialize, Serialize};
 use std::time::Instant;
 use uuid::Uuid;
 
-pub type JobId  = Uuid;
+pub type JobId = Uuid;
 pub type TaskId = Uuid;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum JobStatus { Pending, Running, Complete }
+pub enum JobStatus {
+    Pending,
+    Running,
+    Complete,
+}
 
 // ── Task result ───────────────────────────────────────────────────────────────
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TaskResult {
     /// 0 = SAT, 1 = UNSAT, 2 = UNKNOWN
-    pub code:  u32,
+    pub code: u32,
     pub model: String,
 }
 
 // ── Regime B: batch (proof farm) ─────────────────────────────────────────────
 
 pub struct BatchJob {
-    pub id:      JobId,
+    pub id: JobId,
     pub results: Vec<Option<TaskResult>>,
     pub pending: usize,
-    pub status:  JobStatus,
+    pub status: JobStatus,
 }
 
 impl BatchJob {
@@ -41,7 +45,11 @@ impl BatchJob {
             id,
             results: vec![None; count],
             pending: count,
-            status:  if count == 0 { JobStatus::Complete } else { JobStatus::Running },
+            status: if count == 0 {
+                JobStatus::Complete
+            } else {
+                JobStatus::Running
+            },
         }
     }
 
@@ -64,17 +72,21 @@ impl BatchJob {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum Verdict { Sat, Unsat, Unknown }
+pub enum Verdict {
+    Sat,
+    Unsat,
+    Unknown,
+}
 
 pub struct CubeJob {
-    pub id:           JobId,
+    pub id: JobId,
     /// SMT-LIB 2 without trailing `(check-sat)`.
-    pub base_script:  String,
+    pub base_script: String,
     pub max_conflicts: u64,
-    pub nodes:        Vec<CubeNode>,
+    pub nodes: Vec<CubeNode>,
     pub next_node_id: u64,
-    pub status:       JobStatus,
-    pub verdict:      Option<Verdict>,
+    pub status: JobStatus,
+    pub verdict: Option<Verdict>,
 }
 
 impl CubeJob {
@@ -112,17 +124,20 @@ impl CubeJob {
         // Interior = nodes that appear as parent of at least one other node.
         let has_children: std::collections::HashSet<u64> =
             self.nodes.iter().filter_map(|n| n.parent).collect();
-        self.nodes.iter().all(|n| {
-            has_children.contains(&n.id) || n.status == CubeNodeStatus::ClosedUnsat
-        })
+        self.nodes
+            .iter()
+            .all(|n| has_children.contains(&n.id) || n.status == CubeNodeStatus::ClosedUnsat)
     }
 
     pub fn is_sat(&self) -> bool {
-        self.nodes.iter().any(|n| n.status == CubeNodeStatus::ClosedSat)
+        self.nodes
+            .iter()
+            .any(|n| n.status == CubeNodeStatus::ClosedSat)
     }
 
     pub fn open_node_ids(&self) -> Vec<u64> {
-        self.nodes.iter()
+        self.nodes
+            .iter()
             .filter(|n| n.status == CubeNodeStatus::Open)
             .map(|n| n.id)
             .collect()
@@ -131,45 +146,55 @@ impl CubeJob {
 
 #[derive(Clone, Debug)]
 pub struct CubeNode {
-    pub id:               u64,
-    pub parent:           Option<u64>,
+    pub id: u64,
+    pub parent: Option<u64>,
     /// Extra SMT-LIB 2 `(assert ...)` lines prepended for this cube branch.
     pub extra_assertions: Vec<String>,
-    pub status:           CubeNodeStatus,
-    pub task_id:          Option<TaskId>,
+    pub status: CubeNodeStatus,
+    pub task_id: Option<TaskId>,
 }
 
 impl CubeNode {
     fn root() -> Self {
-        CubeNode { id: 0, parent: None, extra_assertions: vec![], status: CubeNodeStatus::Open, task_id: None }
+        CubeNode {
+            id: 0,
+            parent: None,
+            extra_assertions: vec![],
+            status: CubeNodeStatus::Open,
+            task_id: None,
+        }
     }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum CubeNodeStatus {
-    Open, Assigned, ClosedSat, ClosedUnsat, Cancelled,
+    Open,
+    Assigned,
+    ClosedSat,
+    ClosedUnsat,
+    Cancelled,
 }
 
 // ── Task dispatched to a remote worker ───────────────────────────────────────
 
 #[derive(Clone, Debug)]
 pub struct Task {
-    pub id:   TaskId,
+    pub id: TaskId,
     pub kind: TaskKind,
 }
 
 #[derive(Clone, Debug)]
 pub enum TaskKind {
     Batch {
-        job_id:       JobId,
+        job_id: JobId,
         script_index: usize,
-        script:       String,
+        script: String,
         max_conflicts: u64,
     },
     Cube {
-        job_id:       JobId,
-        node_id:      u64,
-        script:       String,
+        job_id: JobId,
+        node_id: u64,
+        script: String,
         max_conflicts: u64,
     },
 }
@@ -178,20 +203,20 @@ impl Task {
     pub fn max_conflicts(&self) -> u64 {
         match &self.kind {
             TaskKind::Batch { max_conflicts, .. } => *max_conflicts,
-            TaskKind::Cube  { max_conflicts, .. } => *max_conflicts,
+            TaskKind::Cube { max_conflicts, .. } => *max_conflicts,
         }
     }
 
     pub fn script(&self) -> &str {
         match &self.kind {
             TaskKind::Batch { script, .. } => script,
-            TaskKind::Cube  { script, .. } => script,
+            TaskKind::Cube { script, .. } => script,
         }
     }
 }
 
 pub struct InFlightTask {
-    pub task:      Task,
+    pub task: Task,
     pub worker_id: u32,
-    pub deadline:  Instant,
+    pub deadline: Instant,
 }

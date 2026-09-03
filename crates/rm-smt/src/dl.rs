@@ -39,7 +39,9 @@ fn collect_dl_declarations(exprs: &[SExpr]) -> DlDecls {
     let mut logic: Option<String> = None;
     for expr in exprs {
         let SExpr::List(items) = expr else { continue };
-        let Some(head) = items.first().and_then(|e| e.symbol()) else { continue };
+        let Some(head) = items.first().and_then(|e| e.symbol()) else {
+            continue;
+        };
         match head {
             "set-logic" => {
                 if let Some(SExpr::Atom(Atom::Symbol(l))) = items.get(1) {
@@ -66,7 +68,12 @@ fn collect_dl_declarations(exprs: &[SExpr]) -> DlDecls {
             _ => {}
         }
     }
-    DlDecls { var_map, next_id, assertions, logic }
+    DlDecls {
+        var_map,
+        next_id,
+        assertions,
+        logic,
+    }
 }
 
 /// Solve a QF_IDL SMT-LIB text. Returns the status and, on SAT, a mapping
@@ -84,11 +91,15 @@ pub fn solve_qf_idl(text: &str) -> Result<(DlStatus, Vec<(String, i64)>), String
     }
     let num_vars = decls.next_id - 1;
     let mut solver = DiffLogicSolver::new(num_vars);
-    let mut next_lit: u32 = 0;
-    for assertion in &decls.assertions {
+    for (next_lit, assertion) in (0_u32..).zip(decls.assertions.iter()) {
         let lit = next_lit;
-        next_lit += 1;
-        if let Err(e) = assert_one(&mut solver, assertion, &mut decls.var_map, &mut decls.next_id, lit) {
+        if let Err(e) = assert_one(
+            &mut solver,
+            assertion,
+            &mut decls.var_map,
+            &mut decls.next_id,
+            lit,
+        ) {
             match e {
                 AssertError::Conflict => return Ok((DlStatus::Unsat, Vec::new())),
                 AssertError::Unsupported => return Ok((DlStatus::Unknown, Vec::new())),
@@ -101,7 +112,8 @@ pub fn solve_qf_idl(text: &str) -> Result<(DlStatus, Vec<(String, i64)>), String
         Err(DlError::Conflict(_)) => return Ok((DlStatus::Unsat, Vec::new())),
         Err(e) => return Err(e.to_string()),
     }
-    let mut model: Vec<(String, i64)> = decls.var_map
+    let mut model: Vec<(String, i64)> = decls
+        .var_map
         .iter()
         .filter_map(|(name, &id)| solver.var_upper_bound(id).map(|v| (name.clone(), v)))
         .collect();
@@ -140,12 +152,14 @@ fn assert_one(
             }
             Ok(())
         }
-        "not" => {
-            Err(AssertError::Unsupported)
-        }
+        "not" => Err(AssertError::Unsupported),
         "<=" | "<" | ">=" | ">" | "=" => {
-            let lhs = items.get(1).ok_or_else(|| AssertError::Parse("missing lhs".into()))?;
-            let rhs = items.get(2).ok_or_else(|| AssertError::Parse("missing rhs".into()))?;
+            let lhs = items
+                .get(1)
+                .ok_or_else(|| AssertError::Parse("missing lhs".into()))?;
+            let rhs = items
+                .get(2)
+                .ok_or_else(|| AssertError::Parse("missing rhs".into()))?;
 
             match (extract_diff(lhs), extract_diff(rhs)) {
                 (Some((x_name, y_name)), _) => {
@@ -201,10 +215,10 @@ fn apply_cmp(
 ) -> Result<(), AssertError> {
     match op {
         "<=" => dl_assert(solver, x, y, c, lit),
-        "<"  => dl_assert(solver, x, y, c - 1, lit),
+        "<" => dl_assert(solver, x, y, c - 1, lit),
         ">=" => dl_assert(solver, y, x, -c, lit),
-        ">"  => dl_assert(solver, y, x, -c - 1, lit),
-        "="  => {
+        ">" => dl_assert(solver, y, x, -c - 1, lit),
+        "=" => {
             dl_assert(solver, x, y, c, lit)?;
             dl_assert(solver, y, x, -c, lit)
         }
@@ -212,7 +226,13 @@ fn apply_cmp(
     }
 }
 
-fn dl_assert(solver: &mut DiffLogicSolver, x: u32, y: u32, c: i64, lit: u32) -> Result<(), AssertError> {
+fn dl_assert(
+    solver: &mut DiffLogicSolver,
+    x: u32,
+    y: u32,
+    c: i64,
+    lit: u32,
+) -> Result<(), AssertError> {
     solver.assert_leq(x, y, c, lit).map_err(|e| match e {
         DlError::Conflict(_) => AssertError::Conflict,
         _ => AssertError::Parse(e.to_string()),
@@ -221,9 +241,15 @@ fn dl_assert(solver: &mut DiffLogicSolver, x: u32, y: u32, c: i64, lit: u32) -> 
 
 /// Extract `(- x y)` → Some(("x", "y")); None if pattern doesn't match.
 fn extract_diff(expr: &SExpr) -> Option<(&str, &str)> {
-    let SExpr::List(items) = expr else { return None };
-    if items.len() != 3 { return None; }
-    if items[0].symbol() != Some("-") { return None; }
+    let SExpr::List(items) = expr else {
+        return None;
+    };
+    if items.len() != 3 {
+        return None;
+    }
+    if items[0].symbol() != Some("-") {
+        return None;
+    }
     let x = items[1].symbol()?;
     let y = items[2].symbol()?;
     Some((x, y))
@@ -236,20 +262,19 @@ fn extract_integer(expr: &SExpr) -> Result<i64, AssertError> {
         }
         SExpr::List(items) if items.len() == 2 && items[0].symbol() == Some("-") => {
             if let SExpr::Atom(Atom::Numeral(n)) = &items[1] {
-                let v = i64::try_from(*n).map_err(|_| AssertError::Parse("numeral overflow".into()))?;
+                let v =
+                    i64::try_from(*n).map_err(|_| AssertError::Parse("numeral overflow".into()))?;
                 Ok(-v)
             } else {
                 Err(AssertError::Unsupported)
             }
         }
-        SExpr::Atom(Atom::Symbol(s)) => {
-            s.parse::<i64>().map_err(|_| AssertError::Unsupported)
-        }
+        SExpr::Atom(Atom::Symbol(s)) => s.parse::<i64>().map_err(|_| AssertError::Unsupported),
         _ => Err(AssertError::Unsupported),
     }
 }
 
-fn intern_var<'a>(name: &'a str, map: &mut FxHashMap<String, u32>, next_id: &mut u32) -> u32 {
+fn intern_var(name: &str, map: &mut FxHashMap<String, u32>, next_id: &mut u32) -> u32 {
     *map.entry(name.to_owned()).or_insert_with(|| {
         let id = *next_id;
         *next_id += 1;
@@ -260,10 +285,10 @@ fn intern_var<'a>(name: &'a str, map: &mut FxHashMap<String, u32>, next_id: &mut
 fn flip_op(op: &str) -> &'static str {
     match op {
         "<=" => ">=",
-        "<"  => ">",
+        "<" => ">",
         ">=" => "<=",
-        ">"  => "<",
-        _    => "=",
+        ">" => "<",
+        _ => "=",
     }
 }
 
@@ -362,7 +387,10 @@ mod tests {
         .unwrap();
         assert_eq!(status, DlStatus::Sat);
         let x_val = model.iter().find(|(n, _)| n == "x").map(|(_, v)| *v);
-        assert!(x_val.is_some_and(|v| v <= 5), "model x={x_val:?} should be ≤ 5");
+        assert!(
+            x_val.is_some_and(|v| v <= 5),
+            "model x={x_val:?} should be ≤ 5"
+        );
     }
 
     #[test]

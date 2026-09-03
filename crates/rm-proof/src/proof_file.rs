@@ -32,7 +32,9 @@ pub enum ProofError {
     Io(#[from] std::io::Error),
     #[error("malformed proof line {line}: {msg}")]
     Malformed { line: usize, msg: String },
-    #[error("proof declares {declared} variables but model has assignments up to variable {found}")]
+    #[error(
+        "proof declares {declared} variables but model has assignments up to variable {found}"
+    )]
     ModelTooLarge { declared: u32, found: u32 },
     #[error("proof is UNSAT: external DRAT checking is not yet implemented")]
     UnsatNotSupported,
@@ -69,20 +71,27 @@ pub enum Status {
 fn parse_pcnf_header(rest: &str, lineno: usize) -> Result<u32, ProofError> {
     let parts: Vec<&str> = rest.split_whitespace().collect();
     if parts.len() < 2 {
-        return Err(ProofError::Malformed { line: lineno, msg: "p cnf needs two integers".into() });
+        return Err(ProofError::Malformed {
+            line: lineno,
+            msg: "p cnf needs two integers".into(),
+        });
     }
-    parts[0]
-        .parse()
-        .map_err(|_| ProofError::Malformed { line: lineno, msg: "bad num_vars".into() })
+    parts[0].parse().map_err(|_| ProofError::Malformed {
+        line: lineno,
+        msg: "bad num_vars".into(),
+    })
 }
 
 fn parse_model_line(rest: &str, lineno: usize) -> Result<Vec<i32>, ProofError> {
     let mut lits = Vec::new();
     for tok in rest.split_whitespace() {
-        let lit: i32 = tok
-            .parse()
-            .map_err(|_| ProofError::Malformed { line: lineno, msg: format!("bad literal: {tok}") })?;
-        if lit == 0 { break; }
+        let lit: i32 = tok.parse().map_err(|_| ProofError::Malformed {
+            line: lineno,
+            msg: format!("bad literal: {tok}"),
+        })?;
+        if lit == 0 {
+            break;
+        }
         lits.push(lit);
     }
     Ok(lits)
@@ -108,7 +117,10 @@ fn parse_clause_line(trimmed: &str, lineno: usize) -> Result<Option<Vec<i32>>, P
     match lits {
         Ok(ls) if !ls.is_empty() => Ok(Some(ls)),
         Ok(_) => Ok(None),
-        Err(_) => Err(ProofError::Malformed { line: lineno, msg: format!("bad clause: {trimmed}") }),
+        Err(_) => Err(ProofError::Malformed {
+            line: lineno,
+            msg: format!("bad clause: {trimmed}"),
+        }),
     }
 }
 
@@ -117,7 +129,10 @@ fn build_proof_model(num_vars: u32, model_lits: Vec<i32>) -> Result<Vec<bool>, P
     for lit in model_lits {
         let var = lit.unsigned_abs();
         if var > num_vars {
-            return Err(ProofError::ModelTooLarge { declared: num_vars, found: var });
+            return Err(ProofError::ModelTooLarge {
+                declared: num_vars,
+                found: var,
+            });
         }
         if var > 0 {
             model[var as usize] = lit > 0;
@@ -148,8 +163,14 @@ impl ProofFile {
                 num_vars = Some(parse_pcnf_header(rest, lineno)?);
                 continue;
             }
-            if trimmed == "s SAT" { status = Some(Status::Sat); continue; }
-            if trimmed == "s UNSAT" { status = Some(Status::Unsat); continue; }
+            if trimmed == "s SAT" {
+                status = Some(Status::Sat);
+                continue;
+            }
+            if trimmed == "s UNSAT" {
+                status = Some(Status::Unsat);
+                continue;
+            }
             if let Some(rest) = trimmed.strip_prefix("v ") {
                 model_lits.extend(parse_model_line(rest, lineno)?);
                 continue;
@@ -172,7 +193,13 @@ impl ProofFile {
         let num_vars = num_vars.ok_or(ProofError::MissingHeader)?;
         let status = status.ok_or(ProofError::MissingStatus)?;
         let model = build_proof_model(num_vars, model_lits)?;
-        Ok(ProofFile { num_vars, clauses, status, model, drup })
+        Ok(ProofFile {
+            num_vars,
+            clauses,
+            status,
+            model,
+            drup,
+        })
     }
 
     /// Verify the proof. Returns `Ok(())` if the proof is valid.
@@ -187,7 +214,8 @@ impl ProofFile {
                     .map_err(ProofError::Drup)
             }
             Status::Sat => {
-                let ok = crate::model::check_dimacs_model(self.num_vars, &self.clauses, &self.model)?;
+                let ok =
+                    crate::model::check_dimacs_model(self.num_vars, &self.clauses, &self.model)?;
                 if ok {
                     Ok(())
                 } else {
@@ -241,7 +269,11 @@ impl ProofFile {
         let lits: Vec<String> = (1..=num_vars as usize)
             .map(|v| {
                 let val = model.get(v).copied().unwrap_or(false);
-                if val { v.to_string() } else { format!("-{v}") }
+                if val {
+                    v.to_string()
+                } else {
+                    format!("-{v}")
+                }
             })
             .collect();
         writeln!(out, "v {} 0", lits.join(" "))?;
@@ -294,12 +326,18 @@ mod tests {
     #[test]
     fn missing_header_error() {
         let text = "s SAT\nv 1 0\n";
-        assert!(matches!(ProofFile::parse(Cursor::new(text)), Err(ProofError::MissingHeader)));
+        assert!(matches!(
+            ProofFile::parse(Cursor::new(text)),
+            Err(ProofError::MissingHeader)
+        ));
     }
 
     #[test]
     fn missing_status_error() {
         let text = "p cnf 1 1\n1 0\nv 1 0\n";
-        assert!(matches!(ProofFile::parse(Cursor::new(text)), Err(ProofError::MissingStatus)));
+        assert!(matches!(
+            ProofFile::parse(Cursor::new(text)),
+            Err(ProofError::MissingStatus)
+        ));
     }
 }

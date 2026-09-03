@@ -4,11 +4,11 @@
 //! Each job is solved by an independent [`SmtSolver`] instance. Jobs that
 //! arrive while all slots are busy queue and run as slots free up.
 
-use std::sync::{Arc, Mutex};
-use rm_smt::SmtSolver;
-use crate::solver::{SatResult, SolverConfig};
 use crate::model::Model;
+use crate::solver::{SatResult, SolverConfig};
+use rm_smt::SmtSolver;
 use rm_smt::SmtStatus;
+use std::sync::{Arc, Mutex};
 
 /// A queued proof obligation.
 pub struct Job {
@@ -20,7 +20,10 @@ pub struct Job {
 
 impl Job {
     pub fn new(script: impl Into<String>) -> Self {
-        Job { script: script.into(), label: None }
+        Job {
+            script: script.into(),
+            label: None,
+        }
     }
 
     pub fn with_label(mut self, label: impl Into<String>) -> Self {
@@ -73,12 +76,17 @@ impl SolverPool {
                 std::thread::spawn(move || loop {
                     let job = {
                         let mut q = jobs.lock().unwrap();
-                        if q.is_empty() { break; }
+                        if q.is_empty() {
+                            break;
+                        }
                         q.remove(0)
                     };
                     let (idx, job) = job;
                     let result = solve_job(&job.script, max_conflicts);
-                    let jr = JobResult { label: job.label, result };
+                    let jr = JobResult {
+                        label: job.label,
+                        result,
+                    };
                     results.lock().unwrap()[idx] = Some(jr);
                 })
             })
@@ -93,10 +101,12 @@ impl SolverPool {
             .into_inner()
             .unwrap()
             .into_iter()
-            .map(|r| r.unwrap_or_else(|| JobResult {
-                label: None,
-                result: SatResult::Unknown("job did not complete".to_owned()),
-            }))
+            .map(|r| {
+                r.unwrap_or_else(|| JobResult {
+                    label: None,
+                    result: SatResult::Unknown("job did not complete".to_owned()),
+                })
+            })
             .collect()
     }
 }

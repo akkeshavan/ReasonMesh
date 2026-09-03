@@ -26,12 +26,12 @@
 //! opaque rmSolveSmtlib (text : @& String) (budget : UInt64) (modelOut : @& ByteArray) : Int32
 //! ```
 
-use std::ffi::{CStr, CString, c_char};
 use crate::context::Context;
 use crate::expr::Expr;
 use crate::model::{Model, Value};
-use crate::solver::{SatResult, Solver, SolverConfig};
 use crate::solve_smtlib_with_budget;
+use crate::solver::{SatResult, Solver, SolverConfig};
+use std::ffi::{c_char, CStr, CString};
 
 // ---------------------------------------------------------------------------
 // Result codes (mirrored in rm_api.h)
@@ -190,8 +190,12 @@ pub unsafe extern "C" fn rm_model_get_bitvec(
     };
     match model.get_bitvec(name.to_str().unwrap_or("")) {
         Some((bits, width)) => {
-            if !bits_out.is_null() { unsafe { *bits_out = bits }; }
-            if !width_out.is_null() { unsafe { *width_out = width }; }
+            if !bits_out.is_null() {
+                unsafe { *bits_out = bits };
+            }
+            if !width_out.is_null() {
+                unsafe { *width_out = width };
+            }
             1
         }
         None => 0,
@@ -214,7 +218,9 @@ pub unsafe extern "C" fn rm_model_get_int(
     };
     match model.get_int(name.to_str().unwrap_or("")) {
         Some(n) => {
-            if !out.is_null() { unsafe { *out = n }; }
+            if !out.is_null() {
+                unsafe { *out = n };
+            }
             1
         }
         None => 0,
@@ -238,7 +244,9 @@ pub unsafe extern "C" fn rm_model_get_bool(
     };
     match model.get_bool(name.to_str().unwrap_or("")) {
         Some(b) => {
-            if !out.is_null() { unsafe { *out = b as u8 }; }
+            if !out.is_null() {
+                unsafe { *out = b as u8 };
+            }
             1
         }
         None => 0,
@@ -300,7 +308,11 @@ pub unsafe extern "C" fn rm_solve_smtlib(
         Ok(s) => s,
         Err(_) => return RM_UNKNOWN,
     };
-    let budget = if max_conflicts == 0 { u64::MAX } else { max_conflicts };
+    let budget = if max_conflicts == 0 {
+        u64::MAX
+    } else {
+        max_conflicts
+    };
     let result = solve_smtlib_with_budget(s, budget);
     sat_result_to_c(result, model_out)
 }
@@ -325,17 +337,26 @@ pub unsafe extern "C" fn rm_solve_batch(
     if scripts.is_null() || results.is_null() || count == 0 {
         return 0;
     }
-    let budget = if max_conflicts == 0 { u64::MAX } else { max_conflicts };
+    let budget = if max_conflicts == 0 {
+        u64::MAX
+    } else {
+        max_conflicts
+    };
 
     let texts: Vec<String> = (0..count as usize)
         .filter_map(|i| {
             let ptr = unsafe { *scripts.add(i) };
-            if ptr.is_null() { return None; }
-            unsafe { CStr::from_ptr(ptr) }.to_str().ok().map(|s| s.to_owned())
+            if ptr.is_null() {
+                return None;
+            }
+            unsafe { CStr::from_ptr(ptr) }
+                .to_str()
+                .ok()
+                .map(|s| s.to_owned())
         })
         .collect();
 
-    let jobs: Vec<crate::pool::Job> = texts.iter().map(|t| crate::pool::Job::new(t)).collect();
+    let jobs: Vec<crate::pool::Job> = texts.iter().map(crate::pool::Job::new).collect();
     let pool = crate::pool::SolverPool::new(SolverConfig {
         num_workers: num_workers.max(1) as usize,
         max_conflicts: budget,
@@ -346,7 +367,10 @@ pub unsafe extern "C" fn rm_solve_batch(
     let mut conclusive = 0u32;
     for (i, outcome) in outcomes.iter().enumerate() {
         let code = match &outcome.result {
-            SatResult::Sat(_) | SatResult::Unsat => { conclusive += 1; sat_result_code(&outcome.result) }
+            SatResult::Sat(_) | SatResult::Unsat => {
+                conclusive += 1;
+                sat_result_code(&outcome.result)
+            }
             SatResult::Unknown(_) => RM_UNKNOWN,
         };
         unsafe { *results.add(i) = code };
@@ -361,14 +385,20 @@ pub unsafe extern "C" fn rm_solve_batch(
 /// # Safety
 /// `ctx` and `name` must be valid and non-null.
 #[no_mangle]
-pub unsafe extern "C" fn rm_expr_bool_const(ctx: *const RmContext, name: *const c_char) -> *mut RmExpr {
+pub unsafe extern "C" fn rm_expr_bool_const(
+    ctx: *const RmContext,
+    name: *const c_char,
+) -> *mut RmExpr {
     build_expr(ctx, name, |ctx, name| ctx.bool_const(name))
 }
 
 /// # Safety
 /// `ctx` and `name` must be valid and non-null.
 #[no_mangle]
-pub unsafe extern "C" fn rm_expr_int_const(ctx: *const RmContext, name: *const c_char) -> *mut RmExpr {
+pub unsafe extern "C" fn rm_expr_int_const(
+    ctx: *const RmContext,
+    name: *const c_char,
+) -> *mut RmExpr {
     build_expr(ctx, name, |ctx, name| ctx.int_const(name))
 }
 
@@ -396,7 +426,11 @@ pub extern "C" fn rm_expr_int_val(_ctx: *const RmContext, n: i64) -> *mut RmExpr
 }
 
 #[no_mangle]
-pub extern "C" fn rm_expr_bitvec_val(_ctx: *const RmContext, value: u64, width: u32) -> *mut RmExpr {
+pub extern "C" fn rm_expr_bitvec_val(
+    _ctx: *const RmContext,
+    value: u64,
+    width: u32,
+) -> *mut RmExpr {
     let ctx = Context::new();
     Box::into_raw(Box::new(RmExpr(ctx.bitvec_val(value, width))))
 }
@@ -457,19 +491,19 @@ wrap_binary!(rm_expr_ge, ge);
 // Expression builders — bit-vector
 // ---------------------------------------------------------------------------
 
-wrap_binary!(rm_expr_bvadd,  bvadd);
-wrap_binary!(rm_expr_bvsub,  bvsub);
-wrap_binary!(rm_expr_bvmul,  bvmul);
-wrap_unary!( rm_expr_bvneg,  bvneg);
-wrap_binary!(rm_expr_bvand,  bvand);
-wrap_binary!(rm_expr_bvor,   bvor);
-wrap_binary!(rm_expr_bvxor,  bvxor);
-wrap_unary!( rm_expr_bvnot,  bvnot);
-wrap_binary!(rm_expr_bvult,  bvult);
-wrap_binary!(rm_expr_bvule,  bvule);
-wrap_binary!(rm_expr_bvslt,  bvslt);
-wrap_binary!(rm_expr_bvsle,  bvsle);
-wrap_binary!(rm_expr_bvshl,  bvshl);
+wrap_binary!(rm_expr_bvadd, bvadd);
+wrap_binary!(rm_expr_bvsub, bvsub);
+wrap_binary!(rm_expr_bvmul, bvmul);
+wrap_unary!(rm_expr_bvneg, bvneg);
+wrap_binary!(rm_expr_bvand, bvand);
+wrap_binary!(rm_expr_bvor, bvor);
+wrap_binary!(rm_expr_bvxor, bvxor);
+wrap_unary!(rm_expr_bvnot, bvnot);
+wrap_binary!(rm_expr_bvult, bvult);
+wrap_binary!(rm_expr_bvule, bvule);
+wrap_binary!(rm_expr_bvslt, bvslt);
+wrap_binary!(rm_expr_bvsle, bvsle);
+wrap_binary!(rm_expr_bvshl, bvshl);
 wrap_binary!(rm_expr_bvlshr, bvlshr);
 wrap_binary!(rm_expr_bvashr, bvashr);
 wrap_binary!(rm_expr_concat, concat);
@@ -483,7 +517,9 @@ pub unsafe extern "C" fn rm_expr_extract(
     lo: u32,
     expr: *const RmExpr,
 ) -> *mut RmExpr {
-    if expr.is_null() { return std::ptr::null_mut(); }
+    if expr.is_null() {
+        return std::ptr::null_mut();
+    }
     Box::into_raw(Box::new(RmExpr(unsafe { (*expr).0.extract(hi, lo) })))
 }
 
@@ -495,8 +531,12 @@ pub unsafe extern "C" fn rm_expr_zero_extend(
     extra_bits: u32,
     expr: *const RmExpr,
 ) -> *mut RmExpr {
-    if expr.is_null() { return std::ptr::null_mut(); }
-    Box::into_raw(Box::new(RmExpr(unsafe { (*expr).0.zero_extend(extra_bits) })))
+    if expr.is_null() {
+        return std::ptr::null_mut();
+    }
+    Box::into_raw(Box::new(RmExpr(unsafe {
+        (*expr).0.zero_extend(extra_bits)
+    })))
 }
 
 /// # Safety
@@ -507,8 +547,12 @@ pub unsafe extern "C" fn rm_expr_sign_extend(
     extra_bits: u32,
     expr: *const RmExpr,
 ) -> *mut RmExpr {
-    if expr.is_null() { return std::ptr::null_mut(); }
-    Box::into_raw(Box::new(RmExpr(unsafe { (*expr).0.sign_extend(extra_bits) })))
+    if expr.is_null() {
+        return std::ptr::null_mut();
+    }
+    Box::into_raw(Box::new(RmExpr(unsafe {
+        (*expr).0.sign_extend(extra_bits)
+    })))
 }
 
 // ---------------------------------------------------------------------------
@@ -549,7 +593,13 @@ fn sat_result_code(r: &SatResult) -> i32 {
 fn value_to_smtlib(value: &Value) -> String {
     match value {
         Value::Bool(b) => if *b { "true" } else { "false" }.to_owned(),
-        Value::Int(n) => if *n < 0 { format!("(- {})", n.unsigned_abs()) } else { n.to_string() },
+        Value::Int(n) => {
+            if *n < 0 {
+                format!("(- {})", n.unsigned_abs())
+            } else {
+                n.to_string()
+            }
+        }
         Value::BitVec { bits, width } => format!("(_ bv{bits} {width})"),
     }
 }
@@ -572,12 +622,13 @@ unsafe fn build_expr(
 
 macro_rules! wrap_unary {
     ($fn_name:ident, $method:ident) => {
+        /// # Safety
+        /// `a` must be a valid non-null pointer to an `RmExpr` allocated by this library.
         #[no_mangle]
-        pub unsafe extern "C" fn $fn_name(
-            _ctx: *const RmContext,
-            a: *const RmExpr,
-        ) -> *mut RmExpr {
-            if a.is_null() { return std::ptr::null_mut(); }
+        pub unsafe extern "C" fn $fn_name(_ctx: *const RmContext, a: *const RmExpr) -> *mut RmExpr {
+            if a.is_null() {
+                return std::ptr::null_mut();
+            }
             Box::into_raw(Box::new(RmExpr(unsafe { (*a).0.$method() })))
         }
     };
@@ -585,20 +636,24 @@ macro_rules! wrap_unary {
 
 macro_rules! wrap_binary {
     ($fn_name:ident, $method:ident) => {
+        /// # Safety
+        /// `a` and `b` must be valid non-null pointers to `RmExpr` values allocated by this library.
         #[no_mangle]
         pub unsafe extern "C" fn $fn_name(
             _ctx: *const RmContext,
             a: *const RmExpr,
             b: *const RmExpr,
         ) -> *mut RmExpr {
-            if a.is_null() || b.is_null() { return std::ptr::null_mut(); }
+            if a.is_null() || b.is_null() {
+                return std::ptr::null_mut();
+            }
             Box::into_raw(Box::new(RmExpr(unsafe { (*a).0.$method(&(*b).0) })))
         }
     };
 }
 
-use wrap_unary;
 use wrap_binary;
+use wrap_unary;
 
 // ---------------------------------------------------------------------------
 // FFI tests (Rust-side, exercising the C functions via unsafe calls)
@@ -634,7 +689,10 @@ mod tests {
 
             let mut bits: u64 = 999;
             let mut width: u32 = 0;
-            assert_eq!(rm_model_get_bitvec(model, cstr("x").as_ptr(), &mut bits, &mut width), 1);
+            assert_eq!(
+                rm_model_get_bitvec(model, cstr("x").as_ptr(), &mut bits, &mut width),
+                1
+            );
             assert!(bits < 5, "model x={bits} must be < 5");
             assert_eq!(width, 8);
 
@@ -656,8 +714,11 @@ mod tests {
             let s = rm_solver_new(ctx, 1, 0);
             rm_solver_assert(s, e0);
             rm_solver_assert(s, e1);
-            rm_expr_free(x); rm_expr_free(zero); rm_expr_free(ones);
-            rm_expr_free(e0); rm_expr_free(e1);
+            rm_expr_free(x);
+            rm_expr_free(zero);
+            rm_expr_free(ones);
+            rm_expr_free(e0);
+            rm_expr_free(e1);
 
             let r = rm_solver_check(s, ptr::null_mut());
             assert_eq!(r, RM_UNSAT);
@@ -682,7 +743,9 @@ mod tests {
             rm_solver_pop(s);
             assert_eq!(rm_solver_check(s, ptr::null_mut()), RM_SAT);
 
-            rm_expr_free(x); rm_expr_free(hundred); rm_expr_free(zero);
+            rm_expr_free(x);
+            rm_expr_free(hundred);
+            rm_expr_free(zero);
             rm_solver_free(s);
             rm_context_free(ctx);
         }
@@ -690,14 +753,19 @@ mod tests {
 
     #[test]
     fn ffi_solve_smtlib_text() {
-        let script = cstr("(set-logic QF_BV)\n(declare-const a (_ BitVec 4))\n(assert (= a #b0101))\n(check-sat)");
+        let script = cstr(
+            "(set-logic QF_BV)\n(declare-const a (_ BitVec 4))\n(assert (= a #b0101))\n(check-sat)",
+        );
         unsafe {
             let mut model: *mut RmModel = ptr::null_mut();
             let r = rm_solve_smtlib(script.as_ptr(), 0, &mut model);
             assert_eq!(r, RM_SAT);
             let mut bits: u64 = 0;
             let mut width: u32 = 0;
-            assert_eq!(rm_model_get_bitvec(model, cstr("a").as_ptr(), &mut bits, &mut width), 1);
+            assert_eq!(
+                rm_model_get_bitvec(model, cstr("a").as_ptr(), &mut bits, &mut width),
+                1
+            );
             assert_eq!(bits, 5);
             rm_model_free(model);
         }
@@ -705,7 +773,9 @@ mod tests {
 
     #[test]
     fn ffi_batch_solve() {
-        let s0 = cstr("(set-logic QF_BV)(declare-const x (_ BitVec 4))(assert (bvult x #x5))(check-sat)");
+        let s0 = cstr(
+            "(set-logic QF_BV)(declare-const x (_ BitVec 4))(assert (bvult x #x5))(check-sat)",
+        );
         let s1 = cstr("(set-logic QF_BV)(declare-const x (_ BitVec 4))(assert (= x #b0000))(assert (= x #b1111))(check-sat)");
         let ptrs = [s0.as_ptr(), s1.as_ptr()];
         let mut results = [RM_UNKNOWN; 2];

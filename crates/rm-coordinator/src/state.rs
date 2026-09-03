@@ -11,29 +11,29 @@ use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 pub struct WorkerInfo {
-    pub id:        u32,
+    pub id: u32,
     pub last_seen: Instant,
 }
 
 pub struct CoordinatorState {
     pub batch_jobs: HashMap<JobId, BatchJob>,
-    pub cube_jobs:  HashMap<JobId, CubeJob>,
+    pub cube_jobs: HashMap<JobId, CubeJob>,
     /// Pending tasks not yet claimed by a worker.
     pub task_queue: VecDeque<Task>,
     /// Tasks currently held by a worker (lease in force).
-    pub in_flight:  HashMap<TaskId, InFlightTask>,
-    pub workers:    HashMap<u32, WorkerInfo>,
-    pub lease_ttl:  Duration,
+    pub in_flight: HashMap<TaskId, InFlightTask>,
+    pub workers: HashMap<u32, WorkerInfo>,
+    pub lease_ttl: Duration,
 }
 
 impl CoordinatorState {
     pub fn new(lease_ttl: Duration) -> Self {
         CoordinatorState {
             batch_jobs: HashMap::new(),
-            cube_jobs:  HashMap::new(),
+            cube_jobs: HashMap::new(),
             task_queue: VecDeque::new(),
-            in_flight:  HashMap::new(),
-            workers:    HashMap::new(),
+            in_flight: HashMap::new(),
+            workers: HashMap::new(),
             lease_ttl,
         }
     }
@@ -42,15 +42,18 @@ impl CoordinatorState {
 
     /// Enqueue a batch of independent SMT scripts.
     /// Returns `(job_id, task_count)` — caller adds `task_count` semaphore permits.
-    pub fn submit_batch(&mut self, scripts: Vec<String>, max_conflicts: u64)
-        -> (JobId, usize)
-    {
+    pub fn submit_batch(&mut self, scripts: Vec<String>, max_conflicts: u64) -> (JobId, usize) {
         let job_id = Uuid::new_v4();
-        let count  = scripts.len();
+        let count = scripts.len();
         for (i, script) in scripts.into_iter().enumerate() {
             self.task_queue.push_back(Task {
-                id:   Uuid::new_v4(),
-                kind: TaskKind::Batch { job_id, script_index: i, script, max_conflicts },
+                id: Uuid::new_v4(),
+                kind: TaskKind::Batch {
+                    job_id,
+                    script_index: i,
+                    script,
+                    max_conflicts,
+                },
             });
         }
         self.batch_jobs.insert(job_id, BatchJob::new(job_id, count));
@@ -59,17 +62,20 @@ impl CoordinatorState {
 
     /// Enqueue a cube-and-conquer job (one open root node initially).
     /// Returns `(job_id, 1)` — caller adds 1 semaphore permit.
-    pub fn submit_cube(&mut self, script: String, max_conflicts: u64)
-        -> (JobId, usize)
-    {
-        let job_id      = Uuid::new_v4();
+    pub fn submit_cube(&mut self, script: String, max_conflicts: u64) -> (JobId, usize) {
+        let job_id = Uuid::new_v4();
         let base_script = strip_check_sat(&script).to_owned();
-        let job         = CubeJob::new(job_id, base_script, max_conflicts);
+        let job = CubeJob::new(job_id, base_script, max_conflicts);
 
         let task_script = job.script_for(0).unwrap();
         self.task_queue.push_back(Task {
-            id:   Uuid::new_v4(),
-            kind: TaskKind::Cube { job_id, node_id: 0, script: task_script, max_conflicts },
+            id: Uuid::new_v4(),
+            kind: TaskKind::Cube {
+                job_id,
+                node_id: 0,
+                script: task_script,
+                max_conflicts,
+            },
         });
         self.cube_jobs.insert(job_id, job);
         (job_id, 1)
@@ -82,20 +88,26 @@ impl CoordinatorState {
     pub fn pop_task(&mut self, worker_id: u32, now: Instant) -> Option<Task> {
         let task = self.task_queue.pop_front()?;
 
-        if let TaskKind::Cube { job_id, node_id, .. } = &task.kind {
+        if let TaskKind::Cube {
+            job_id, node_id, ..
+        } = &task.kind
+        {
             if let Some(job) = self.cube_jobs.get_mut(job_id) {
                 if let Some(node) = job.get_node_mut(*node_id) {
-                    node.status  = CubeNodeStatus::Assigned;
+                    node.status = CubeNodeStatus::Assigned;
                     node.task_id = Some(task.id);
                 }
             }
         }
 
-        self.in_flight.insert(task.id, InFlightTask {
-            task:      task.clone(),
-            worker_id,
-            deadline:  now + self.lease_ttl,
-        });
+        self.in_flight.insert(
+            task.id,
+            InFlightTask {
+                task: task.clone(),
+                worker_id,
+                deadline: now + self.lease_ttl,
+            },
+        );
         Some(task)
     }
 
@@ -105,14 +117,16 @@ impl CoordinatorState {
     /// Caller adds `new_task_count` semaphore permits (cube splits push new tasks).
     pub fn report_result(
         &mut self,
-        task_id:   TaskId,
+        task_id: TaskId,
         worker_id: u32,
-        code:      u32,
-        model:     String,
-        split:     Option<Vec<String>>,
-        now:       Instant,
+        code: u32,
+        model: String,
+        split: Option<Vec<String>>,
+        now: Instant,
     ) -> Result<(bool, usize), String> {
-        let inf = self.in_flight.remove(&task_id)
+        let inf = self
+            .in_flight
+            .remove(&task_id)
             .ok_or_else(|| format!("unknown task {task_id}"))?;
         if inf.worker_id != worker_id {
             self.in_flight.insert(task_id, inf);
@@ -120,17 +134,29 @@ impl CoordinatorState {
         }
 
         match inf.task.kind.clone() {
-            TaskKind::Batch { job_id, script_index, .. } => {
-                let complete = self.batch_jobs.get_mut(&job_id)
+            TaskKind::Batch {
+                job_id,
+                script_index,
+                ..
+            } => {
+                let complete = self
+                    .batch_jobs
+                    .get_mut(&job_id)
                     .map(|j| j.record(script_index, TaskResult { code, model }))
                     .unwrap_or(false);
                 Ok((complete, 0))
             }
-            TaskKind::Cube { job_id, node_id, max_conflicts, .. } => {
-                let new_tasks = self.process_cube_result(
-                    job_id, node_id, max_conflicts, code, split,
-                );
-                let done = self.cube_jobs.get(&job_id)
+            TaskKind::Cube {
+                job_id,
+                node_id,
+                max_conflicts,
+                ..
+            } => {
+                let new_tasks =
+                    self.process_cube_result(job_id, node_id, max_conflicts, code, split);
+                let done = self
+                    .cube_jobs
+                    .get(&job_id)
                     .map(|j| j.status == JobStatus::Complete)
                     .unwrap_or(false);
                 let _ = now;
@@ -141,17 +167,19 @@ impl CoordinatorState {
 
     fn process_cube_result(
         &mut self,
-        job_id:       JobId,
-        node_id:      u64,
+        job_id: JobId,
+        node_id: u64,
         max_conflicts: u64,
-        code:         u32,
-        split:        Option<Vec<String>>,
+        code: u32,
+        split: Option<Vec<String>>,
     ) -> usize {
         // Gather immutable data first, then mutate.
         let (parent_assertions, base_script) = match self.cube_jobs.get(&job_id) {
             None => return 0,
             Some(j) => {
-                let pa = j.nodes.iter()
+                let pa = j
+                    .nodes
+                    .iter()
                     .find(|n| n.id == node_id)
                     .map(|n| n.extra_assertions.clone())
                     .unwrap_or_default();
@@ -166,7 +194,7 @@ impl CoordinatorState {
                 if let Some(n) = job.get_node_mut(node_id) {
                     n.status = CubeNodeStatus::ClosedSat;
                 }
-                job.status  = JobStatus::Complete;
+                job.status = JobStatus::Complete;
                 job.verdict = Some(Verdict::Sat);
                 0
             }
@@ -177,7 +205,7 @@ impl CoordinatorState {
                     n.status = CubeNodeStatus::ClosedUnsat;
                 }
                 if job.is_unsat() {
-                    job.status  = JobStatus::Complete;
+                    job.status = JobStatus::Complete;
                     job.verdict = Some(Verdict::Unsat);
                 }
                 0
@@ -189,7 +217,7 @@ impl CoordinatorState {
 
                 // Prepare new child nodes and tasks (before mutating the job).
                 let mut new_nodes: Vec<CubeNode> = Vec::with_capacity(branch_count);
-                let mut new_tasks: Vec<Task>      = Vec::with_capacity(branch_count);
+                let mut new_tasks: Vec<Task> = Vec::with_capacity(branch_count);
 
                 let start_id = {
                     let job = self.cube_jobs.get(&job_id).unwrap();
@@ -211,15 +239,20 @@ impl CoordinatorState {
                     script.push_str("(check-sat)\n");
 
                     new_nodes.push(CubeNode {
-                        id:               child_id,
-                        parent:           Some(node_id),
+                        id: child_id,
+                        parent: Some(node_id),
                         extra_assertions: assertions,
-                        status:           CubeNodeStatus::Open,
-                        task_id:          None,
+                        status: CubeNodeStatus::Open,
+                        task_id: None,
                     });
                     new_tasks.push(Task {
-                        id:   Uuid::new_v4(),
-                        kind: TaskKind::Cube { job_id, node_id: child_id, script, max_conflicts },
+                        id: Uuid::new_v4(),
+                        kind: TaskKind::Cube {
+                            job_id,
+                            node_id: child_id,
+                            script,
+                            max_conflicts,
+                        },
                     });
                 }
 
@@ -243,13 +276,18 @@ impl CoordinatorState {
                 // UNKNOWN: re-queue the same node for retry.
                 let job = self.cube_jobs.get_mut(&job_id).unwrap();
                 if let Some(n) = job.get_node_mut(node_id) {
-                    n.status  = CubeNodeStatus::Open;
+                    n.status = CubeNodeStatus::Open;
                     n.task_id = None;
                 }
                 let script = job.script_for(node_id).unwrap_or_default();
                 self.task_queue.push_back(Task {
-                    id:   Uuid::new_v4(),
-                    kind: TaskKind::Cube { job_id, node_id, script, max_conflicts },
+                    id: Uuid::new_v4(),
+                    kind: TaskKind::Cube {
+                        job_id,
+                        node_id,
+                        script,
+                        max_conflicts,
+                    },
                 });
                 1
             }
@@ -258,10 +296,15 @@ impl CoordinatorState {
 
     // ── Lease management ──────────────────────────────────────────────────────
 
-    pub fn renew_lease(&mut self, task_id: TaskId, worker_id: u32, now: Instant)
-        -> Result<(), String>
-    {
-        let entry = self.in_flight.get_mut(&task_id)
+    pub fn renew_lease(
+        &mut self,
+        task_id: TaskId,
+        worker_id: u32,
+        now: Instant,
+    ) -> Result<(), String> {
+        let entry = self
+            .in_flight
+            .get_mut(&task_id)
             .ok_or_else(|| format!("unknown task {task_id}"))?;
         if entry.worker_id != worker_id {
             return Err(format!("task {task_id} not owned by worker {worker_id}"));
@@ -273,17 +316,22 @@ impl CoordinatorState {
     /// Reap expired leases, re-queuing their tasks.
     /// Returns count of re-queued tasks — caller adds that many semaphore permits.
     pub fn reap_expired(&mut self, now: Instant) -> usize {
-        let expired: Vec<TaskId> = self.in_flight.iter()
+        let expired: Vec<TaskId> = self
+            .in_flight
+            .iter()
             .filter(|(_, t)| t.deadline <= now)
             .map(|(id, _)| *id)
             .collect();
         let mut requeued = 0;
         for task_id in expired {
             if let Some(inf) = self.in_flight.remove(&task_id) {
-                if let TaskKind::Cube { job_id, node_id, .. } = &inf.task.kind {
+                if let TaskKind::Cube {
+                    job_id, node_id, ..
+                } = &inf.task.kind
+                {
                     if let Some(job) = self.cube_jobs.get_mut(job_id) {
                         if let Some(node) = job.get_node_mut(*node_id) {
-                            node.status  = CubeNodeStatus::Open;
+                            node.status = CubeNodeStatus::Open;
                             node.task_id = None;
                         }
                     }
@@ -298,14 +346,18 @@ impl CoordinatorState {
     /// Reap workers whose heartbeat has timed out, re-queuing their tasks.
     /// Returns count of re-queued tasks — caller adds that many semaphore permits.
     pub fn reap_dead_workers(&mut self, timeout: Duration, now: Instant) -> usize {
-        let dead: Vec<u32> = self.workers.values()
+        let dead: Vec<u32> = self
+            .workers
+            .values()
             .filter(|w| now.duration_since(w.last_seen) > timeout)
             .map(|w| w.id)
             .collect();
         let mut requeued = 0;
         for wid in dead {
             self.workers.remove(&wid);
-            let tasks: Vec<TaskId> = self.in_flight.iter()
+            let tasks: Vec<TaskId> = self
+                .in_flight
+                .iter()
                 .filter(|(_, t)| t.worker_id == wid)
                 .map(|(id, _)| *id)
                 .collect();
@@ -320,32 +372,40 @@ impl CoordinatorState {
     }
 
     pub fn touch_worker(&mut self, worker_id: u32, now: Instant) {
-        self.workers.insert(worker_id, WorkerInfo { id: worker_id, last_seen: now });
+        self.workers.insert(
+            worker_id,
+            WorkerInfo {
+                id: worker_id,
+                last_seen: now,
+            },
+        );
     }
 
     pub fn stats(&self) -> StatusStats {
         StatusStats {
-            batch_jobs:       self.batch_jobs.len(),
-            cube_jobs:        self.cube_jobs.len(),
-            tasks_queued:     self.task_queue.len(),
-            tasks_in_flight:  self.in_flight.len(),
-            workers_active:   self.workers.len(),
+            batch_jobs: self.batch_jobs.len(),
+            cube_jobs: self.cube_jobs.len(),
+            tasks_queued: self.task_queue.len(),
+            tasks_in_flight: self.in_flight.len(),
+            workers_active: self.workers.len(),
         }
     }
 }
 
 fn strip_check_sat(s: &str) -> &str {
     let t = s.trim_end();
-    t.strip_suffix("(check-sat)").map(str::trim_end).unwrap_or(t)
+    t.strip_suffix("(check-sat)")
+        .map(str::trim_end)
+        .unwrap_or(t)
 }
 
 #[derive(Clone, Debug, serde::Serialize)]
 pub struct StatusStats {
-    pub batch_jobs:      usize,
-    pub cube_jobs:       usize,
-    pub tasks_queued:    usize,
+    pub batch_jobs: usize,
+    pub cube_jobs: usize,
+    pub tasks_queued: usize,
     pub tasks_in_flight: usize,
-    pub workers_active:  usize,
+    pub workers_active: usize,
 }
 
 #[cfg(test)]
@@ -356,7 +416,9 @@ mod tests {
         CoordinatorState::new(Duration::from_secs(30))
     }
 
-    fn now() -> Instant { Instant::now() }
+    fn now() -> Instant {
+        Instant::now()
+    }
 
     // ── Batch (Regime B) ──────────────────────────────────────────────────
 
@@ -380,9 +442,9 @@ mod tests {
         assert_eq!(s.task_queue.len(), 0);
         assert_eq!(s.in_flight.len(), 1);
 
-        let (done, new_tasks) = s.report_result(
-            task.id, 1, 1, "".into(), None, now(),
-        ).unwrap();
+        let (done, new_tasks) = s
+            .report_result(task.id, 1, 1, "".into(), None, now())
+            .unwrap();
         assert!(done);
         assert_eq!(new_tasks, 0);
         assert_eq!(s.batch_jobs[&job_id].status, JobStatus::Complete);
@@ -398,11 +460,17 @@ mod tests {
         let t2 = s.pop_task(2, now()).unwrap();
         let t3 = s.pop_task(3, now()).unwrap();
 
-        let (d, _) = s.report_result(t1.id, 1, 1, "".into(), None, now()).unwrap();
+        let (d, _) = s
+            .report_result(t1.id, 1, 1, "".into(), None, now())
+            .unwrap();
         assert!(!d);
-        let (d, _) = s.report_result(t2.id, 2, 1, "".into(), None, now()).unwrap();
+        let (d, _) = s
+            .report_result(t2.id, 2, 1, "".into(), None, now())
+            .unwrap();
         assert!(!d);
-        let (d, _) = s.report_result(t3.id, 3, 1, "".into(), None, now()).unwrap();
+        let (d, _) = s
+            .report_result(t3.id, 3, 1, "".into(), None, now())
+            .unwrap();
         assert!(d);
         assert_eq!(s.batch_jobs[&job_id].pending, 0);
     }
@@ -434,7 +502,9 @@ mod tests {
         let mut s = state();
         let (job_id, _) = s.submit_cube("(check-sat)".into(), 0);
         let task = s.pop_task(1, now()).unwrap();
-        let (done, _) = s.report_result(task.id, 1, 1, "".into(), None, now()).unwrap();
+        let (done, _) = s
+            .report_result(task.id, 1, 1, "".into(), None, now())
+            .unwrap();
         assert!(done);
         assert_eq!(s.cube_jobs[&job_id].verdict, Some(Verdict::Unsat));
     }
@@ -444,7 +514,9 @@ mod tests {
         let mut s = state();
         let (job_id, _) = s.submit_cube("(check-sat)".into(), 0);
         let task = s.pop_task(1, now()).unwrap();
-        let (done, _) = s.report_result(task.id, 1, 0, "x=1".into(), None, now()).unwrap();
+        let (done, _) = s
+            .report_result(task.id, 1, 0, "x=1".into(), None, now())
+            .unwrap();
         assert!(done);
         assert_eq!(s.cube_jobs[&job_id].verdict, Some(Verdict::Sat));
     }
@@ -457,7 +529,9 @@ mod tests {
 
         // Worker splits on x: branch "(assert x)" and "(assert (not x))".
         let split = Some(vec!["(assert x)".into(), "(assert (not x))".into()]);
-        let (done, new_count) = s.report_result(task.id, 1, 2, "".into(), split, now()).unwrap();
+        let (done, new_count) = s
+            .report_result(task.id, 1, 2, "".into(), split, now())
+            .unwrap();
         assert!(!done);
         assert_eq!(new_count, 2);
         assert_eq!(s.task_queue.len(), 2);
@@ -472,16 +546,21 @@ mod tests {
 
         // Split root into two branches.
         let split = Some(vec!["(assert true)".into(), "(assert false)".into()]);
-        s.report_result(root_task.id, 1, 2, "".into(), split, now()).unwrap();
+        s.report_result(root_task.id, 1, 2, "".into(), split, now())
+            .unwrap();
 
         // Close first child as UNSAT.
         let c1 = s.pop_task(2, now()).unwrap();
-        let (d, _) = s.report_result(c1.id, 2, 1, "".into(), None, now()).unwrap();
+        let (d, _) = s
+            .report_result(c1.id, 2, 1, "".into(), None, now())
+            .unwrap();
         assert!(!d, "second child still open");
 
         // Close second child as UNSAT → job complete.
         let c2 = s.pop_task(3, now()).unwrap();
-        let (d, _) = s.report_result(c2.id, 3, 1, "".into(), None, now()).unwrap();
+        let (d, _) = s
+            .report_result(c2.id, 3, 1, "".into(), None, now())
+            .unwrap();
         assert!(d, "both children UNSAT → complete");
         assert_eq!(s.cube_jobs[&job_id].verdict, Some(Verdict::Unsat));
     }
@@ -537,7 +616,10 @@ mod tests {
     #[test]
     fn strip_check_sat_removes_suffix() {
         assert_eq!(strip_check_sat("(check-sat)"), "");
-        assert_eq!(strip_check_sat("(assert true)\n(check-sat)"), "(assert true)");
+        assert_eq!(
+            strip_check_sat("(assert true)\n(check-sat)"),
+            "(assert true)"
+        );
         assert_eq!(strip_check_sat("(assert true)"), "(assert true)");
     }
 }

@@ -105,7 +105,10 @@ impl Circuit {
         if children.is_empty() {
             return self.const_gate(false);
         }
-        if children.iter().any(|&c| matches!(self.get(c), Gate::Const(true))) {
+        if children
+            .iter()
+            .any(|&c| matches!(self.get(c), Gate::Const(true)))
+        {
             return self.const_gate(true);
         }
         let filtered: Vec<GateId> = children

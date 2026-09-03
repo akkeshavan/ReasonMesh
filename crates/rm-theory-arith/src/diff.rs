@@ -91,7 +91,9 @@ impl DiffLogicSolver {
         }
     }
 
-    pub fn num_vars(&self) -> u32 { self.num_vars }
+    pub fn num_vars(&self) -> u32 {
+        self.num_vars
+    }
 
     // -----------------------------------------------------------------------
     // CDCL interface
@@ -129,7 +131,12 @@ impl DiffLogicSolver {
             return Err(DlError::UnknownVar(x.max(y)));
         }
         let edge_idx = self.edges.len();
-        self.edges.push(Edge { from: y, to: x, weight: c, sat_lit });
+        self.edges.push(Edge {
+            from: y,
+            to: x,
+            weight: c,
+            sat_lit,
+        });
         self.adj[y as usize].push((x, edge_idx));
 
         self.relax_from_edge(edge_idx)?;
@@ -171,7 +178,9 @@ impl DiffLogicSolver {
                     changed = true;
                 }
             }
-            if !changed { break; }
+            if !changed {
+                break;
+            }
         }
 
         for (idx, edge) in self.edges.iter().enumerate() {
@@ -261,7 +270,10 @@ impl DiffLogicSolver {
         }
         sat_lits.sort_unstable();
         sat_lits.dedup();
-        ConflictCore { sat_lits, cycle_vars }
+        ConflictCore {
+            sat_lits,
+            cycle_vars,
+        }
     }
 
     fn extract_cycle(&self, pred: &[Option<usize>], triggering_edge: usize) -> ConflictCore {
@@ -278,12 +290,19 @@ impl DiffLogicSolver {
                 sat_lits.push(e.sat_lit);
                 cycle_vars.push(cur as VarId);
                 cur = e.from as usize;
-                if cur == cycle_start { break; }
-            } else { break; }
+                if cur == cycle_start {
+                    break;
+                }
+            } else {
+                break;
+            }
         }
         sat_lits.sort_unstable();
         sat_lits.dedup();
-        ConflictCore { sat_lits, cycle_vars }
+        ConflictCore {
+            sat_lits,
+            cycle_vars,
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -302,7 +321,9 @@ impl DiffLogicSolver {
     /// Current potential of variable x (upper bound; starts at 0, decreases as
     /// tighter constraints are added).
     pub fn var_upper_bound(&self, x: VarId) -> Option<i64> {
-        if x == 0 || x > self.num_vars { return None; }
+        if x == 0 || x > self.num_vars {
+            return None;
+        }
         Some(self.dist[x as usize])
     }
 
@@ -337,11 +358,17 @@ impl DiffLogicSolver {
         }
 
         let d = dist[target as usize];
-        if d < i64::MAX / 2 { Some(d) } else { None }
+        if d < i64::MAX / 2 {
+            Some(d)
+        } else {
+            None
+        }
     }
 
     /// Number of asserted edges.
-    pub fn num_edges(&self) -> usize { self.edges.len() }
+    pub fn num_edges(&self) -> usize {
+        self.edges.len()
+    }
 
     /// Produce AKX `BoundKnowledge` for all currently tight bounds.
     pub fn akx_bounds(&self) -> Vec<rm_akx::knowledge::BoundKnowledge> {
@@ -350,11 +377,19 @@ impl DiffLogicSolver {
 
         (1..=self.num_vars)
             .filter_map(|v| {
-                self.var_upper_bound(v).map(|c| rm_akx::knowledge::BoundKnowledge {
-                    term_id: v as u64,
-                    kind: AkxBoundKind::LessEq,
-                    value_bytes: Bound { kind: BoundKind::UpperBound, lhs: v, rhs: None, numerator: c, denominator: 1 }.to_bytes(),
-                })
+                self.var_upper_bound(v)
+                    .map(|c| rm_akx::knowledge::BoundKnowledge {
+                        term_id: v as u64,
+                        kind: AkxBoundKind::LessEq,
+                        value_bytes: Bound {
+                            kind: BoundKind::UpperBound,
+                            lhs: v,
+                            rhs: None,
+                            numerator: c,
+                            denominator: 1,
+                        }
+                        .to_bytes(),
+                    })
             })
             .collect()
     }
@@ -381,13 +416,15 @@ mod tests {
     fn negative_cycle_conflict() {
         // x - y ≤ 1, y - x ≤ -2 → x - x ≤ -1 (negative cycle)
         let mut s = DiffLogicSolver::new(2);
-        s.assert_leq(1, 2, 1, 0).unwrap();  // x - y ≤ 1
+        s.assert_leq(1, 2, 1, 0).unwrap(); // x - y ≤ 1
         let result = s.assert_leq(2, 1, -2, 1); // y - x ≤ -2
-        // Either assert_leq catches it incrementally or check() will.
+                                                // Either assert_leq catches it incrementally or check() will.
         if result.is_ok() {
             let check = s.check();
-            assert!(matches!(check, Err(DlError::Conflict(_))),
-                "expected conflict from negative cycle");
+            assert!(
+                matches!(check, Err(DlError::Conflict(_))),
+                "expected conflict from negative cycle"
+            );
         }
         // Either way: a conflict was detected.
     }
@@ -420,8 +457,8 @@ mod tests {
         // x = y, then x ≠ y (via x - y ≥ 1 and y - x ≥ 1 → cycle)
         let mut s = DiffLogicSolver::new(2);
         s.assert_eq(1, 2, 0).unwrap(); // x = y
-        // x - y ≥ 1 ⟺ y - x ≤ -1 → edge x→y w=-1
-        // combined with x-y≤0 gives cycle weight 0-1 = -1 < 0
+                                       // x - y ≥ 1 ⟺ y - x ≤ -1 → edge x→y w=-1
+                                       // combined with x-y≤0 gives cycle weight 0-1 = -1 < 0
         let r = s.assert_leq(2, 1, -1, 1); // y - x ≤ -1
         if r.is_ok() {
             assert!(matches!(s.check(), Err(DlError::Conflict(_))));

@@ -18,6 +18,7 @@
 //!    - UNSAT in ≤ `probe_budget` conflicts → score 100 (branch eliminated)
 //!    - SAT                                 → score  10 (branch feasible)
 //!    - UNKNOWN                             → score   5 (too hard to probe)
+//!
 //!    The two branch scores are summed; the variable with the highest total
 //!    wins.  An UNSAT probe + anything = 105+, which correctly dominates
 //!    "unknown + unknown" = 10.
@@ -54,7 +55,7 @@ pub fn pick_split(script: &str, probe_budget: u64) -> Option<[String; 2]> {
         })
         .collect();
     // Highest frequency first.
-    scored.sort_by(|a, b| b.1.cmp(&a.1));
+    scored.sort_by_key(|x| std::cmp::Reverse(x.1));
     scored.truncate(4); // probe at most 4 candidates
 
     if scored.is_empty() {
@@ -69,8 +70,8 @@ pub fn pick_split(script: &str, probe_budget: u64) -> Option<[String; 2]> {
 
     // Probe each candidate with both branches.
     let base = strip_check_sat(script);
-    let mut best_var: Option<Decl>   = None;
-    let mut best_score: i32          = -1;
+    let mut best_var: Option<Decl> = None;
+    let mut best_score: i32 = -1;
 
     for (decl, _occ) in scored {
         let branches = make_split_assertions(&decl);
@@ -83,7 +84,7 @@ pub fn pick_split(script: &str, probe_budget: u64) -> Option<[String; 2]> {
         );
         if total > best_score {
             best_score = total;
-            best_var   = Some(decl);
+            best_var = Some(decl);
         }
     }
 
@@ -109,33 +110,43 @@ enum VarSort {
 /// commands from a script.
 fn parse_declarations(script: &str) -> Vec<Decl> {
     let tokens = match lex(script) {
-        Ok(t)  => t,
-        Err(e) => { log::debug!("lookahead lex: {e}"); return vec![]; }
+        Ok(t) => t,
+        Err(e) => {
+            log::debug!("lookahead lex: {e}");
+            return vec![];
+        }
     };
     let exprs = match parse_program(&tokens) {
-        Ok(e)  => e,
-        Err(e) => { log::debug!("lookahead parse: {e}"); return vec![]; }
+        Ok(e) => e,
+        Err(e) => {
+            log::debug!("lookahead parse: {e}");
+            return vec![];
+        }
     };
 
     let mut decls = Vec::new();
     for expr in exprs {
-        let SExpr::List(ref items) = expr else { continue };
+        let SExpr::List(ref items) = expr else {
+            continue;
+        };
         match items.first().and_then(SExpr::symbol) {
             Some("declare-const") if items.len() == 3 => {
-                if let (Some(name), Some(sort)) =
-                    (items[1].symbol(), sort_of(&items[2]))
-                {
-                    decls.push(Decl { name: name.to_owned(), sort });
+                if let (Some(name), Some(sort)) = (items[1].symbol(), sort_of(&items[2])) {
+                    decls.push(Decl {
+                        name: name.to_owned(),
+                        sort,
+                    });
                 }
             }
             Some("declare-fun") if items.len() == 4 => {
                 // (declare-fun name () sort) — nullary only
                 if let SExpr::List(args) = &items[2] {
                     if args.is_empty() {
-                        if let (Some(name), Some(sort)) =
-                            (items[1].symbol(), sort_of(&items[3]))
-                        {
-                            decls.push(Decl { name: name.to_owned(), sort });
+                        if let (Some(name), Some(sort)) = (items[1].symbol(), sort_of(&items[3])) {
+                            decls.push(Decl {
+                                name: name.to_owned(),
+                                sort,
+                            });
                         }
                     }
                 }
@@ -149,10 +160,11 @@ fn parse_declarations(script: &str) -> Vec<Decl> {
 fn sort_of(expr: &SExpr) -> Option<VarSort> {
     match expr {
         SExpr::Atom(Atom::Symbol(s)) if s == "Bool" => Some(VarSort::Bool),
-        SExpr::Atom(Atom::Symbol(s)) if s == "Int"  => Some(VarSort::Int),
-        SExpr::List(items) if items.len() == 3
-            && items[0].symbol() == Some("_")
-            && items[1].symbol() == Some("BitVec") =>
+        SExpr::Atom(Atom::Symbol(s)) if s == "Int" => Some(VarSort::Int),
+        SExpr::List(items)
+            if items.len() == 3
+                && items[0].symbol() == Some("_")
+                && items[1].symbol() == Some("BitVec") =>
         {
             if let SExpr::Atom(Atom::Numeral(n)) = &items[2] {
                 Some(VarSort::BitVec(*n as u32))
@@ -180,7 +192,7 @@ fn count_occurrences(text: &str, name: &str) -> usize {
     while i + nlen <= bytes.len() {
         if bytes[i..i + nlen] == *nbytes {
             let before_ok = i == 0 || !is_ident_byte(bytes[i - 1]);
-            let after_ok  = i + nlen == bytes.len() || !is_ident_byte(bytes[i + nlen]);
+            let after_ok = i + nlen == bytes.len() || !is_ident_byte(bytes[i + nlen]);
             if before_ok && after_ok {
                 count += 1;
             }
@@ -192,8 +204,24 @@ fn count_occurrences(text: &str, name: &str) -> usize {
 
 fn is_ident_byte(b: u8) -> bool {
     b.is_ascii_alphanumeric()
-        || matches!(b, b'_' | b'-' | b'.' | b'!' | b'@' | b'$' | b'%' | b'^'
-                     | b'&' | b'*' | b'+' | b'=' | b'<' | b'>' | b'?' | b'/')
+        || matches!(
+            b,
+            b'_' | b'-'
+                | b'.'
+                | b'!'
+                | b'@'
+                | b'$'
+                | b'%'
+                | b'^'
+                | b'&'
+                | b'*'
+                | b'+'
+                | b'='
+                | b'<'
+                | b'>'
+                | b'?'
+                | b'/'
+        )
 }
 
 // ── Split assertion generation ────────────────────────────────────────────────
@@ -234,10 +262,10 @@ fn probe_branch(base_script: &str, assertion: &str, budget: u64) -> i32 {
     let script = format!("{base_script}\n{assertion}\n(check-sat)\n");
     match rm_smt::SmtSolver::parse(&script) {
         Err(_) => 5,
-        Ok(s)  => match s.solve(budget) {
+        Ok(s) => match s.solve(budget) {
             Ok(r) => match r.status {
-                SmtStatus::Unsat   => 100,
-                SmtStatus::Sat     => 10,
+                SmtStatus::Unsat => 100,
+                SmtStatus::Sat => 10,
                 SmtStatus::Unknown => 5,
             },
             // EmptyProblem → trivially SAT
@@ -250,7 +278,9 @@ fn probe_branch(base_script: &str, assertion: &str, budget: u64) -> i32 {
 /// Remove a trailing `(check-sat)` from a script string.
 fn strip_check_sat(s: &str) -> &str {
     let t = s.trim_end();
-    t.strip_suffix("(check-sat)").map(str::trim_end).unwrap_or(t)
+    t.strip_suffix("(check-sat)")
+        .map(str::trim_end)
+        .unwrap_or(t)
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -263,8 +293,7 @@ mod tests {
 
     #[test]
     fn parse_bv_bool_int_decls() {
-        let script =
-            "(set-logic QF_BV)\n\
+        let script = "(set-logic QF_BV)\n\
              (declare-const x (_ BitVec 8))\n\
              (declare-const flag Bool)\n\
              (declare-const n Int)\n\
@@ -322,7 +351,10 @@ mod tests {
 
     #[test]
     fn split_bool() {
-        let decl = Decl { name: "flag".into(), sort: VarSort::Bool };
+        let decl = Decl {
+            name: "flag".into(),
+            sort: VarSort::Bool,
+        };
         let [pos, neg] = make_split_assertions(&decl);
         assert_eq!(pos, "(assert flag)");
         assert_eq!(neg, "(assert (not flag))");
@@ -330,7 +362,10 @@ mod tests {
 
     #[test]
     fn split_bitvec_8() {
-        let decl = Decl { name: "x".into(), sort: VarSort::BitVec(8) };
+        let decl = Decl {
+            name: "x".into(),
+            sort: VarSort::BitVec(8),
+        };
         let [pos, neg] = make_split_assertions(&decl);
         assert_eq!(pos, "(assert (bvult x (_ bv128 8)))");
         assert_eq!(neg, "(assert (not (bvult x (_ bv128 8))))");
@@ -339,7 +374,10 @@ mod tests {
     #[test]
     fn split_bitvec_1() {
         // Width-1: mid = 2^0 = 1, so split is x < 1 (i.e. x = 0b0) vs x >= 1 (i.e. x = 0b1).
-        let decl = Decl { name: "b".into(), sort: VarSort::BitVec(1) };
+        let decl = Decl {
+            name: "b".into(),
+            sort: VarSort::BitVec(1),
+        };
         let [pos, neg] = make_split_assertions(&decl);
         assert_eq!(pos, "(assert (bvult b (_ bv1 1)))");
         assert_eq!(neg, "(assert (not (bvult b (_ bv1 1))))");
@@ -347,7 +385,10 @@ mod tests {
 
     #[test]
     fn split_int() {
-        let decl = Decl { name: "n".into(), sort: VarSort::Int };
+        let decl = Decl {
+            name: "n".into(),
+            sort: VarSort::Int,
+        };
         let [pos, neg] = make_split_assertions(&decl);
         assert_eq!(pos, "(assert (>= n 0))");
         assert_eq!(neg, "(assert (< n 0))");
@@ -358,8 +399,7 @@ mod tests {
     #[test]
     fn pick_split_frequency_heuristic() {
         // x appears 3 times, y appears once → x should be chosen.
-        let script =
-            "(set-logic QF_BV)\n\
+        let script = "(set-logic QF_BV)\n\
              (declare-const x (_ BitVec 8))\n\
              (declare-const y (_ BitVec 8))\n\
              (assert (bvult x (_ bv100 8)))\n\
@@ -367,8 +407,16 @@ mod tests {
              (assert (= y (_ bv5 8)))\n\
              (check-sat)\n";
         let split = pick_split(script, 0).expect("should find a split");
-        assert!(split[0].contains("x"), "expected x in pos branch, got {:?}", split[0]);
-        assert!(split[1].contains("x"), "expected x in neg branch, got {:?}", split[1]);
+        assert!(
+            split[0].contains("x"),
+            "expected x in pos branch, got {:?}",
+            split[0]
+        );
+        assert!(
+            split[1].contains("x"),
+            "expected x in neg branch, got {:?}",
+            split[1]
+        );
     }
 
     #[test]
@@ -383,8 +431,7 @@ mod tests {
     fn probe_unsat_branch_scores_100() {
         // Adding (assert (bvult x #b0000)) to a script where x = #b0000
         // makes it UNSAT (can't have bvult 0 0).
-        let base =
-            "(set-logic QF_BV)\n\
+        let base = "(set-logic QF_BV)\n\
              (declare-const x (_ BitVec 4))\n\
              (assert (= x #b0000))";
         let assertion = "(assert (bvult x #b0000))";
@@ -394,8 +441,7 @@ mod tests {
 
     #[test]
     fn probe_sat_branch_scores_10() {
-        let base =
-            "(set-logic QF_BV)\n\
+        let base = "(set-logic QF_BV)\n\
              (declare-const x (_ BitVec 8))";
         let assertion = "(assert (bvult x (_ bv128 8)))";
         let score = probe_branch(base, assertion, 10_000);
@@ -406,8 +452,7 @@ mod tests {
 
     #[test]
     fn pick_split_with_probing_returns_valid_split() {
-        let script =
-            "(set-logic QF_BV)\n\
+        let script = "(set-logic QF_BV)\n\
              (declare-const x (_ BitVec 8))\n\
              (assert (bvult x (_ bv200 8)))\n\
              (check-sat)\n";
@@ -416,12 +461,19 @@ mod tests {
         assert!(split[0].starts_with("(assert "));
         assert!(split[1].starts_with("(assert "));
         // Pos and neg should be complementary (neg wraps in (not ...)).
-        assert!(split[1].contains("(not"), "neg branch should negate pos: {:?}", split[1]);
+        assert!(
+            split[1].contains("(not"),
+            "neg branch should negate pos: {:?}",
+            split[1]
+        );
     }
 
     #[test]
     fn strip_check_sat_basic() {
-        assert_eq!(strip_check_sat("(assert true)\n(check-sat)"), "(assert true)");
+        assert_eq!(
+            strip_check_sat("(assert true)\n(check-sat)"),
+            "(assert true)"
+        );
         assert_eq!(strip_check_sat("(check-sat)"), "");
         assert_eq!(strip_check_sat("(assert true)"), "(assert true)");
     }

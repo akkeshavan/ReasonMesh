@@ -103,7 +103,9 @@ impl EGraph {
 }
 
 impl Default for EGraph {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]

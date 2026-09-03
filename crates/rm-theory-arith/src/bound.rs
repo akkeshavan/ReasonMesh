@@ -30,8 +30,10 @@ impl Bound {
     pub fn diff_leq(x: u32, y: u32, c: i64) -> Self {
         Bound {
             kind: BoundKind::DiffLeq,
-            lhs: x, rhs: Some(y),
-            numerator: c, denominator: 1,
+            lhs: x,
+            rhs: Some(y),
+            numerator: c,
+            denominator: 1,
         }
     }
 

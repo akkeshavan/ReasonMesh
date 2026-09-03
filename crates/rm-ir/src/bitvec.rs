@@ -18,7 +18,10 @@ impl Bv {
     }
 
     pub fn zero(width: u32) -> Self {
-        Bv { width, bits: vec![false; width as usize] }
+        Bv {
+            width,
+            bits: vec![false; width as usize],
+        }
     }
 
     pub fn from_u64(value: u64, width: u32) -> Self {
@@ -79,13 +82,21 @@ impl Bv {
         match self.width {
             0 => 0,
             1 => {
-                if self.bits[0] { -1 } else { 0 }
+                if self.bits[0] {
+                    -1
+                } else {
+                    0
+                }
             }
             _ => {
                 let sign = self.bits[self.width as usize - 1];
                 let mask = (1u64 << (self.width - 1)) - 1u64;
                 let body = u & mask;
-                if sign { (body as i64) - (1i64 << (self.width - 1)) } else { body as i64 }
+                if sign {
+                    (body as i64) - (1i64 << (self.width - 1))
+                } else {
+                    body as i64
+                }
             }
         }
     }

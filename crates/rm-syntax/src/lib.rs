@@ -50,14 +50,16 @@ mod tests {
 
     #[test]
     fn parse_error_on_malformed() {
-        assert!(Script::parse("(assert" ).is_err());
+        assert!(Script::parse("(assert").is_err());
         assert!(Script::parse("(assert (= x)))").is_err());
     }
 
     #[test]
     fn term_has_sorts() {
         let script = Script::parse("(declare-const x (_ BitVec 8)) (assert (= x #x2A))").unwrap();
-        let Command::Assert(t) = &script.commands[1] else { panic!() };
+        let Command::Assert(t) = &script.commands[1] else {
+            panic!()
+        };
         match &t.inner {
             TermInner::Eq(l, r) => {
                 assert_eq!(l.sort, SortExpr::BitVec(8));
@@ -70,7 +72,9 @@ mod tests {
     #[test]
     fn bool_constants() {
         let script = Script::parse("(assert true)").unwrap();
-        let Command::Assert(t) = &script.commands[0] else { panic!() };
+        let Command::Assert(t) = &script.commands[0] else {
+            panic!()
+        };
         assert!(matches!(t.inner, TermInner::True));
     }
 }

@@ -70,7 +70,9 @@ impl fmt::Display for LexError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             LexError::UnterminatedString(o) => write!(f, "unterminated string at offset {o}"),
-            LexError::UnterminatedSymbol(o) => write!(f, "unterminated quoted symbol at offset {o}"),
+            LexError::UnterminatedSymbol(o) => {
+                write!(f, "unterminated quoted symbol at offset {o}")
+            }
             LexError::UnexpectedChar(c, o) => write!(f, "unexpected character {c:?} at offset {o}"),
             LexError::NumeralOverflow(o) => write!(f, "numeral overflow at offset {o}"),
             LexError::EmptyRadix(o) => write!(f, "empty #x/#b literal at offset {o}"),
@@ -83,8 +85,25 @@ impl std::error::Error for LexError {}
 
 fn is_symbol_start(c: char) -> bool {
     c.is_ascii_alphabetic()
-        || matches!(c, '~' | '!' | '@' | '$' | '%' | '^' | '&' | '*' | '_' | '-' | '+' | '=' | '<'
-            | '>' | '.' | '?' | '/')
+        || matches!(
+            c,
+            '~' | '!'
+                | '@'
+                | '$'
+                | '%'
+                | '^'
+                | '&'
+                | '*'
+                | '_'
+                | '-'
+                | '+'
+                | '='
+                | '<'
+                | '>'
+                | '.'
+                | '?'
+                | '/'
+        )
 }
 
 fn is_symbol_char(c: char) -> bool {
@@ -128,7 +147,9 @@ fn lex_hex(start: usize, chars: &mut Chars) -> Result<Token, LexError> {
             break;
         }
     }
-    if s.is_empty() { return Err(LexError::EmptyRadix(start)); }
+    if s.is_empty() {
+        return Err(LexError::EmptyRadix(start));
+    }
     Ok(Token::Hex(s, start))
 }
 
@@ -142,7 +163,9 @@ fn lex_bin(start: usize, chars: &mut Chars) -> Result<Token, LexError> {
             break;
         }
     }
-    if s.is_empty() { return Err(LexError::EmptyRadix(start)); }
+    if s.is_empty() {
+        return Err(LexError::EmptyRadix(start));
+    }
     Ok(Token::Bin(s, start))
 }
 
@@ -178,7 +201,9 @@ fn lex_quoted_symbol(start: usize, chars: &mut Chars) -> Result<Token, LexError>
         }
         s.push(c);
     }
-    if !closed { return Err(LexError::UnterminatedSymbol(start)); }
+    if !closed {
+        return Err(LexError::UnterminatedSymbol(start));
+    }
     Ok(Token::Symbol(s, start))
 }
 
@@ -197,7 +222,9 @@ fn lex_string(start: usize, chars: &mut Chars) -> Result<Token, LexError> {
         }
         s.push(c);
     }
-    if !closed { return Err(LexError::UnterminatedString(start)); }
+    if !closed {
+        return Err(LexError::UnterminatedString(start));
+    }
     Ok(Token::Str(s, start))
 }
 
@@ -221,7 +248,10 @@ pub fn lex(src: &str) -> Result<Vec<Token>, LexError> {
     while let Some((i, c)) = chars.next() {
         let tok = match c {
             ' ' | '\t' | '\r' | '\n' => continue,
-            ';' => { skip_line_comment(&mut chars); continue; }
+            ';' => {
+                skip_line_comment(&mut chars);
+                continue;
+            }
             '(' => Token::Lparen(i),
             ')' => Token::Rparen(i),
             '0'..='9' => lex_numeral(i, c, &mut chars)?,
@@ -301,7 +331,12 @@ fn parse_expr_from(tokens: &[Token], idx: &mut usize) -> Result<SExpr, SExprErro
             *idx += 1;
             loop {
                 match tokens.get(*idx) {
-                    None => return Err(SExprError { offset: 0, message: "unclosed '('".into() }),
+                    None => {
+                        return Err(SExprError {
+                            offset: 0,
+                            message: "unclosed '('".into(),
+                        })
+                    }
                     Some(Token::Rparen(_)) => {
                         *idx += 1;
                         return Ok(SExpr::List(items));
@@ -352,7 +387,9 @@ mod tests {
         assert_eq!(toks[0], Token::Lparen(0));
         assert!(toks.contains(&Token::Symbol("assert".into(), 1)));
         assert!(toks.contains(&Token::Bin("1010".into(), 13)));
-        assert!(toks.iter().any(|t| matches!(t, Token::Symbol(s, _) if s == "exit")));
+        assert!(toks
+            .iter()
+            .any(|t| matches!(t, Token::Symbol(s, _) if s == "exit")));
     }
 
     #[test]
@@ -383,8 +420,14 @@ mod tests {
 
     #[test]
     fn lexer_errors() {
-        assert_eq!(lex("\"unclosed").unwrap_err(), LexError::UnterminatedString(0));
-        assert_eq!(lex("|unclosed").unwrap_err(), LexError::UnterminatedSymbol(0));
+        assert_eq!(
+            lex("\"unclosed").unwrap_err(),
+            LexError::UnterminatedString(0)
+        );
+        assert_eq!(
+            lex("|unclosed").unwrap_err(),
+            LexError::UnterminatedSymbol(0)
+        );
         assert_eq!(lex("#z101").unwrap_err(), LexError::BadRadix(0));
         assert_eq!(lex("#x").unwrap_err(), LexError::EmptyRadix(0));
         assert!(matches!(lex("a{b"), Err(LexError::UnexpectedChar('{', 1))));

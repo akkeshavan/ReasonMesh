@@ -21,8 +21,8 @@
 //! conflict budget is exhausted, allowing the coordinator to fan the cube out
 //! to more nodes.
 
-mod loop_;
 mod lookahead;
+mod loop_;
 
 use clap::Parser;
 use std::time::Duration;
@@ -30,8 +30,8 @@ use tokio::task::JoinSet;
 
 #[derive(Parser, Debug, Clone)]
 #[command(
-    name    = "rm-node",
-    about   = "ReasonMesh distributed solver node",
+    name = "rm-node",
+    about = "ReasonMesh distributed solver node",
     version
 )]
 pub struct Args {
@@ -61,10 +61,7 @@ pub struct Args {
 
 #[tokio::main]
 async fn main() {
-    env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or("info"),
-    )
-    .init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     let args = Args::parse();
     let worker_id = args.worker_id.unwrap_or_else(std::process::id);
@@ -84,9 +81,9 @@ async fn main() {
     // Background heartbeat: keeps the worker entry alive in the coordinator's
     // worker table so dead-worker detection doesn't fire spuriously.
     {
-        let client  = client.clone();
-        let coord   = args.coordinator.clone();
-        let retry   = Duration::from_millis(args.retry_ms);
+        let client = client.clone();
+        let coord = args.coordinator.clone();
+        let retry = Duration::from_millis(args.retry_ms);
         tokio::spawn(async move {
             loop_::heartbeat_loop(client, coord, worker_id, retry).await;
         });
@@ -96,7 +93,7 @@ async fn main() {
     let mut set = JoinSet::new();
     for slot in 0..args.concurrency {
         let client = client.clone();
-        let args   = args.clone();
+        let args = args.clone();
         set.spawn(async move {
             log::debug!("slot {slot} started");
             loop_::solve_loop(client, args, worker_id).await;

@@ -1,8 +1,8 @@
 //! Emit an SMT-LIB 2 script from a list of [`Expr`] assertions.
 
-use std::collections::BTreeMap;
 use crate::expr::{children, Expr, ExprNode};
 use crate::Sort;
+use std::collections::BTreeMap;
 
 /// Infer the most specific SMT-LIB 2 logic for a set of assertions.
 pub(crate) fn detect_logic(assertions: &[Expr]) -> &'static str {
@@ -13,19 +13,36 @@ pub(crate) fn detect_logic(assertions: &[Expr]) -> &'static str {
         match e.node() {
             ExprNode::Const(_, Sort::BitVec(_))
             | ExprNode::BitVecLit(..)
-            | ExprNode::BvAdd(..) | ExprNode::BvSub(..) | ExprNode::BvMul(..)
-            | ExprNode::BvNeg(..) | ExprNode::BvAnd(..) | ExprNode::BvOr(..)
-            | ExprNode::BvXor(..) | ExprNode::BvNot(..)
-            | ExprNode::BvUlt(..) | ExprNode::BvUle(..)
-            | ExprNode::BvSlt(..) | ExprNode::BvSle(..)
-            | ExprNode::BvShl(..) | ExprNode::BvLshr(..) | ExprNode::BvAshr(..)
-            | ExprNode::BvConcat(..) | ExprNode::BvExtract(..)
-            | ExprNode::BvZeroExt(..) | ExprNode::BvSignExt(..) => has_bv = true,
+            | ExprNode::BvAdd(..)
+            | ExprNode::BvSub(..)
+            | ExprNode::BvMul(..)
+            | ExprNode::BvNeg(..)
+            | ExprNode::BvAnd(..)
+            | ExprNode::BvOr(..)
+            | ExprNode::BvXor(..)
+            | ExprNode::BvNot(..)
+            | ExprNode::BvUlt(..)
+            | ExprNode::BvUle(..)
+            | ExprNode::BvSlt(..)
+            | ExprNode::BvSle(..)
+            | ExprNode::BvShl(..)
+            | ExprNode::BvLshr(..)
+            | ExprNode::BvAshr(..)
+            | ExprNode::BvConcat(..)
+            | ExprNode::BvExtract(..)
+            | ExprNode::BvZeroExt(..)
+            | ExprNode::BvSignExt(..) => has_bv = true,
 
             ExprNode::Const(_, Sort::Int)
             | ExprNode::IntLit(..)
-            | ExprNode::Add(..) | ExprNode::Sub(..) | ExprNode::Mul(..) | ExprNode::Neg(..)
-            | ExprNode::Lt(..) | ExprNode::Le(..) | ExprNode::Gt(..) | ExprNode::Ge(..) => {
+            | ExprNode::Add(..)
+            | ExprNode::Sub(..)
+            | ExprNode::Mul(..)
+            | ExprNode::Neg(..)
+            | ExprNode::Lt(..)
+            | ExprNode::Le(..)
+            | ExprNode::Gt(..)
+            | ExprNode::Ge(..) => {
                 has_int = true;
             }
             _ => {}
@@ -34,7 +51,13 @@ pub(crate) fn detect_logic(assertions: &[Expr]) -> &'static str {
             stack.push(child);
         }
     }
-    if has_bv { "QF_BV" } else if has_int { "QF_IDL" } else { "QF_UF" }
+    if has_bv {
+        "QF_BV"
+    } else if has_int {
+        "QF_IDL"
+    } else {
+        "QF_UF"
+    }
 }
 
 /// Emit a complete SMT-LIB 2 script for the given assertions and logic name.
@@ -71,7 +94,11 @@ pub(crate) fn emit_expr(expr: &Expr) -> String {
         ExprNode::Const(name, _) => name.clone(),
         ExprNode::BoolLit(b) => if *b { "true" } else { "false" }.to_owned(),
         ExprNode::IntLit(n) => {
-            if *n < 0 { format!("(- {})", n.unsigned_abs()) } else { n.to_string() }
+            if *n < 0 {
+                format!("(- {})", n.unsigned_abs())
+            } else {
+                n.to_string()
+            }
         }
         ExprNode::BitVecLit(v, w) => format!("(_ bv{v} {w})"),
 

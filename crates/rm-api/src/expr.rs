@@ -3,8 +3,8 @@
 //! [`Expr`] wraps an `Arc<ExprNode>` so cloning is O(1) and expression sharing
 //! is safe across threads.
 
-use std::sync::Arc;
 use crate::Sort;
+use std::sync::Arc;
 
 /// A solver expression: an arc-wrapped node that can be cheaply cloned and
 /// shared across threads.
@@ -224,13 +224,40 @@ pub(crate) fn children(node: &ExprNode) -> smallvec::SmallVec<[&Expr; 3]> {
     use ExprNode::*;
     match node {
         Const(..) | BoolLit(..) | IntLit(..) | BitVecLit(..) => smallvec::smallvec![],
-        Not(e) | Neg(e) | BvNeg(e) | BvNot(e)
-        | BvZeroExt(_, e) | BvSignExt(_, e) | BvExtract(_, _, e) => smallvec::smallvec![e],
-        And(a, b) | Or(a, b) | Implies(a, b) | Iff(a, b) | Eq(a, b) | Distinct(a, b)
-        | Add(a, b) | Sub(a, b) | Mul(a, b) | Lt(a, b) | Le(a, b) | Gt(a, b) | Ge(a, b)
-        | BvAdd(a, b) | BvSub(a, b) | BvMul(a, b) | BvAnd(a, b) | BvOr(a, b) | BvXor(a, b)
-        | BvUlt(a, b) | BvUle(a, b) | BvSlt(a, b) | BvSle(a, b)
-        | BvShl(a, b) | BvLshr(a, b) | BvAshr(a, b) | BvConcat(a, b) => {
+        Not(e)
+        | Neg(e)
+        | BvNeg(e)
+        | BvNot(e)
+        | BvZeroExt(_, e)
+        | BvSignExt(_, e)
+        | BvExtract(_, _, e) => smallvec::smallvec![e],
+        And(a, b)
+        | Or(a, b)
+        | Implies(a, b)
+        | Iff(a, b)
+        | Eq(a, b)
+        | Distinct(a, b)
+        | Add(a, b)
+        | Sub(a, b)
+        | Mul(a, b)
+        | Lt(a, b)
+        | Le(a, b)
+        | Gt(a, b)
+        | Ge(a, b)
+        | BvAdd(a, b)
+        | BvSub(a, b)
+        | BvMul(a, b)
+        | BvAnd(a, b)
+        | BvOr(a, b)
+        | BvXor(a, b)
+        | BvUlt(a, b)
+        | BvUle(a, b)
+        | BvSlt(a, b)
+        | BvSle(a, b)
+        | BvShl(a, b)
+        | BvLshr(a, b)
+        | BvAshr(a, b)
+        | BvConcat(a, b) => {
             smallvec::smallvec![a, b]
         }
         Ite(c, t, e) => smallvec::smallvec![c, t, e],

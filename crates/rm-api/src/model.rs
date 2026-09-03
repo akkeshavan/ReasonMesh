@@ -8,7 +8,10 @@ pub enum Value {
     Bool(bool),
     Int(i64),
     /// Bit-vector value with its declared width in bits.
-    BitVec { bits: u64, width: u32 },
+    BitVec {
+        bits: u64,
+        width: u32,
+    },
 }
 
 /// A satisfying model: maps each declared constant name to its assigned value.
@@ -65,8 +68,12 @@ impl Model {
 /// Parse a raw SMT-LIB model value string into a typed [`Value`].
 fn parse_value(raw: &str) -> Option<Value> {
     let s = raw.trim();
-    if s == "true" { return Some(Value::Bool(true)); }
-    if s == "false" { return Some(Value::Bool(false)); }
+    if s == "true" {
+        return Some(Value::Bool(true));
+    }
+    if s == "false" {
+        return Some(Value::Bool(false));
+    }
 
     // `(_ bv<n> <w>)` from QF_BV
     if let Some(rest) = s.strip_prefix("(_ bv") {
@@ -127,7 +134,10 @@ mod tests {
     fn parse_bv_hex() {
         assert_eq!(
             parse_value("#xff"),
-            Some(Value::BitVec { bits: 255, width: 8 })
+            Some(Value::BitVec {
+                bits: 255,
+                width: 8
+            })
         );
     }
 

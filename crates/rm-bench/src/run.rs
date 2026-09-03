@@ -128,15 +128,19 @@ pub fn run_manifest(manifest: &Manifest) -> Result<ManifestRun, RunError> {
 }
 
 fn dimacs_lit(l: i32) -> Literal {
-    if l > 0 { Literal::positive(l as u32) } else { Literal::negative((-l) as u32) }
+    if l > 0 {
+        Literal::positive(l as u32)
+    } else {
+        Literal::negative((-l) as u32)
+    }
 }
 
 fn check_model(raw: &[bool], cnf: &DimacsCnf, problem_name: &str) -> Result<(), RunError> {
     match check_dimacs_model(cnf.num_vars, &cnf.clauses, raw) {
         Ok(true) => Ok(()),
-        Ok(false) | Err(_) => {
-            Err(RunError::InvalidModel { problem: problem_name.to_string() })
-        }
+        Ok(false) | Err(_) => Err(RunError::InvalidModel {
+            problem: problem_name.to_string(),
+        }),
     }
 }
 
@@ -160,15 +164,26 @@ fn maybe_write_trace(
     if !manifest.output.trace {
         return Ok(None);
     }
-    let trace_path = manifest.output.dir.join(format!("{}.rmtrace", problem.name));
-    write_problem_trace(&trace_path, manifest, problem, outcome, counters, model_raw)
-        .map_err(|source| RunError::Trace { problem: problem.name.clone(), source })?;
+    let trace_path = manifest
+        .output
+        .dir
+        .join(format!("{}.rmtrace", problem.name));
+    write_problem_trace(&trace_path, manifest, problem, outcome, counters, model_raw).map_err(
+        |source| RunError::Trace {
+            problem: problem.name.clone(),
+            source,
+        },
+    )?;
     Ok(Some(trace_path.display().to_string()))
 }
 
 fn collect_baselines(manifest: &Manifest, problem: &Problem) -> Vec<BaselineResult> {
     let timeout = Duration::from_secs(manifest.solver.timeout_secs);
-    manifest.baselines.iter().map(|b| run_baseline(b, &problem.file, timeout)).collect()
+    manifest
+        .baselines
+        .iter()
+        .map(|b| run_baseline(b, &problem.file, timeout))
+        .collect()
 }
 
 fn solve_problem(manifest: &Manifest, problem: &Problem) -> Result<ProblemResult, RunError> {
@@ -203,7 +218,10 @@ fn run_single_solver(
     start: Instant,
 ) -> Result<ProblemResult, RunError> {
     let mut solver = build_cdcl_solver(cnf);
-    let budget = manifest.solver.max_conflicts_per_problem.unwrap_or(u64::MAX);
+    let budget = manifest
+        .solver
+        .max_conflicts_per_problem
+        .unwrap_or(u64::MAX);
     let timeout = Duration::from_secs(manifest.solver.timeout_secs);
     let deadline = start.checked_add(timeout);
 
@@ -257,8 +275,14 @@ fn build_sharing_policies(manifest: &Manifest) -> (ExportPolicy, ImportPolicy) {
         )
     } else {
         (
-            ExportPolicy { max_items: 0, ..ExportPolicy::default() },
-            ImportPolicy { max_items: 0, ..ImportPolicy::default() },
+            ExportPolicy {
+                max_items: 0,
+                ..ExportPolicy::default()
+            },
+            ImportPolicy {
+                max_items: 0,
+                ..ImportPolicy::default()
+            },
         )
     }
 }
@@ -434,14 +458,21 @@ fn run_baseline(b: &BaselineConfig, cnf_path: &Path, timeout: Duration) -> Basel
     let timed_out = wait_or_kill(&mut child, start + timeout);
     let wall = start.elapsed();
 
-    let stdout = stdout_handle.and_then(|h| h.join().ok()).unwrap_or_default();
+    let stdout = stdout_handle
+        .and_then(|h| h.join().ok())
+        .unwrap_or_default();
     let outcome = if timed_out {
         rm_telemetry::Outcome::Unknown
     } else {
         parse_dimacs_verdict(&stdout)
     };
 
-    BaselineResult { name: b.name.clone(), outcome, wall, timed_out }
+    BaselineResult {
+        name: b.name.clone(),
+        outcome,
+        wall,
+        timed_out,
+    }
 }
 
 /// Parse a DIMACS competition-format answer line.
@@ -468,7 +499,11 @@ fn record_sat_model_knowledge<W: std::io::Write>(
         .enumerate()
         .filter(|&(i, _)| i > 0)
         .map(|(v, &val)| {
-            if val { Literal::positive(v as u32) } else { Literal::negative(v as u32) }
+            if val {
+                Literal::positive(v as u32)
+            } else {
+                Literal::negative(v as u32)
+            }
         })
         .collect();
     tw.record(
@@ -499,7 +534,12 @@ fn write_problem_trace(
         manifest.solver.seed,
     );
     let mut tw = TraceWriter::new(&mut writer, meta)?;
-    tw.record(rm_akx::reasoner::WorkerId(0), EventKind::Phase { name: "root".into() })?;
+    tw.record(
+        rm_akx::reasoner::WorkerId(0),
+        EventKind::Phase {
+            name: "root".into(),
+        },
+    )?;
     tw.record(
         rm_akx::reasoner::WorkerId(0),
         EventKind::SearchSummary {
@@ -514,7 +554,10 @@ fn write_problem_trace(
             record_sat_model_knowledge(&mut tw, raw)?;
         }
     }
-    tw.record(rm_akx::reasoner::WorkerId(0), EventKind::RunFinished { outcome })?;
+    tw.record(
+        rm_akx::reasoner::WorkerId(0),
+        EventKind::RunFinished { outcome },
+    )?;
     let _ = &mut writer;
     Ok(())
 }
@@ -570,7 +613,12 @@ mod tests {
         }
     }
 
-    fn manifest_workers(dir: &TempDir, workers: u32, sharing: bool, problems: Vec<Problem>) -> Manifest {
+    fn manifest_workers(
+        dir: &TempDir,
+        workers: u32,
+        sharing: bool,
+        problems: Vec<Problem>,
+    ) -> Manifest {
         Manifest {
             schema_version: 1,
             name: "pool-test".into(),
@@ -759,7 +807,14 @@ mod tests {
             .as_ref()
             .expect("multi-worker runs report knowledge metrics");
         assert_eq!(
-            (k.exported, k.published, k.received, k.applied, k.buffered, k.discarded),
+            (
+                k.exported,
+                k.published,
+                k.received,
+                k.applied,
+                k.buffered,
+                k.discarded
+            ),
             (0, 0, 0, 0, 0, 0),
             "isolated portfolio must not exchange knowledge"
         );
@@ -797,10 +852,7 @@ mod tests {
             parse_dimacs_verdict("s SATISFIABLE\nv 1 -2 0\n"),
             Outcome::Sat
         );
-        assert_eq!(
-            parse_dimacs_verdict("s UNSATISFIABLE\n"),
-            Outcome::Unsat
-        );
+        assert_eq!(parse_dimacs_verdict("s UNSATISFIABLE\n"), Outcome::Unsat);
         assert_eq!(parse_dimacs_verdict("SAT\n"), Outcome::Sat);
         assert_eq!(parse_dimacs_verdict("UNSAT\n"), Outcome::Unsat);
         assert_eq!(parse_dimacs_verdict(""), Outcome::Unknown);
@@ -847,7 +899,11 @@ mod tests {
         assert!(!r.timed_out);
 
         let r = run_baseline(&b, &unsat_path, Duration::from_secs(10));
-        assert_eq!(r.outcome, rm_telemetry::Outcome::Unsat, "z3 should prove UNSAT");
+        assert_eq!(
+            r.outcome,
+            rm_telemetry::Outcome::Unsat,
+            "z3 should prove UNSAT"
+        );
         assert!(!r.timed_out);
     }
 
@@ -860,7 +916,11 @@ mod tests {
         }
         // php-3-2 UNSAT — too small to actually time out, so use `sleep` instead.
         // On systems without sleep(1), this test just passes vacuously.
-        if std::process::Command::new("sleep").arg("--version").output().is_err() {
+        if std::process::Command::new("sleep")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
             return;
         }
         use crate::manifest::BaselineConfig;
@@ -873,17 +933,19 @@ mod tests {
         // becomes `sleep 10` — a 10-second sleep that our 200ms timeout kills.
         let start = std::time::Instant::now();
         let r = run_baseline(&b, Path::new("10"), Duration::from_millis(200));
-        assert!(start.elapsed() < Duration::from_secs(2), "should have killed quickly");
+        assert!(
+            start.elapsed() < Duration::from_secs(2),
+            "should have killed quickly"
+        );
         assert!(r.timed_out);
         assert_eq!(r.outcome, rm_telemetry::Outcome::Unknown);
     }
 
     fn which_z3() -> Option<std::path::PathBuf> {
-        std::env::var_os("PATH")
-            .and_then(|p| {
-                std::env::split_paths(&p)
-                    .map(|d| d.join("z3"))
-                    .find(|p| p.exists())
-            })
+        std::env::var_os("PATH").and_then(|p| {
+            std::env::split_paths(&p)
+                .map(|d| d.join("z3"))
+                .find(|p| p.exists())
+        })
     }
 }

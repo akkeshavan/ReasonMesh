@@ -14,12 +14,23 @@ pub struct NodeId(pub u32);
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Node {
     BoolConst(bool),
-    BvConst { width: u32, value: Bv },
+    BvConst {
+        width: u32,
+        value: Bv,
+    },
     /// A Boolean variable. `width: None`.
-    BoolVar { id: u32 },
+    BoolVar {
+        id: u32,
+    },
     /// A bit-vector variable of `width` bits.
-    BvVar { id: u32, width: u32 },
-    Apply { op: Op, children: Vec<NodeId> },
+    BvVar {
+        id: u32,
+        width: u32,
+    },
+    Apply {
+        op: Op,
+        children: Vec<NodeId>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -60,10 +71,17 @@ pub enum Op {
     /// `(concat a b)` — result width is the sum of operand widths.
     BvConcat,
     /// `(extract hi lo x)`.
-    BvExtract { hi: u32, lo: u32 },
+    BvExtract {
+        hi: u32,
+        lo: u32,
+    },
     /// `(zero_extend n x)` / `(sign_extend n x)`.
-    BvZeroExtend { amount: u32 },
-    BvSignExtend { amount: u32 },
+    BvZeroExtend {
+        amount: u32,
+    },
+    BvSignExtend {
+        amount: u32,
+    },
     /// `(ite c t e)` — result width matches the then/else branches.
     Ite,
 }

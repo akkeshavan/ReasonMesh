@@ -1,12 +1,12 @@
 //! [`Solver`] and supporting types: the main entry point for the programmatic API.
 
-use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
-use rm_smt::{SmtSolver, SmtStatus};
 use crate::emit::{detect_logic, emit_smtlib};
 use crate::expr::Expr;
 use crate::model::Model;
+use rm_smt::{SmtSolver, SmtStatus};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 /// Configuration for a [`Solver`] run.
 #[derive(Clone, Debug)]
@@ -27,7 +27,11 @@ pub struct SolverConfig {
 
 impl Default for SolverConfig {
     fn default() -> Self {
-        SolverConfig { num_workers: 1, max_conflicts: 0, timeout: None }
+        SolverConfig {
+            num_workers: 1,
+            max_conflicts: 0,
+            timeout: None,
+        }
     }
 }
 
@@ -52,7 +56,11 @@ impl SatResult {
     }
 
     pub fn model(&self) -> Option<&Model> {
-        if let SatResult::Sat(m) = self { Some(m) } else { None }
+        if let SatResult::Sat(m) = self {
+            Some(m)
+        } else {
+            None
+        }
     }
 }
 
@@ -73,11 +81,19 @@ pub struct Solver {
 
 impl Solver {
     pub fn new(_ctx: &crate::Context) -> Self {
-        Solver { config: SolverConfig::default(), assertions: Vec::new(), stack: Vec::new() }
+        Solver {
+            config: SolverConfig::default(),
+            assertions: Vec::new(),
+            stack: Vec::new(),
+        }
     }
 
     pub fn with_config(_ctx: &crate::Context, config: SolverConfig) -> Self {
-        Solver { config, assertions: Vec::new(), stack: Vec::new() }
+        Solver {
+            config,
+            assertions: Vec::new(),
+            stack: Vec::new(),
+        }
     }
 
     pub fn assert(&mut self, expr: &Expr) {
@@ -107,7 +123,12 @@ impl Solver {
         if self.config.num_workers <= 1 {
             run_solver_single(&script, budget)
         } else {
-            run_solver_parallel(&script, budget, self.config.num_workers, self.config.timeout)
+            run_solver_parallel(
+                &script,
+                budget,
+                self.config.num_workers,
+                self.config.timeout,
+            )
         }
     }
 
@@ -124,7 +145,11 @@ impl Solver {
 }
 
 fn effective_conflict_budget(cfg: &SolverConfig) -> u64 {
-    if cfg.max_conflicts == 0 { u64::MAX } else { cfg.max_conflicts }
+    if cfg.max_conflicts == 0 {
+        u64::MAX
+    } else {
+        cfg.max_conflicts
+    }
 }
 
 fn run_solver_single(script: &str, max_conflicts: u64) -> SatResult {

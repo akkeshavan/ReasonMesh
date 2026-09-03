@@ -1,8 +1,8 @@
 //! SMT-LIB 2.7 command and term parser (QF_BV fragment).
 
 use super::ast::{BvOp, Term, TermInner};
-use super::sort::SortExpr;
 use super::s_expr::{Atom, SExpr};
+use super::sort::SortExpr;
 use super::ParseError;
 
 /// A parsed SMT-LIB command. Only the subset needed for QF_BV solving.
@@ -10,7 +10,11 @@ use super::ParseError;
 pub enum Command {
     SetLogic(String),
     /// `(declare-fun name (sorts...) sort)` — a constant or function symbol.
-    DeclareFun { name: String, args: Vec<SortExpr>, result: SortExpr },
+    DeclareFun {
+        name: String,
+        args: Vec<SortExpr>,
+        result: SortExpr,
+    },
     /// `(assert term)`
     Assert(Term),
     /// `(check-sat)`
@@ -46,7 +50,8 @@ impl Script {
         for expr in &exprs {
             commands.push(parse_command_skeleton(expr)?);
         }
-        let mut constants: std::collections::HashMap<String, SortExpr> = std::collections::HashMap::new();
+        let mut constants: std::collections::HashMap<String, SortExpr> =
+            std::collections::HashMap::new();
         for cmd in &commands {
             if let Command::DeclareFun { name, args, result } = cmd {
                 if args.is_empty() {
@@ -59,7 +64,10 @@ impl Script {
         for (expr, cmd) in exprs.iter().zip(&commands) {
             resolved.push(parse_command_body(expr, cmd, &symbols)?);
         }
-        Ok(Script { commands: resolved, symbol_table: symbols })
+        Ok(Script {
+            commands: resolved,
+            symbol_table: symbols,
+        })
     }
 
     /// All declared constant symbols and their sorts.
@@ -94,13 +102,21 @@ fn describe(expr: &SExpr) -> String {
 }
 
 fn unexpected(offset: usize, message: impl Into<String>) -> ParseError {
-    ParseError::UnexpectedToken { offset, message: message.into() }
+    ParseError::UnexpectedToken {
+        offset,
+        message: message.into(),
+    }
 }
 
 fn parse_command_skeleton(expr: &SExpr) -> Result<Command, ParseError> {
     let items = match expr {
         SExpr::List(items) => items,
-        _ => return Err(unexpected(0, format!("expected a command, found {}", describe(expr)))),
+        _ => {
+            return Err(unexpected(
+                0,
+                format!("expected a command, found {}", describe(expr)),
+            ))
+        }
     };
     if items.is_empty() {
         return Err(unexpected(0, "empty command ()"));
@@ -110,7 +126,10 @@ fn parse_command_skeleton(expr: &SExpr) -> Result<Command, ParseError> {
         _ => {
             return Err(unexpected(
                 0,
-                format!("command must begin with a symbol, found {}", describe(&items[0])),
+                format!(
+                    "command must begin with a symbol, found {}",
+                    describe(&items[0])
+                ),
             ))
         }
     };
@@ -120,29 +139,31 @@ fn parse_command_skeleton(expr: &SExpr) -> Result<Command, ParseError> {
             require_len(items, 2, "set-logic")?;
             Ok(Command::SetLogic(expect_symbol(&items[1], "logic name")?))
         }
-        "declare-fun" | "declare-const" | "define-fun" => {
-            match name {
-                "declare-const" => {
-                    require_len(items, 3, "declare-const")?;
-                    let name = expect_symbol(&items[1], "constant name")?;
-                    let result = parse_sort(&items[2])?;
-                    Ok(Command::DeclareFun { name, args: vec![], result })
-                }
-                "define-fun" => {
-                    let name = expect_symbol(&items[1], "function name")?;
-                    let args = parse_bound_sorts(&items[2])?;
-                    let result = parse_sort(&items[3])?;
-                    Ok(Command::DeclareFun { name, args, result })
-                }
-                _ => {
-                    require_len(items, 4, "declare-fun")?;
-                    let name = expect_symbol(&items[1], "function name")?;
-                    let args = parse_sort_list(&items[2])?;
-                    let result = parse_sort(&items[3])?;
-                    Ok(Command::DeclareFun { name, args, result })
-                }
+        "declare-fun" | "declare-const" | "define-fun" => match name {
+            "declare-const" => {
+                require_len(items, 3, "declare-const")?;
+                let name = expect_symbol(&items[1], "constant name")?;
+                let result = parse_sort(&items[2])?;
+                Ok(Command::DeclareFun {
+                    name,
+                    args: vec![],
+                    result,
+                })
             }
-        }
+            "define-fun" => {
+                let name = expect_symbol(&items[1], "function name")?;
+                let args = parse_bound_sorts(&items[2])?;
+                let result = parse_sort(&items[3])?;
+                Ok(Command::DeclareFun { name, args, result })
+            }
+            _ => {
+                require_len(items, 4, "declare-fun")?;
+                let name = expect_symbol(&items[1], "function name")?;
+                let args = parse_sort_list(&items[2])?;
+                let result = parse_sort(&items[3])?;
+                Ok(Command::DeclareFun { name, args, result })
+            }
+        },
         "assert" => {
             require_len(items, 2, "assert")?;
             Ok(Command::Assert(bool_leaf()))
@@ -155,7 +176,11 @@ fn parse_command_skeleton(expr: &SExpr) -> Result<Command, ParseError> {
 }
 
 /// Re-parse a command body now that the symbol table is known.
-fn parse_command_body(expr: &SExpr, skeleton: &Command, symbols: &Symbols) -> Result<Command, ParseError> {
+fn parse_command_body(
+    expr: &SExpr,
+    skeleton: &Command,
+    symbols: &Symbols,
+) -> Result<Command, ParseError> {
     match skeleton {
         Command::Assert(_) => {
             let items = match expr {
@@ -172,7 +197,10 @@ fn require_len(items: &[SExpr], expected: usize, cmd: &str) -> Result<(), ParseE
     if items.len() != expected {
         return Err(unexpected(
             0,
-            format!("{cmd} expects {expected} arguments, got {} form", items.len()),
+            format!(
+                "{cmd} expects {expected} arguments, got {} form",
+                items.len()
+            ),
         ));
     }
     Ok(())
@@ -181,7 +209,10 @@ fn require_len(items: &[SExpr], expected: usize, cmd: &str) -> Result<(), ParseE
 fn expect_symbol(expr: &SExpr, what: &str) -> Result<String, ParseError> {
     match expr {
         SExpr::Atom(Atom::Symbol(s)) => Ok(s.clone()),
-        _ => Err(unexpected(0, format!("expected {what}, found {}", describe(expr)))),
+        _ => Err(unexpected(
+            0,
+            format!("expected {what}, found {}", describe(expr)),
+        )),
     }
 }
 
@@ -204,7 +235,12 @@ fn parse_sort(expr: &SExpr) -> Result<SortExpr, ParseError> {
 fn parse_sort_list(expr: &SExpr) -> Result<Vec<SortExpr>, ParseError> {
     let items = match expr {
         SExpr::List(items) => items,
-        _ => return Err(unexpected(0, format!("expected a sort list, found {}", describe(expr)))),
+        _ => {
+            return Err(unexpected(
+                0,
+                format!("expected a sort list, found {}", describe(expr)),
+            ))
+        }
     };
     items.iter().map(parse_sort).collect()
 }
@@ -231,11 +267,7 @@ fn parse_bv_literal(expr: &SExpr) -> Result<Option<Term>, ParseError> {
     match expr {
         SExpr::Atom(Atom::Bin(bits)) => {
             let width = bits.len() as u32;
-            let bits: Vec<bool> = bits
-                .chars()
-                .rev()
-                .map(|c| c == '1')
-                .collect();
+            let bits: Vec<bool> = bits.chars().rev().map(|c| c == '1').collect();
             Ok(Some(Term {
                 sort: SortExpr::BitVec(width),
                 inner: TermInner::BvLiteral { bits, width },
@@ -261,7 +293,9 @@ fn parse_bv_literal(expr: &SExpr) -> Result<Option<Term>, ParseError> {
                 && matches!(&items[1], SExpr::Atom(Atom::Symbol(s)) if s.starts_with("bv"))
                 && items[1].symbol().unwrap().len() > 2 =>
         {
-            let SExpr::Atom(Atom::Symbol(sym)) = &items[1] else { unreachable!() };
+            let SExpr::Atom(Atom::Symbol(sym)) = &items[1] else {
+                unreachable!()
+            };
             let value: u128 = sym[2..]
                 .parse()
                 .map_err(|_| ParseError::UndefinedSymbol(sym.clone()))?;
@@ -337,9 +371,30 @@ fn unary_bv_expand(op: BvOp, arg: Term) -> Result<Term, ParseError> {
 fn is_bv_op(name: &str) -> bool {
     matches!(
         name,
-        "bvnot" | "bvneg" | "bvadd" | "bvsub" | "bvmul" | "bvudiv" | "bvurem" | "bvsdiv"
-            | "bvsrem" | "bvsmod" | "bvand" | "bvor" | "bvxor" | "bvshl" | "bvlshr" | "bvashr"
-            | "bvult" | "bvule" | "bvugt" | "bvuge" | "bvslt" | "bvsle" | "bvsgt" | "bvsge"
+        "bvnot"
+            | "bvneg"
+            | "bvadd"
+            | "bvsub"
+            | "bvmul"
+            | "bvudiv"
+            | "bvurem"
+            | "bvsdiv"
+            | "bvsrem"
+            | "bvsmod"
+            | "bvand"
+            | "bvor"
+            | "bvxor"
+            | "bvshl"
+            | "bvlshr"
+            | "bvashr"
+            | "bvult"
+            | "bvule"
+            | "bvugt"
+            | "bvuge"
+            | "bvslt"
+            | "bvsle"
+            | "bvsgt"
+            | "bvsge"
             | "concat"
     )
 }
@@ -377,16 +432,29 @@ fn bv_op_from(name: &str) -> BvOp {
 }
 
 fn bool_leaf() -> Term {
-    Term { sort: SortExpr::Bool, inner: TermInner::True }
+    Term {
+        sort: SortExpr::Bool,
+        inner: TermInner::True,
+    }
 }
 
 fn parse_symbol_term(s: &str, symbols: &Symbols) -> Term {
     match s {
         "true" => bool_leaf(),
-        "false" => Term { sort: SortExpr::Bool, inner: TermInner::False },
+        "false" => Term {
+            sort: SortExpr::Bool,
+            inner: TermInner::False,
+        },
         name => {
-            let sort = symbols.constants.get(name).cloned().unwrap_or(SortExpr::Bool);
-            Term { sort, inner: TermInner::Variable(name.to_string()) }
+            let sort = symbols
+                .constants
+                .get(name)
+                .cloned()
+                .unwrap_or(SortExpr::Bool);
+            Term {
+                sort,
+                inner: TermInner::Variable(name.to_string()),
+            }
         }
     }
 }
@@ -395,16 +463,28 @@ fn parse_implies_term(items: &[SExpr], symbols: &Symbols) -> Result<Term, ParseE
     require_len(items, 3, "=>")?;
     let a = parse_term(&items[1], symbols)?;
     let b = parse_term(&items[2], symbols)?;
-    let na = Term { sort: SortExpr::Bool, inner: TermInner::Not(Box::new(a)) };
-    Ok(Term { sort: SortExpr::Bool, inner: TermInner::Or(vec![na, b]) })
+    let na = Term {
+        sort: SortExpr::Bool,
+        inner: TermInner::Not(Box::new(a)),
+    };
+    Ok(Term {
+        sort: SortExpr::Bool,
+        inner: TermInner::Or(vec![na, b]),
+    })
 }
 
 fn parse_xor_term(items: &[SExpr], symbols: &Symbols) -> Result<Term, ParseError> {
     require_len(items, 3, "xor")?;
     let a = parse_term(&items[1], symbols)?;
     let b = parse_term(&items[2], symbols)?;
-    let eq = Term { sort: SortExpr::Bool, inner: TermInner::Eq(Box::new(a), Box::new(b)) };
-    Ok(Term { sort: SortExpr::Bool, inner: TermInner::Not(Box::new(eq)) })
+    let eq = Term {
+        sort: SortExpr::Bool,
+        inner: TermInner::Eq(Box::new(a), Box::new(b)),
+    };
+    Ok(Term {
+        sort: SortExpr::Bool,
+        inner: TermInner::Not(Box::new(eq)),
+    })
 }
 
 fn parse_term(expr: &SExpr, symbols: &Symbols) -> Result<Term, ParseError> {
@@ -423,34 +503,61 @@ fn parse_term(expr: &SExpr, symbols: &Symbols) -> Result<Term, ParseError> {
         return Err(unexpected(0, "empty term ()"));
     }
 
-    if matches!(&items[0], SExpr::List(inner) if inner.first().is_some_and(|e| e.symbol() == Some("_"))) {
-        let SExpr::List(inner) = &items[0] else { unreachable!() };
+    if matches!(&items[0], SExpr::List(inner) if inner.first().is_some_and(|e| e.symbol() == Some("_")))
+    {
+        let SExpr::List(inner) = &items[0] else {
+            unreachable!()
+        };
         return parse_indexed(inner, &items[1..], symbols);
     }
 
     let head = match &items[0] {
         SExpr::Atom(Atom::Symbol(s)) => s.as_str(),
-        _ => return Err(unexpected(0, format!("expected operator, found {}", describe(&items[0])))),
+        _ => {
+            return Err(unexpected(
+                0,
+                format!("expected operator, found {}", describe(&items[0])),
+            ))
+        }
     };
 
     match head {
         "not" => {
             require_len(items, 2, "not")?;
             let inner = Box::new(parse_term(&items[1], symbols)?);
-            Ok(Term { sort: SortExpr::Bool, inner: TermInner::Not(inner) })
+            Ok(Term {
+                sort: SortExpr::Bool,
+                inner: TermInner::Not(inner),
+            })
         }
         "and" | "or" => {
-            let terms: Vec<Term> = items[1..].iter().map(|t| parse_term(t, symbols)).collect::<Result<_, _>>()?;
-            let inner = if head == "and" { TermInner::And(terms) } else { TermInner::Or(terms) };
-            Ok(Term { sort: SortExpr::Bool, inner })
+            let terms: Vec<Term> = items[1..]
+                .iter()
+                .map(|t| parse_term(t, symbols))
+                .collect::<Result<_, _>>()?;
+            let inner = if head == "and" {
+                TermInner::And(terms)
+            } else {
+                TermInner::Or(terms)
+            };
+            Ok(Term {
+                sort: SortExpr::Bool,
+                inner,
+            })
         }
         "=>" => parse_implies_term(items, symbols),
         "xor" => parse_xor_term(items, symbols),
         "=" | "distinct" | "ite" => parse_bool_core(head, &items[1..], symbols),
         h if is_bv_op(h) => parse_bv_app(bv_op_from(h), &items[1..], symbols),
         h => {
-            let args: Vec<Term> = items[1..].iter().map(|t| parse_term(t, symbols)).collect::<Result<_, _>>()?;
-            Ok(Term { sort: SortExpr::Bool, inner: TermInner::FunCall(h.to_string(), args) })
+            let args: Vec<Term> = items[1..]
+                .iter()
+                .map(|t| parse_term(t, symbols))
+                .collect::<Result<_, _>>()?;
+            Ok(Term {
+                sort: SortExpr::Bool,
+                inner: TermInner::FunCall(h.to_string(), args),
+            })
         }
     }
 }
@@ -461,7 +568,10 @@ fn parse_bool_core(name: &str, args: &[SExpr], symbols: &Symbols) -> Result<Term
             if args.len() < 2 {
                 return Err(unexpected(0, format!("{name} needs at least 2 arguments")));
             }
-            let terms: Vec<Term> = args.iter().map(|a| parse_term(a, symbols)).collect::<Result<_, _>>()?;
+            let terms: Vec<Term> = args
+                .iter()
+                .map(|a| parse_term(a, symbols))
+                .collect::<Result<_, _>>()?;
             let mut walker: Option<Term> = None;
             for t in terms {
                 if let Some(acc) = walker {
@@ -470,7 +580,10 @@ fn parse_bool_core(name: &str, args: &[SExpr], symbols: &Symbols) -> Result<Term
                         inner: TermInner::Eq(Box::new(acc), Box::new(t)),
                     };
                     walker = Some(if name == "distinct" {
-                        Term { sort: SortExpr::Bool, inner: TermInner::Not(Box::new(eq)) }
+                        Term {
+                            sort: SortExpr::Bool,
+                            inner: TermInner::Not(Box::new(eq)),
+                        }
                     } else {
                         eq
                     });
@@ -488,7 +601,10 @@ fn parse_bool_core(name: &str, args: &[SExpr], symbols: &Symbols) -> Result<Term
             let t = parse_term(&args[1], symbols)?;
             let e = parse_term(&args[2], symbols)?;
             let sort = t.sort.clone();
-            Ok(Term { sort, inner: TermInner::Ite(Box::new(c), Box::new(t), Box::new(e)) })
+            Ok(Term {
+                sort,
+                inner: TermInner::Ite(Box::new(c), Box::new(t), Box::new(e)),
+            })
         }
         _ => unreachable!(),
     }
@@ -500,7 +616,10 @@ fn parse_bv_app(op: BvOp, args: &[SExpr], symbols: &Symbols) -> Result<Term, Par
     if args.is_empty() {
         return Err(unexpected(0, format!("{} needs arguments", op.name())));
     }
-    let terms: Vec<Term> = args.iter().map(|a| parse_term(a, symbols)).collect::<Result<_, _>>()?;
+    let terms: Vec<Term> = args
+        .iter()
+        .map(|a| parse_term(a, symbols))
+        .collect::<Result<_, _>>()?;
     let widths: Vec<Option<u32>> = terms.iter().map(|t| t.sort.as_bitvec()).collect();
     if widths.iter().any(|w| w.is_none()) {
         return Err(ParseError::SortMismatch {
@@ -523,7 +642,11 @@ fn parse_bv_app(op: BvOp, args: &[SExpr], symbols: &Symbols) -> Result<Term, Par
         first
     };
     Ok(Term {
-        sort: if op.returns_bool() { SortExpr::Bool } else { SortExpr::BitVec(result_width) },
+        sort: if op.returns_bool() {
+            SortExpr::Bool
+        } else {
+            SortExpr::BitVec(result_width)
+        },
         inner: TermInner::BvOp(op, terms),
     })
 }
@@ -582,7 +705,10 @@ mod tests {
             Command::Assert(t) => match &t.inner {
                 TermInner::Eq(lhs, rhs) => {
                     assert_eq!(lhs.sort, SortExpr::BitVec(4));
-                    assert!(matches!(rhs.inner, TermInner::BvOp(BvOp::ZeroExtend { amount: 4 }, _)));
+                    assert!(matches!(
+                        rhs.inner,
+                        TermInner::BvOp(BvOp::ZeroExtend { amount: 4 }, _)
+                    ));
                 }
                 _ => panic!(),
             },
@@ -594,7 +720,9 @@ mod tests {
     fn imply_rewrites_to_or() {
         // (assert (=> a b)) — desugars to (or (not a) b).
         let s = Script::parse("(assert (=> a b))").unwrap();
-        let Command::Assert(t) = &s.commands[0] else { panic!() };
+        let Command::Assert(t) = &s.commands[0] else {
+            panic!()
+        };
         match &t.inner {
             TermInner::Or(disjuncts) => {
                 assert_eq!(disjuncts.len(), 2);

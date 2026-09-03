@@ -61,8 +61,12 @@ impl WorkerRecord {
 /// One serializable mutation record in the write-ahead log.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum WalEntry {
-    WorkerAdmitted { worker: u32 },
-    Heartbeat { worker: u32 },
+    WorkerAdmitted {
+        worker: u32,
+    },
+    Heartbeat {
+        worker: u32,
+    },
     /// Node dispatched to a worker (records the node + budget for replay).
     Dispatch {
         worker: u32,
@@ -84,7 +88,9 @@ pub enum WalEntry {
         literals: Vec<Literal>,
     },
     /// A worker was declared dead and its leases reaped.
-    WorkerDead { worker: u32 },
+    WorkerDead {
+        worker: u32,
+    },
     /// Global cancellation (validated SAT or orchestrator shutdown).
     CancelAll,
 }
@@ -117,11 +123,7 @@ pub struct Orchestrator {
 }
 
 impl Orchestrator {
-    pub fn new(
-        problem: ProblemId,
-        root_cube: Vec<Literal>,
-        config: OrchestratorConfig,
-    ) -> Self {
+    pub fn new(problem: ProblemId, root_cube: Vec<Literal>, config: OrchestratorConfig) -> Self {
         let scheduler = Scheduler::new(problem, root_cube, config.max_split_depth)
             .with_lease_ttl(config.lease_ttl);
         Orchestrator {
@@ -149,17 +151,20 @@ impl Orchestrator {
         Ok(o)
     }
 
-    fn find_lease_for_node(
-        &self,
-        worker: u32,
-        node: NodeId,
-    ) -> Result<u64, OrchestratorError> {
+    fn find_lease_for_node(&self, worker: u32, node: NodeId) -> Result<u64, OrchestratorError> {
         self.scheduler
             .leases()
             .leases_for_worker(worker)
             .into_iter()
-            .find(|id| self.scheduler.leases().get(*id).is_some_and(|l| l.node_id == node))
-            .ok_or(OrchestratorError::Scheduler(SchedulerError::UnknownNode(node)))
+            .find(|id| {
+                self.scheduler
+                    .leases()
+                    .get(*id)
+                    .is_some_and(|l| l.node_id == node)
+            })
+            .ok_or(OrchestratorError::Scheduler(SchedulerError::UnknownNode(
+                node,
+            )))
     }
 
     fn replay_dispatch(
@@ -170,12 +175,15 @@ impl Orchestrator {
         budget_conflicts: u64,
         now: Instant,
     ) -> Result<(), OrchestratorError> {
-        let budget = WorkBudget { max_conflicts: budget_conflicts, max_ms: budget_ms };
+        let budget = WorkBudget {
+            max_conflicts: budget_conflicts,
+            max_ms: budget_ms,
+        };
         let lease = self.scheduler.dispatch(worker, budget, now)?;
         if lease.node_id != node {
-            return Err(OrchestratorError::Scheduler(SchedulerError::Finished(format!(
-                "WAL replay dispatched {node:?}, scheduler picked {node:?}"
-            ))));
+            return Err(OrchestratorError::Scheduler(SchedulerError::Finished(
+                format!("WAL replay dispatched {node:?}, scheduler picked {node:?}"),
+            )));
         }
         Ok(())
     }
@@ -209,7 +217,9 @@ impl Orchestrator {
                 "WAL split certificate invalid".into(),
             ))
         })?;
-        let got = self.scheduler.split(lease_id, worker, cert.literals.clone(), cert)?;
+        let got = self
+            .scheduler
+            .split(lease_id, worker, cert.literals.clone(), cert)?;
         if got != children {
             return Err(OrchestratorError::Scheduler(SchedulerError::Finished(
                 "WAL split produced different children".into(),
@@ -226,7 +236,11 @@ impl Orchestrator {
             WalEntry::WorkerAdmitted { worker } => {
                 self.workers.insert(
                     worker,
-                    WorkerRecord { worker_id: worker, last_heartbeat: now, dead: false },
+                    WorkerRecord {
+                        worker_id: worker,
+                        last_heartbeat: now,
+                        dead: false,
+                    },
                 );
             }
             WalEntry::Heartbeat { worker } => {
@@ -234,13 +248,27 @@ impl Orchestrator {
                     r.last_heartbeat = now;
                 }
             }
-            WalEntry::Dispatch { worker, node, budget_ms, budget_conflicts } => {
+            WalEntry::Dispatch {
+                worker,
+                node,
+                budget_ms,
+                budget_conflicts,
+            } => {
                 self.replay_dispatch(worker, node, budget_ms, budget_conflicts, now)?;
             }
-            WalEntry::Result { worker, node, outcome } => {
+            WalEntry::Result {
+                worker,
+                node,
+                outcome,
+            } => {
                 self.replay_result(worker, node, outcome)?;
             }
-            WalEntry::Split { worker, node, children, literals } => {
+            WalEntry::Split {
+                worker,
+                node,
+                children,
+                literals,
+            } => {
                 self.replay_split(worker, node, children, literals)?;
             }
             WalEntry::WorkerDead { worker } => {
@@ -363,9 +391,9 @@ impl Orchestrator {
         literals: Vec<Literal>,
         certificate: CoverageCertificate,
     ) -> Result<Vec<NodeId>, OrchestratorError> {
-        let children = self
-            .scheduler
-            .split(lease.lease_id, worker, literals.clone(), certificate)?;
+        let children =
+            self.scheduler
+                .split(lease.lease_id, worker, literals.clone(), certificate)?;
         self.wal.push(WalEntry::Split {
             worker,
             node: lease.node_id,
@@ -420,11 +448,7 @@ pub struct Standby {
 }
 
 impl Standby {
-    pub fn new(
-        problem: ProblemId,
-        root_cube: Vec<Literal>,
-        config: OrchestratorConfig,
-    ) -> Self {
+    pub fn new(problem: ProblemId, root_cube: Vec<Literal>, config: OrchestratorConfig) -> Self {
         Standby {
             problem,
             root_cube,
@@ -459,7 +483,10 @@ mod tests {
     use super::*;
 
     fn budget() -> WorkBudget {
-        WorkBudget { max_conflicts: 100, max_ms: 100 }
+        WorkBudget {
+            max_conflicts: 100,
+            max_ms: 100,
+        }
     }
 
     fn cfg() -> OrchestratorConfig {

@@ -419,9 +419,7 @@ impl KnowledgeBus for NetBus {
                     sent += 1;
                     true
                 }
-                Err(_) => {
-                    false
-                }
+                Err(_) => false,
             }
         });
         self.published.fetch_add(1, Ordering::Relaxed);

@@ -3,7 +3,7 @@
 
 use crate::blaster::Blaster;
 use crate::tseitin::EncodedCnf;
-use rm_ir::{Bv, Builder, GateId, NodeId};
+use rm_ir::{Builder, Bv, GateId, NodeId};
 use rm_sat::{CdclSolver, SolveResult};
 use rm_syntax::{Command, Script};
 use rustc_hash::FxHashMap;
@@ -79,8 +79,12 @@ impl BvSolver {
                 // Map declared variables to values: name -> var id -> inputs.
                 let mut values = FxHashMap::default();
                 for (name, width) in self.declared() {
-                    let Some(vid) = builder.var_id(&name) else { continue };
-                    let Some(inputs) = blaster.var_inputs.get(&vid) else { continue };
+                    let Some(vid) = builder.var_id(&name) else {
+                        continue;
+                    };
+                    let Some(inputs) = blaster.var_inputs.get(&vid) else {
+                        continue;
+                    };
                     let bits: Vec<bool> = inputs.iter().map(|&i| model.value_of(i + 1)).collect();
                     let mut bv_bits = vec![false; width as usize];
                     for (j, &b) in bits.iter().enumerate() {
@@ -90,7 +94,9 @@ impl BvSolver {
                     }
                     values.insert(name.clone(), Bv::from_bits(width, bv_bits));
                 }
-                Ok(BvResult::Sat { model: BvModel { values } })
+                Ok(BvResult::Sat {
+                    model: BvModel { values },
+                })
             }
             SolveResult::Unsat => Ok(BvResult::Unsat),
             SolveResult::Unknown => Ok(BvResult::Unknown),
@@ -109,7 +115,10 @@ mod tests {
 
     #[test]
     fn trivially_sat() {
-        assert!(matches!(solve("(declare-const x (_ BitVec 8)) (assert true)"), BvResult::Sat { .. }));
+        assert!(matches!(
+            solve("(declare-const x (_ BitVec 8)) (assert true)"),
+            BvResult::Sat { .. }
+        ));
     }
 
     #[test]

@@ -45,7 +45,9 @@ fn collect_uf_declarations(exprs: &[SExpr]) -> UfDecls {
     let mut logic: Option<String> = None;
     for expr in exprs {
         let SExpr::List(items) = expr else { continue };
-        let Some(head) = items.first().and_then(|e| e.symbol()) else { continue };
+        let Some(head) = items.first().and_then(|e| e.symbol()) else {
+            continue;
+        };
         match head {
             "set-logic" => {
                 if let Some(SExpr::Atom(Atom::Symbol(l))) = items.get(1) {
@@ -75,7 +77,11 @@ fn collect_uf_declarations(exprs: &[SExpr]) -> UfDecls {
             _ => {}
         }
     }
-    UfDecls { func_arity, assertions, logic }
+    UfDecls {
+        func_arity,
+        assertions,
+        logic,
+    }
 }
 
 struct UfGraph {
@@ -101,7 +107,11 @@ fn build_term_graph(decls: &UfDecls) -> UfGraph {
         let node = egraph.node(id).clone();
         cc.add_term(id, &node);
     }
-    UfGraph { egraph, cc, term_cache }
+    UfGraph {
+        egraph,
+        cc,
+        term_cache,
+    }
 }
 
 fn build_uf_model(
@@ -137,21 +147,39 @@ pub fn solve_qf_uf(text: &str) -> Result<UfResult, String> {
         Some(other) => return Err(format!("UF solver does not handle logic {other}")),
     }
     if decls.assertions.is_empty() {
-        return Ok(UfResult { status: UfStatus::Sat, model: Vec::new() });
+        return Ok(UfResult {
+            status: UfStatus::Sat,
+            model: Vec::new(),
+        });
     }
-    let UfGraph { egraph, mut cc, term_cache } = build_term_graph(&decls);
-    let mut next_lit: u32 = 0;
-    for body in &decls.assertions {
+    let UfGraph {
+        egraph,
+        mut cc,
+        term_cache,
+    } = build_term_graph(&decls);
+    for (next_lit, body) in (0_u32..).zip(decls.assertions.iter()) {
         let lit = next_lit;
-        next_lit += 1;
         match assert_one(&mut cc, &egraph, body, &term_cache, lit) {
             Ok(()) => {}
-            Err(AssertErr::Conflict) => return Ok(UfResult { status: UfStatus::Unsat, model: Vec::new() }),
-            Err(AssertErr::Unsupported) => return Ok(UfResult { status: UfStatus::Unknown, model: Vec::new() }),
+            Err(AssertErr::Conflict) => {
+                return Ok(UfResult {
+                    status: UfStatus::Unsat,
+                    model: Vec::new(),
+                })
+            }
+            Err(AssertErr::Unsupported) => {
+                return Ok(UfResult {
+                    status: UfStatus::Unknown,
+                    model: Vec::new(),
+                })
+            }
             Err(AssertErr::Parse(msg)) => return Err(msg),
         }
     }
-    Ok(UfResult { status: UfStatus::Sat, model: build_uf_model(&decls.func_arity, &mut cc, &term_cache) })
+    Ok(UfResult {
+        status: UfStatus::Sat,
+        model: build_uf_model(&decls.func_arity, &mut cc, &term_cache),
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -186,22 +214,20 @@ fn intern_assertion_terms(
                     }
                     if !arg_ids.is_empty() {
                         let key = sexpr_to_key(expr);
-                        if !cache.contains_key(&key) {
-                            let id = egraph.apply(fname, &arg_ids);
-                            cache.insert(key, id);
-                        }
+                        cache
+                            .entry(key)
+                            .or_insert_with(|| egraph.apply(fname, &arg_ids));
                     }
                 }
                 None => {}
             }
         }
-        SExpr::Atom(Atom::Symbol(name)) => {
-            if func_arity.get(name).map(|&a| a == 0).unwrap_or(false) {
-                if !cache.contains_key(name) {
-                    let id = egraph.constant(name);
-                    cache.insert(name.clone(), id);
-                }
-            }
+        SExpr::Atom(Atom::Symbol(name))
+            if func_arity.get(name).map(|&a| a == 0).unwrap_or(false)
+                && !cache.contains_key(name) =>
+        {
+            let id = egraph.constant(name);
+            cache.insert(name.clone(), id);
         }
         _ => {}
     }
@@ -210,7 +236,7 @@ fn intern_assertion_terms(
 /// Recursively intern a theory term (not a boolean connective) into the e-graph.
 fn intern_term(
     expr: &SExpr,
-    func_arity: &FxHashMap<String, u32>,
+    _func_arity: &FxHashMap<String, u32>,
     egraph: &mut EGraph,
     cache: &mut FxHashMap<String, rm_theory_euf::ENodeId>,
 ) {
@@ -229,7 +255,7 @@ fn intern_term(
                 None => return,
             };
             for arg in items.iter().skip(1) {
-                intern_term(arg, func_arity, egraph, cache);
+                intern_term(arg, _func_arity, egraph, cache);
             }
             let arg_ids: Vec<rm_theory_euf::ENodeId> = items
                 .iter()
@@ -288,23 +314,37 @@ fn assert_one(
             Ok(())
         }
         "not" => {
-            let inner = items.get(1).ok_or_else(|| AssertErr::Parse("not: missing body".into()))?;
-            let SExpr::List(inner_items) = inner else { return Err(AssertErr::Unsupported); };
+            let inner = items
+                .get(1)
+                .ok_or_else(|| AssertErr::Parse("not: missing body".into()))?;
+            let SExpr::List(inner_items) = inner else {
+                return Err(AssertErr::Unsupported);
+            };
             if inner_items.first().and_then(|e| e.symbol()) != Some("=") {
                 return Err(AssertErr::Unsupported);
             }
-            let lhs = inner_items.get(1).ok_or_else(|| AssertErr::Parse("=: missing lhs".into()))?;
-            let rhs = inner_items.get(2).ok_or_else(|| AssertErr::Parse("=: missing rhs".into()))?;
+            let lhs = inner_items
+                .get(1)
+                .ok_or_else(|| AssertErr::Parse("=: missing lhs".into()))?;
+            let rhs = inner_items
+                .get(2)
+                .ok_or_else(|| AssertErr::Parse("=: missing rhs".into()))?;
             let l = resolve(lhs, cache)?;
             let r = resolve(rhs, cache)?;
-            cc.assert_neq(egraph, l, r, lit).map_err(|_| AssertErr::Conflict)
+            cc.assert_neq(egraph, l, r, lit)
+                .map_err(|_| AssertErr::Conflict)
         }
         "=" => {
-            let lhs = items.get(1).ok_or_else(|| AssertErr::Parse("=: missing lhs".into()))?;
-            let rhs = items.get(2).ok_or_else(|| AssertErr::Parse("=: missing rhs".into()))?;
+            let lhs = items
+                .get(1)
+                .ok_or_else(|| AssertErr::Parse("=: missing lhs".into()))?;
+            let rhs = items
+                .get(2)
+                .ok_or_else(|| AssertErr::Parse("=: missing rhs".into()))?;
             let l = resolve(lhs, cache)?;
             let r = resolve(rhs, cache)?;
-            cc.assert_eq(egraph, l, r, lit).map_err(|_| AssertErr::Conflict)
+            cc.assert_eq(egraph, l, r, lit)
+                .map_err(|_| AssertErr::Conflict)
         }
         _ => Err(AssertErr::Unsupported),
     }
@@ -456,7 +496,10 @@ mod tests {
         // a and b should map to the same representative.
         let rep_a = result.model.iter().find(|(n, _)| n == "a").map(|(_, r)| r);
         let rep_b = result.model.iter().find(|(n, _)| n == "b").map(|(_, r)| r);
-        assert_eq!(rep_a, rep_b, "a and b should be in the same class after assert (= a b)");
+        assert_eq!(
+            rep_a, rep_b,
+            "a and b should be in the same class after assert (= a b)"
+        );
     }
 
     #[test]

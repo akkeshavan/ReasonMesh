@@ -23,7 +23,10 @@ pub enum TermInner {
     False,
     /// A bit-vector literal. `bitvec` holds the value bits
     /// (least-significant bit first) and the declared width.
-    BvLiteral { bits: Vec<bool>, width: u32 },
+    BvLiteral {
+        bits: Vec<bool>,
+        width: u32,
+    },
     /// A free symbol (declared constant or function argument).
     Variable(String),
     /// Application of a built-in bit-vector operator.
@@ -61,11 +64,17 @@ impl Term {
     }
 
     pub fn true_() -> Term {
-        Term { sort: SortExpr::Bool, inner: TermInner::True }
+        Term {
+            sort: SortExpr::Bool,
+            inner: TermInner::True,
+        }
     }
 
     pub fn false_() -> Term {
-        Term { sort: SortExpr::Bool, inner: TermInner::False }
+        Term {
+            sort: SortExpr::Bool,
+            inner: TermInner::False,
+        }
     }
 }
 

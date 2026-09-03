@@ -47,11 +47,28 @@ pub enum NoResult {
 #[derive(Clone, Debug)]
 enum TheoryLit {
     /// EUF equality: `lhs = rhs` (polarity false → disequality).
-    Eq { lhs: ENodeId, rhs: ENodeId, polarity: bool, sat_var: u32 },
+    Eq {
+        lhs: ENodeId,
+        rhs: ENodeId,
+        polarity: bool,
+        sat_var: u32,
+    },
     /// Arithmetic `x - y ≤ c`.  polarity=false means `¬(x-y≤c)` = `y-x ≤ -c-1`.
-    Leq { x: u32, y: u32, c: i64, polarity: bool, sat_var: u32 },
+    Leq {
+        x: u32,
+        y: u32,
+        c: i64,
+        polarity: bool,
+        sat_var: u32,
+    },
     /// Arithmetic `x - y < c`. polarity=false means `y - x ≤ -c`.
-    Lt { x: u32, y: u32, c: i64, polarity: bool, sat_var: u32 },
+    Lt {
+        x: u32,
+        y: u32,
+        c: i64,
+        polarity: bool,
+        sat_var: u32,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -146,8 +163,16 @@ impl NoCombinedSolver {
             for j in (i + 1)..shared.len() {
                 let (xname, xi, xuid) = &shared[i];
                 let (yname, yi, yuid) = &shared[j];
-                let xy_leq_0 = self.dl.bound_between(*yi, *xi).map(|b| b <= 0).unwrap_or(false);
-                let yx_leq_0 = self.dl.bound_between(*xi, *yi).map(|b| b <= 0).unwrap_or(false);
+                let xy_leq_0 = self
+                    .dl
+                    .bound_between(*yi, *xi)
+                    .map(|b| b <= 0)
+                    .unwrap_or(false);
+                let yx_leq_0 = self
+                    .dl
+                    .bound_between(*xi, *yi)
+                    .map(|b| b <= 0)
+                    .unwrap_or(false);
                 if xy_leq_0 && yx_leq_0 && !self.cc.are_equal(*xuid, *yuid) {
                     derived.push((xname.clone(), yname.clone()));
                 }
@@ -163,19 +188,28 @@ impl NoCombinedSolver {
             .arith_terms
             .values()
             .flat_map(|&(xi, xuid)| {
-                self.arith_terms
-                    .values()
-                    .filter_map(move |&(yi, yuid)| {
-                        if xi < yi { Some((xi, yi, xuid, yuid)) } else { None }
-                    })
+                self.arith_terms.values().filter_map(move |&(yi, yuid)| {
+                    if xi < yi {
+                        Some((xi, yi, xuid, yuid))
+                    } else {
+                        None
+                    }
+                })
             })
             .collect();
 
         for (xi, yi, xuid, yuid) in shared {
             if self.cc.are_equal(xuid, yuid) {
-                let already =
-                    self.dl.bound_between(yi, xi).map(|b| b <= 0).unwrap_or(false)
-                    && self.dl.bound_between(xi, yi).map(|b| b <= 0).unwrap_or(false);
+                let already = self
+                    .dl
+                    .bound_between(yi, xi)
+                    .map(|b| b <= 0)
+                    .unwrap_or(false)
+                    && self
+                        .dl
+                        .bound_between(xi, yi)
+                        .map(|b| b <= 0)
+                        .unwrap_or(false);
                 if !already {
                     let sat = self.fresh_lit();
                     self.dl.assert_leq(xi, yi, 0, sat).map_err(|_| ())?;
@@ -190,7 +224,12 @@ impl NoCombinedSolver {
     /// Assert a theory literal to the appropriate solver.
     fn assert_lit(&mut self, lit: &TheoryLit) -> Result<(), ()> {
         match *lit {
-            TheoryLit::Eq { lhs, rhs, polarity, sat_var } => {
+            TheoryLit::Eq {
+                lhs,
+                rhs,
+                polarity,
+                sat_var,
+            } => {
                 if polarity {
                     self.cc
                         .assert_eq(&self.egraph, lhs, rhs, sat_var)
@@ -202,7 +241,13 @@ impl NoCombinedSolver {
                 }
                 self.euf_propagate_to_dl()?;
             }
-            TheoryLit::Leq { x, y, c, polarity, sat_var } => {
+            TheoryLit::Leq {
+                x,
+                y,
+                c,
+                polarity,
+                sat_var,
+            } => {
                 let res = if polarity {
                     self.dl.assert_leq(x, y, c, sat_var)
                 } else {
@@ -210,7 +255,13 @@ impl NoCombinedSolver {
                 };
                 res.map_err(|_| ())?;
             }
-            TheoryLit::Lt { x, y, c, polarity, sat_var } => {
+            TheoryLit::Lt {
+                x,
+                y,
+                c,
+                polarity,
+                sat_var,
+            } => {
                 let res = if polarity {
                     self.dl.assert_leq(x, y, c - 1, sat_var)
                 } else {
@@ -247,7 +298,9 @@ fn parse_smtlib_decls(exprs: &[rm_syntax::SExpr]) -> SmtLibDecls {
 
     for expr in exprs {
         let SExpr::List(items) = expr else { continue };
-        let Some(head) = items.first().and_then(|e| sexpr_symbol(e)) else { continue };
+        let Some(head) = items.first().and_then(|e| sexpr_symbol(e)) else {
+            continue;
+        };
         match head {
             "set-logic" => {
                 if let Some(SExpr::Atom(Atom::Symbol(l))) = items.get(1) {
@@ -296,7 +349,12 @@ fn parse_smtlib_decls(exprs: &[rm_syntax::SExpr]) -> SmtLibDecls {
         }
     }
 
-    SmtLibDecls { uf_funcs, dl_vars, assertions, logic }
+    SmtLibDecls {
+        uf_funcs,
+        dl_vars,
+        assertions,
+        logic,
+    }
 }
 
 /// Intern UF constants and register all arithmetic variables as shared
@@ -360,7 +418,10 @@ pub fn solve_qf_ufidl(text: &str) -> Result<NoResult, String> {
             &mut lits,
         ) {
             FlattenResult::Ok => all_literals.extend(lits),
-            FlattenResult::Disjunction => { has_disjunctions = true; break; }
+            FlattenResult::Disjunction => {
+                has_disjunctions = true;
+                break;
+            }
             FlattenResult::Unsupported => return Ok(NoResult::Unknown),
         }
     }
@@ -404,7 +465,11 @@ fn flatten_assertion(
     match expr {
         SExpr::Atom(Atom::Symbol(s)) if s == "true" => FlattenResult::Ok,
         SExpr::Atom(Atom::Symbol(s)) if s == "false" => {
-            if polarity { FlattenResult::Unsupported } else { FlattenResult::Ok }
+            if polarity {
+                FlattenResult::Unsupported
+            } else {
+                FlattenResult::Ok
+            }
         }
         SExpr::List(items) => {
             let Some(op) = items.first().and_then(|e| sexpr_symbol(e)) else {
@@ -452,9 +517,21 @@ fn flatten_assertion(
                         if let (Some(&xi), Some(&yi)) = (dl_vars.get(xn), dl_vars.get(yn)) {
                             if polarity {
                                 let sat1 = solver.fresh_lit();
-                                out.push(TheoryLit::Leq { x: xi, y: yi, c: 0, polarity: true, sat_var: sat1 });
+                                out.push(TheoryLit::Leq {
+                                    x: xi,
+                                    y: yi,
+                                    c: 0,
+                                    polarity: true,
+                                    sat_var: sat1,
+                                });
                                 let sat2 = solver.fresh_lit();
-                                out.push(TheoryLit::Leq { x: yi, y: xi, c: 0, polarity: true, sat_var: sat2 });
+                                out.push(TheoryLit::Leq {
+                                    x: yi,
+                                    y: xi,
+                                    c: 0,
+                                    polarity: true,
+                                    sat_var: sat2,
+                                });
                                 return FlattenResult::Ok;
                             } else {
                                 return FlattenResult::Disjunction;
@@ -471,7 +548,12 @@ fn flatten_assertion(
                         Err(()) => return FlattenResult::Unsupported,
                     };
                     let sat = solver.fresh_lit();
-                    out.push(TheoryLit::Eq { lhs: lhs_id, rhs: rhs_id, polarity, sat_var: sat });
+                    out.push(TheoryLit::Eq {
+                        lhs: lhs_id,
+                        rhs: rhs_id,
+                        polarity,
+                        sat_var: sat,
+                    });
                     FlattenResult::Ok
                 }
                 "<=" | "<" | ">=" | ">" => {
@@ -528,9 +610,21 @@ fn flatten_arith(
 
     let sat = solver.fresh_lit();
     let lit = if is_lt {
-        TheoryLit::Lt { x, y, c, polarity, sat_var: sat }
+        TheoryLit::Lt {
+            x,
+            y,
+            c,
+            polarity,
+            sat_var: sat,
+        }
     } else {
-        TheoryLit::Leq { x, y, c, polarity, sat_var: sat }
+        TheoryLit::Leq {
+            x,
+            y,
+            c,
+            polarity,
+            sat_var: sat,
+        }
     };
     out.push(lit);
     Ok(())
@@ -702,7 +796,7 @@ fn solve_with_cdclt(text: &str) -> Result<NoResult, String> {
             uf_cache.insert(name.clone(), id);
         }
     }
-    for (name, _) in &decls.dl_vars {
+    for name in decls.dl_vars.keys() {
         if !uf_cache.contains_key(name) {
             let id = cdclt.intern_const(name);
             uf_cache.insert(name.clone(), id);
@@ -747,10 +841,7 @@ fn encode_bool_cdclt(
             Ok(Literal::negative(v))
         }
         SExpr::List(items) => {
-            let op = items
-                .first()
-                .and_then(|e| sexpr_symbol(e))
-                .ok_or(())?;
+            let op = items.first().and_then(|e| sexpr_symbol(e)).ok_or(())?;
             match op {
                 "not" => {
                     let inner = items.get(1).ok_or(())?;
@@ -795,12 +886,12 @@ fn encode_bool_cdclt(
                     let lid = intern_uf_term_cdclt(lhs, cdclt, uf_cache, uf_funcs)?;
                     let rid = intern_uf_term_cdclt(rhs, cdclt, uf_cache, uf_funcs)?;
                     let v = cdclt.alloc_var();
-                    cdclt.atoms.insert(v, BackboneAtom::Eq { lhs: lid, rhs: rid });
+                    cdclt
+                        .atoms
+                        .insert(v, BackboneAtom::Eq { lhs: lid, rhs: rid });
                     Ok(Literal::positive(v))
                 }
-                "<=" | "<" | ">=" | ">" => {
-                    encode_arith_lit_cdclt(items, op, cdclt, dl_vars)
-                }
+                "<=" | "<" | ">=" | ">" => encode_arith_lit_cdclt(items, op, cdclt, dl_vars),
                 _ => Err(()),
             }
         }
@@ -859,7 +950,7 @@ fn intern_uf_term_cdclt(
     expr: &rm_syntax::SExpr,
     cdclt: &mut CdclT,
     uf_cache: &mut FxHashMap<String, ENodeId>,
-    uf_funcs: &FxHashMap<String, u32>,
+    _uf_funcs: &FxHashMap<String, u32>,
 ) -> Result<ENodeId, ()> {
     use rm_syntax::{Atom, SExpr};
     let key = sexpr_key(expr);
@@ -877,7 +968,7 @@ fn intern_uf_term_cdclt(
             let args: Vec<ENodeId> = items
                 .iter()
                 .skip(1)
-                .map(|a| intern_uf_term_cdclt(a, cdclt, uf_cache, uf_funcs))
+                .map(|a| intern_uf_term_cdclt(a, cdclt, uf_cache, _uf_funcs))
                 .collect::<Result<_, _>>()?;
             let id = cdclt.intern_apply(fname, &args);
             uf_cache.insert(key, id);
@@ -895,7 +986,7 @@ fn intern_uf_term(
     expr: &rm_syntax::SExpr,
     solver: &mut NoCombinedSolver,
     uf_cache: &mut FxHashMap<String, ENodeId>,
-    uf_funcs: &FxHashMap<String, u32>,
+    _uf_funcs: &FxHashMap<String, u32>,
 ) -> Result<ENodeId, ()> {
     use rm_syntax::{Atom, SExpr};
     let key = sexpr_key(expr);
@@ -915,7 +1006,7 @@ fn intern_uf_term(
             let args: Vec<ENodeId> = items
                 .iter()
                 .skip(1)
-                .map(|a| intern_uf_term(a, solver, uf_cache, uf_funcs))
+                .map(|a| intern_uf_term(a, solver, uf_cache, _uf_funcs))
                 .collect::<Result<_, _>>()?;
             let id = solver.egraph.apply(fname, &args);
             let node = solver.egraph.node(id).clone();
@@ -927,9 +1018,11 @@ fn intern_uf_term(
     }
 }
 
-fn extract_diff<'a>(expr: &'a rm_syntax::SExpr) -> Option<(&'a str, &'a str)> {
+fn extract_diff(expr: &rm_syntax::SExpr) -> Option<(&str, &str)> {
     use rm_syntax::SExpr;
-    let SExpr::List(items) = expr else { return None };
+    let SExpr::List(items) = expr else {
+        return None;
+    };
     if items.len() != 3 || sexpr_symbol(&items[0]) != Some("-") {
         return None;
     }
@@ -941,9 +1034,7 @@ fn extract_int(expr: &rm_syntax::SExpr) -> Option<i64> {
     match expr {
         SExpr::Atom(Atom::Numeral(n)) => i64::try_from(*n).ok(),
         SExpr::Atom(Atom::Symbol(s)) => s.parse().ok(),
-        SExpr::List(items)
-            if items.len() == 2 && sexpr_symbol(&items[0]) == Some("-") =>
-        {
+        SExpr::List(items) if items.len() == 2 && sexpr_symbol(&items[0]) == Some("-") => {
             if let SExpr::Atom(Atom::Numeral(n)) = &items[1] {
                 i64::try_from(*n).ok().map(|v| -v)
             } else {

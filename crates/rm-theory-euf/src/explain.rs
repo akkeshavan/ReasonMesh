@@ -35,9 +35,6 @@ impl Explanation {
     /// Extract the SAT literal indices involved in this explanation.
     /// These become the CDCL(T) conflict clause (negated).
     pub fn sat_lits(&self) -> Vec<u32> {
-        self.premises
-            .iter()
-            .filter_map(|l| l.sat_lit)
-            .collect()
+        self.premises.iter().filter_map(|l| l.sat_lit).collect()
     }
 }

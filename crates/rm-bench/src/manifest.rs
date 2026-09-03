@@ -288,12 +288,10 @@ file = "a.cnf"
 
     #[test]
     fn parses_knowledge_utility_thresholds() {
-        let m = Manifest::parse(
-            &VALID.replace(
-                "[solver]",
-                "[solver]\nexport_min_utility = 0.2\nimport_min_utility = 0.16\n",
-            ),
-        )
+        let m = Manifest::parse(&VALID.replace(
+            "[solver]",
+            "[solver]\nexport_min_utility = 0.2\nimport_min_utility = 0.16\n",
+        ))
         .unwrap();
         assert_eq!(m.solver.export_min_utility, 0.2);
         assert_eq!(m.solver.import_min_utility, 0.16);

@@ -138,7 +138,10 @@ mod tests {
 
     #[test]
     fn pool_runs_independent_jobs() {
-        let pool = SolverPool::new(SolverConfig { num_workers: 4, ..Default::default() });
+        let pool = SolverPool::new(SolverConfig {
+            num_workers: 4,
+            ..Default::default()
+        });
         let jobs = vec![
             Job::new("(set-logic QF_BV)(declare-const x (_ BitVec 4))(assert (bvult x #x5))(check-sat)").with_label("j0"),
             Job::new("(set-logic QF_BV)(declare-const x (_ BitVec 4))(assert (= x #b0000))(assert (= x #b1111))(check-sat)").with_label("j1"),
@@ -154,7 +157,10 @@ mod tests {
         let ctx = Context::new();
         let mut solver = Solver::with_config(
             &ctx,
-            SolverConfig { num_workers: 4, ..Default::default() },
+            SolverConfig {
+                num_workers: 4,
+                ..Default::default()
+            },
         );
         let x = ctx.bitvec_const("x", 8);
         solver.assert(&x.eq(&ctx.bitvec_val(42, 8)));

@@ -4,8 +4,8 @@ use std::net::SocketAddr;
 
 #[derive(Parser)]
 #[command(
-    name    = "rm-coordinator",
-    about   = "ReasonMesh distributed coordinator — HTTP work queue for proof farms and cube-and-conquer",
+    name = "rm-coordinator",
+    about = "ReasonMesh distributed coordinator — HTTP work queue for proof farms and cube-and-conquer",
     version
 )]
 struct Args {
@@ -24,14 +24,11 @@ struct Args {
 
 #[tokio::main]
 async fn main() {
-    env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or("info"),
-    )
-    .init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     let args = Args::parse();
     let config = CoordinatorConfig {
-        lease_ttl_secs:      args.lease_ttl_secs,
+        lease_ttl_secs: args.lease_ttl_secs,
         worker_timeout_secs: args.worker_timeout_secs,
     };
     start_server(config, args.addr).await;

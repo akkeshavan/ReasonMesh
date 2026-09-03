@@ -239,11 +239,9 @@ impl Reasoner for CdclReasoner {
         } else {
             None
         };
-        let result = self.solver.solve_with_deadline(
-            &self.work.assumptions,
-            budget.max_conflicts,
-            deadline,
-        );
+        let result =
+            self.solver
+                .solve_with_deadline(&self.work.assumptions, budget.max_conflicts, deadline);
 
         if self.work.is_cancelled() {
             return Ok(ReasonerEvent::Cancelled);

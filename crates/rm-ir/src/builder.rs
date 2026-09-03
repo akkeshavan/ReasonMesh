@@ -47,9 +47,9 @@ impl Builder {
         match &term.inner {
             TermInner::True => self.dag.intern_bool_const(true),
             TermInner::False => self.dag.intern_bool_const(false),
-            TermInner::BvLiteral { bits, width } => {
-                self.dag.intern_bv_const(*width, Bv::from_bits(*width, bits.clone()))
-            }
+            TermInner::BvLiteral { bits, width } => self
+                .dag
+                .intern_bv_const(*width, Bv::from_bits(*width, bits.clone())),
             TermInner::Variable(name) => {
                 let width = term.sort.as_bitvec();
                 self.intern_var(name, width)
@@ -185,7 +185,11 @@ mod tests {
              (assert (= (bvadd a b) (bvadd a b)))",
         );
         let root = roots[0];
-        if let Node::Apply { op: Op::Eq, children } = b.dag.get(root) {
+        if let Node::Apply {
+            op: Op::Eq,
+            children,
+        } = b.dag.get(root)
+        {
             assert_eq!(children[0], children[1]);
         } else {
             panic!("expected Eq");

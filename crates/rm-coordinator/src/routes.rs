@@ -32,42 +32,44 @@ use uuid::Uuid;
 
 #[derive(Deserialize)]
 pub struct BatchRequest {
-    pub scripts:       Vec<String>,
+    pub scripts: Vec<String>,
     #[serde(default)]
     pub max_conflicts: u64,
 }
 
 #[derive(Deserialize)]
 pub struct CubeRequest {
-    pub script:                   String,
+    pub script: String,
     #[serde(default)]
-    pub max_conflicts_per_cube:   u64,
+    pub max_conflicts_per_cube: u64,
 }
 
 #[derive(Deserialize)]
 pub struct WorkQuery {
-    pub worker_id:      u32,
+    pub worker_id: u32,
     #[serde(default = "default_long_poll_ms")]
-    pub long_poll_ms:   u64,
+    pub long_poll_ms: u64,
 }
-fn default_long_poll_ms() -> u64 { 30_000 }
+fn default_long_poll_ms() -> u64 {
+    30_000
+}
 
 #[derive(Serialize)]
 pub struct WorkResponse {
-    pub task_id:       String,
-    pub script:        String,
+    pub task_id: String,
+    pub script: String,
     pub max_conflicts: u64,
-    pub lease_ttl_ms:  u64,
+    pub lease_ttl_ms: u64,
 }
 
 #[derive(Deserialize)]
 pub struct ResultRequest {
     pub worker_id: u32,
-    pub code:      u32,
+    pub code: u32,
     #[serde(default)]
-    pub model:     String,
+    pub model: String,
     /// Cube split: list of new SMT-LIB 2 `(assert ...)` lines, one per branch.
-    pub split:     Option<Vec<String>>,
+    pub split: Option<Vec<String>>,
 }
 
 #[derive(Deserialize)]
@@ -118,11 +120,18 @@ pub async fn get_batch(
     Path(job_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, ApiError> {
     let s = app.state.lock();
-    let job = s.batch_jobs.get(&job_id).ok_or_else(|| not_found(format!("batch job {job_id}")))?;
-    let results: Vec<serde_json::Value> = job.results.iter().map(|r| match r {
-        None    => serde_json::json!({ "status": "pending" }),
-        Some(r) => serde_json::json!({ "code": r.code, "model": r.model }),
-    }).collect();
+    let job = s
+        .batch_jobs
+        .get(&job_id)
+        .ok_or_else(|| not_found(format!("batch job {job_id}")))?;
+    let results: Vec<serde_json::Value> = job
+        .results
+        .iter()
+        .map(|r| match r {
+            None => serde_json::json!({ "status": "pending" }),
+            Some(r) => serde_json::json!({ "code": r.code, "model": r.model }),
+        })
+        .collect();
     Ok(Json(serde_json::json!({
         "status":  format!("{:?}", job.status).to_lowercase(),
         "pending": job.pending,
@@ -147,9 +156,14 @@ pub async fn get_cube(
     Path(job_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, ApiError> {
     let s = app.state.lock();
-    let job = s.cube_jobs.get(&job_id).ok_or_else(|| not_found(format!("cube job {job_id}")))?;
-    let verdict = job.verdict.map(|v| format!("{v:?}").to_lowercase())
-                             .unwrap_or_else(|| "unknown".into());
+    let job = s
+        .cube_jobs
+        .get(&job_id)
+        .ok_or_else(|| not_found(format!("cube job {job_id}")))?;
+    let verdict = job
+        .verdict
+        .map(|v| format!("{v:?}").to_lowercase())
+        .unwrap_or_else(|| "unknown".into());
     Ok(Json(serde_json::json!({
         "status":  format!("{:?}", job.status).to_lowercase(),
         "verdict": verdict,
@@ -165,7 +179,7 @@ pub async fn get_work(
     State(app): State<AppState>,
     Query(q): Query<WorkQuery>,
 ) -> axum::response::Response {
-    let timeout  = Duration::from_millis(q.long_poll_ms);
+    let timeout = Duration::from_millis(q.long_poll_ms);
     let deadline = tokio::time::Instant::now() + timeout;
     let lease_ttl_ms = {
         let s = app.state.lock();
@@ -179,10 +193,7 @@ pub async fn get_work(
             return StatusCode::NO_CONTENT.into_response();
         }
 
-        let acquired = tokio::time::timeout(
-            remaining,
-            app.work_queue.acquire(),
-        ).await;
+        let acquired = tokio::time::timeout(remaining, app.work_queue.acquire()).await;
 
         match acquired {
             Err(_timeout) => return StatusCode::NO_CONTENT.into_response(),
@@ -196,8 +207,8 @@ pub async fn get_work(
                 match task {
                     Some(t) => {
                         let resp = WorkResponse {
-                            task_id:       t.id.to_string(),
-                            script:        t.script().to_owned(),
+                            task_id: t.id.to_string(),
+                            script: t.script().to_owned(),
                             max_conflicts: t.max_conflicts(),
                             lease_ttl_ms,
                         };
@@ -229,7 +240,8 @@ pub async fn post_result(
             body.model,
             body.split,
             Instant::now(),
-        ).map_err(|e| bad_request(e))?
+        )
+        .map_err(bad_request)?
     };
     if new_tasks > 0 {
         app.work_queue.add_permits(new_tasks);
@@ -244,7 +256,7 @@ pub async fn renew_lease(
 ) -> Result<impl IntoResponse, ApiError> {
     let mut s = app.state.lock();
     s.renew_lease(task_id, body.worker_id, Instant::now())
-        .map_err(|e| bad_request(e))?;
+        .map_err(bad_request)?;
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
