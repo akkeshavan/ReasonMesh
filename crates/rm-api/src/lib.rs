@@ -40,6 +40,7 @@
 pub mod context;
 pub mod emit;
 pub mod expr;
+pub mod ffi;
 pub mod model;
 pub mod pool;
 pub mod solver;
@@ -50,6 +51,7 @@ pub use expr::Expr;
 pub use model::{Model, Value};
 pub use pool::{Job, JobResult, SolverPool};
 pub use solver::{SatResult, Solver, SolverConfig};
+
 pub use sort::Sort;
 
 use rm_smt::{SmtSolver, SmtStatus};

@@ -4,7 +4,6 @@ use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use rm_smt::{SmtSolver, SmtStatus};
-use crate::context::Context;
 use crate::emit::{detect_logic, emit_smtlib};
 use crate::expr::Expr;
 use crate::model::Model;
@@ -66,21 +65,19 @@ impl SatResult {
 /// race on each [`Solver::check`] call.  The internal portfolio (clause sharing
 /// between threads) is enabled when the problem reduces to pure SAT/QF_BV via
 /// the CLI path; the API currently races independent instances.
-pub struct Solver<'ctx> {
-    #[allow(dead_code)]
-    ctx: &'ctx Context,
+pub struct Solver {
     config: SolverConfig,
     assertions: Vec<Expr>,
     stack: Vec<usize>,
 }
 
-impl<'ctx> Solver<'ctx> {
-    pub fn new(ctx: &'ctx Context) -> Self {
-        Solver { ctx, config: SolverConfig::default(), assertions: Vec::new(), stack: Vec::new() }
+impl Solver {
+    pub fn new(_ctx: &crate::Context) -> Self {
+        Solver { config: SolverConfig::default(), assertions: Vec::new(), stack: Vec::new() }
     }
 
-    pub fn with_config(ctx: &'ctx Context, config: SolverConfig) -> Self {
-        Solver { ctx, config, assertions: Vec::new(), stack: Vec::new() }
+    pub fn with_config(_ctx: &crate::Context, config: SolverConfig) -> Self {
+        Solver { config, assertions: Vec::new(), stack: Vec::new() }
     }
 
     pub fn assert(&mut self, expr: &Expr) {
