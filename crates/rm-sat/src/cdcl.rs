@@ -17,8 +17,10 @@ const CHRONO_BT_MIN_GAP: u32 = 12;
 
 use crate::{
     assignment::{Assignment, Value},
+    bve::ElimEntry,
     clause::{ClauseArena, ClauseRef},
     model::Model,
+    vmtf::VmtfList,
     watched::WatchList,
 };
 use rm_akx::literal::{Literal, Var};
@@ -169,6 +171,14 @@ pub struct CdclSolver {
     // Stable/focus mode alternation.
     mode: SolverMode,
     phase_restart_count: u64,
+
+    // VMTF variable selection (Focus mode).
+    vmtf: VmtfList,
+
+    // BVE-eliminated variables: stored for model extension after solve.
+    bve_eliminated: Vec<ElimEntry>,
+    // Set to true after the first BVE pass so it never re-runs.
+    bve_done: bool,
 }
 
 impl CdclSolver {
@@ -216,6 +226,9 @@ impl CdclSolver {
             conflicts_at_last_probe: 0,
             mode: SolverMode::Focus,
             phase_restart_count: 0,
+            vmtf: VmtfList::new(num_vars),
+            bve_eliminated: Vec::new(),
+            bve_done: false,
         }
     }
 
@@ -326,6 +339,19 @@ impl CdclSolver {
         if self.db.has_empty_clause() {
             self.log_proof_empty();
             return SolveResult::Unsat;
+        }
+
+        // BVE preprocessing on the very first solve call (no assumptions, level 0).
+        // bve_done is set inside run_bve so this fires at most once per solver.
+        if !self.bve_done
+            && assumptions.is_empty()
+            && self.assignment.current_level() == 0
+            && self.conflicts == 0
+        {
+            self.run_bve();
+            if self.db.has_empty_clause() {
+                return SolveResult::Unsat;
+            }
         }
 
         self.base_level = if assumptions.is_empty() {
@@ -900,6 +926,9 @@ impl CdclSolver {
     // -----------------------------------------------------------------------
 
     fn bump_var_activity(&mut self, var: Var) {
+        // VMTF: always move to front regardless of mode; the VSIDS heap is
+        // updated in parallel so switching modes doesn't lose bump information.
+        self.vmtf.move_to_front(var);
         self.activity[var as usize] += self.activity_inc;
         if self.activity[var as usize] > 1e100 {
             for a in self.activity.iter_mut() {
@@ -948,6 +977,16 @@ impl CdclSolver {
     // -----------------------------------------------------------------------
 
     fn pick_branch(&mut self) -> Option<Literal> {
+        // Focus mode: VMTF (O(1) move-to-front, walks front for unassigned).
+        // Stable mode: VSIDS lazy-deletion max-heap.
+        if self.mode == SolverMode::Focus {
+            let var = self.vmtf.front_unassigned(|v| !self.assignment.is_assigned(v))?;
+            return Some(if self.polarity[var as usize] {
+                Literal::positive(var)
+            } else {
+                Literal::negative(var)
+            });
+        }
         loop {
             let entry = self.heap.pop()?;
             let var = entry.var;
@@ -1439,7 +1478,85 @@ impl CdclSolver {
         for var in 1..=self.num_vars {
             values[var as usize] = matches!(self.assignment.value_of(var), Value::True);
         }
+        // Extend the assignment with BVE-eliminated variables (reverse order).
+        crate::bve::extend_model(&mut values, &self.bve_eliminated);
         Model::new(values)
+    }
+
+    // -----------------------------------------------------------------------
+    // BVE preprocessing
+    // -----------------------------------------------------------------------
+
+    /// Run Bounded Variable Elimination before the main search loop.
+    /// Fills `self.bve_eliminated` and adds resolvents to the arena, then
+    /// rebuilds the watch list from the reduced formula.
+    fn run_bve(&mut self) {
+        debug_assert_eq!(self.assignment.current_level(), 0);
+        // Mark done first so the guard never re-fires, even on early return.
+        self.bve_done = true;
+
+        let arena_start = self.db.data_len();
+        let eliminated = crate::bve::run(
+            &mut self.db,
+            self.num_vars,
+            |var| self.assignment.is_assigned(var),
+        );
+
+        // Scan new arena entries (added by BVE as resolvents) and register:
+        //   len=1 → assign the literal at level 0 (unit propagation)
+        //   len=2 → insert into the binary propagation table so BCP sees them.
+        // We collect first to avoid holding an immutable borrow while mutating
+        // `self.assignment` and `self.binaries`.
+        let mut new_shorts: Vec<(Vec<Literal>, u32)> = Vec::new();
+        self.db.for_each_clause_from(arena_start, 1, |cr, _, _, lits| {
+            if lits.len() <= 2 {
+                new_shorts.push((lits.to_vec(), cr.0));
+            }
+        });
+
+        let mut early_unsat = false;
+        for (lits, cr_raw) in new_shorts {
+            match lits.len() {
+                1 => {
+                    let unit = lits[0];
+                    match self.assignment.literal_value(unit) {
+                        Value::Undef => {
+                            self.assignment.assign(unit, 0, cr_raw);
+                        }
+                        Value::False => {
+                            self.db.set_empty_clause();
+                            early_unsat = true;
+                            break;
+                        }
+                        Value::True => {}
+                    }
+                }
+                2 => {
+                    self.binaries[lits[0].negate().raw() as usize]
+                        .push((lits[1], cr_raw));
+                    self.binaries[lits[1].negate().raw() as usize]
+                        .push((lits[0], cr_raw));
+                }
+                _ => unreachable!(),
+            }
+        }
+        if early_unsat {
+            return;
+        }
+
+        // Propagate all newly assigned unit literals.
+        if self.propagate().is_some() {
+            self.db.set_empty_clause();
+            return;
+        }
+
+        if eliminated.is_empty() {
+            return;
+        }
+
+        // Rebuild watch list from the reduced formula.
+        self.db.rebuild_watches(&mut self.watches);
+        self.bve_eliminated = eliminated;
     }
 }
 

@@ -278,6 +278,12 @@ impl ClauseArena {
         }
     }
 
+    /// Current word-count of the arena (used by callers to record a start
+    /// position before adding clauses, then scan only the newly added ones).
+    pub fn data_len(&self) -> usize {
+        self.data.len()
+    }
+
     // -----------------------------------------------------------------------
     // Arena iteration (for inprocessing passes)
     // -----------------------------------------------------------------------
@@ -288,7 +294,18 @@ impl ClauseArena {
         min_len: usize,
         mut f: impl FnMut(ClauseRef, u32, bool, &[Literal]),
     ) {
-        let mut offset = 0usize;
+        self.for_each_clause_from(0, min_len, f);
+    }
+
+    /// Like `for_each_clause` but starts scanning from `start_word_offset`.
+    /// Use in combination with `data_len()` to iterate only newly added clauses.
+    pub fn for_each_clause_from(
+        &self,
+        start_word_offset: usize,
+        min_len: usize,
+        mut f: impl FnMut(ClauseRef, u32, bool, &[Literal]),
+    ) {
+        let mut offset = start_word_offset;
         while offset < self.data.len() {
             let header = self.data[offset];
             let n = (header >> 16) as usize;
