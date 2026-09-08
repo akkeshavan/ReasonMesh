@@ -7,6 +7,7 @@ pub type Var = u32;
 ///
 /// Encoding: `Literal(2*var)` is positive, `Literal(2*var + 1)` is negative.
 /// This gives O(1) negation via XOR 1 and branchless var extraction via >> 1.
+#[repr(transparent)]
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Literal(u32);
 

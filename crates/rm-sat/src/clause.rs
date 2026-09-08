@@ -1,90 +1,192 @@
 use rm_akx::literal::Literal;
-use smallvec::SmallVec;
 
-/// A clause in the database.
-#[derive(Clone, Debug)]
-pub struct Clause {
-    pub lits: SmallVec<[Literal; 4]>,
-    pub lbd: u32,
-    pub learnt: bool,
-    /// Activity counter for deletion heuristic.
-    pub activity: f32,
-    /// True if lits[0] is currently the reason for a propagation; must not delete.
-    pub locked: bool,
-}
+// ---------------------------------------------------------------------------
+// ClauseRef — index into the arena (word offset, not byte offset)
+// ---------------------------------------------------------------------------
 
-impl Clause {
-    pub fn new(lits: SmallVec<[Literal; 4]>, learnt: bool) -> Self {
-        Clause {
-            lits,
-            lbd: 0,
-            learnt,
-            activity: 0.0,
-            locked: false,
-        }
-    }
-    pub fn len(&self) -> usize {
-        self.lits.len()
-    }
-    pub fn is_empty(&self) -> bool {
-        self.lits.is_empty()
-    }
-}
-
-/// Index into the clause database.
+/// A handle to a clause. Stores the word offset of the clause header in the
+/// arena. Sentinel values (DECISION, UNIT_CONFLICT) never point into the arena.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct ClauseRef(pub u32);
 
 impl ClauseRef {
-    /// Antecedent for a decision literal.
+    /// Antecedent for a decision literal — no real clause.
     pub const DECISION: ClauseRef = ClauseRef(u32::MAX);
-    /// Sentinel used for a conflict from a queued unit literal with no clause.
+    /// Sentinel for a unit conflict with no antecedent clause.
     pub const UNIT_CONFLICT: ClauseRef = ClauseRef(u32::MAX - 1);
 
     pub fn is_decision(self) -> bool {
         self.0 == u32::MAX
     }
-    /// True for any sentinel value (DECISION or UNIT_CONFLICT).
     pub fn is_sentinel(self) -> bool {
         self.0 >= u32::MAX - 1
     }
 }
 
-/// Storage for all clauses (problem + learned).
-pub struct ClauseDb {
-    clauses: Vec<Option<Clause>>,
+// ---------------------------------------------------------------------------
+// ClauseArena
+// ---------------------------------------------------------------------------
+//
+// All clauses (problem + learned) live in a single Vec<u32> arena.
+//
+// Per-clause layout (contiguous words starting at offset `cr.0`):
+//   word[0]  — header: (len << 16) | (lbd << 2) | (learnt << 1) | deleted
+//   word[1..=len]  — literal raw values (Literal::raw() == u32)
+//   word[len+1]  — clause activity encoded as f32::to_bits()
+//
+// This keeps all clause data in one hot region; every BCP watch hit that
+// reaches the clause fetches the header and both watched literals in at most
+// two adjacent cache lines instead of chasing a SmallVec heap pointer.
+
+pub struct ClauseArena {
+    data: Vec<u32>,
     learnt_count: usize,
     has_empty: bool,
 }
 
-impl ClauseDb {
+impl ClauseArena {
     pub fn new() -> Self {
-        ClauseDb {
-            clauses: Vec::new(),
+        ClauseArena {
+            data: Vec::with_capacity(1 << 16),
             learnt_count: 0,
             has_empty: false,
         }
     }
 
-    pub fn add(&mut self, clause: Clause) -> ClauseRef {
-        if clause.learnt {
+    // -----------------------------------------------------------------------
+    // Header field helpers (inlined for BCP hot path)
+    // -----------------------------------------------------------------------
+
+    #[inline]
+    fn raw_header(&self, cr: ClauseRef) -> u32 {
+        self.data[cr.0 as usize]
+    }
+
+    #[inline]
+    pub fn clause_len(&self, cr: ClauseRef) -> usize {
+        (self.raw_header(cr) >> 16) as usize
+    }
+
+    #[inline]
+    pub fn lbd(&self, cr: ClauseRef) -> u32 {
+        (self.raw_header(cr) >> 2) & 0x3FFF
+    }
+
+    #[inline]
+    pub fn is_learnt(&self, cr: ClauseRef) -> bool {
+        self.raw_header(cr) & 2 != 0
+    }
+
+    #[inline]
+    pub fn is_deleted(&self, cr: ClauseRef) -> bool {
+        self.raw_header(cr) & 1 != 0
+    }
+
+    pub fn set_lbd(&mut self, cr: ClauseRef, lbd: u32) {
+        let h = &mut self.data[cr.0 as usize];
+        *h = (*h & !(0x3FFF << 2)) | ((lbd & 0x3FFF) << 2);
+    }
+
+    pub fn mark_deleted(&mut self, cr: ClauseRef) {
+        if !self.is_deleted(cr) {
+            self.data[cr.0 as usize] |= 1;
+            if self.is_learnt(cr) {
+                self.learnt_count -= 1;
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Literal access — O(1), returns a pointer into the arena
+    // -----------------------------------------------------------------------
+
+    /// Direct literal access by index. Bounds-checked only in debug builds.
+    #[inline]
+    pub fn lit_at(&self, cr: ClauseRef, idx: usize) -> Literal {
+        debug_assert!(idx < self.clause_len(cr));
+        Literal::from_raw(self.data[cr.0 as usize + 1 + idx])
+    }
+
+    #[inline]
+    pub fn set_lit_at(&mut self, cr: ClauseRef, idx: usize, lit: Literal) {
+        debug_assert!(idx < self.clause_len(cr));
+        self.data[cr.0 as usize + 1 + idx] = lit.raw();
+    }
+
+    #[inline]
+    pub fn swap_lits(&mut self, cr: ClauseRef, i: usize, j: usize) {
+        let base = cr.0 as usize + 1;
+        self.data.swap(base + i, base + j);
+    }
+
+    /// Return all literals as a slice backed directly by the arena — zero copy.
+    ///
+    /// # Safety
+    /// Safe because `Literal` is `#[repr(transparent)]` over `u32`.
+    #[inline]
+    pub fn lits(&self, cr: ClauseRef) -> &[Literal] {
+        let n = self.clause_len(cr);
+        let base = cr.0 as usize + 1;
+        unsafe {
+            std::slice::from_raw_parts(self.data[base..].as_ptr() as *const Literal, n)
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Activity
+    // -----------------------------------------------------------------------
+
+    #[inline]
+    pub fn activity(&self, cr: ClauseRef) -> f32 {
+        let n = self.clause_len(cr);
+        f32::from_bits(self.data[cr.0 as usize + 1 + n])
+    }
+
+    #[inline]
+    pub fn bump_activity(&mut self, cr: ClauseRef, inc: f32) {
+        let n = self.clause_len(cr);
+        let idx = cr.0 as usize + 1 + n;
+        let cur = f32::from_bits(self.data[idx]);
+        self.data[idx] = (cur + inc).to_bits();
+    }
+
+    pub fn rescale_activities(&mut self, factor: f32) {
+        let mut offset = 0usize;
+        while offset < self.data.len() {
+            let header = self.data[offset];
+            let n = (header >> 16) as usize;
+            let act_idx = offset + 1 + n;
+            let cur = f32::from_bits(self.data[act_idx]);
+            self.data[act_idx] = (cur * factor).to_bits();
+            offset += n + 2;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Adding clauses
+    // -----------------------------------------------------------------------
+
+    pub fn add(&mut self, lits: &[Literal], learnt: bool, lbd: u32) -> ClauseRef {
+        let offset = self.data.len() as u32;
+        let n = lits.len() as u32;
+        let header = (n << 16) | ((lbd & 0x3FFF) << 2) | ((learnt as u32) << 1);
+        self.data.push(header);
+        for &lit in lits {
+            self.data.push(lit.raw());
+        }
+        self.data.push(0u32); // activity = 0.0
+        if learnt {
             self.learnt_count += 1;
         }
-        let id = ClauseRef(self.clauses.len() as u32);
-        self.clauses.push(Some(clause));
-        id
+        ClauseRef(offset)
     }
 
-    pub fn get(&self, r: ClauseRef) -> &Clause {
-        self.clauses[r.0 as usize].as_ref().expect("clause deleted")
-    }
+    // -----------------------------------------------------------------------
+    // Statistics
+    // -----------------------------------------------------------------------
 
-    pub fn get_mut(&mut self, r: ClauseRef) -> &mut Clause {
-        self.clauses[r.0 as usize].as_mut().expect("clause deleted")
-    }
-
-    pub fn get_ref(&self, idx: usize) -> Option<&Clause> {
-        self.clauses.get(idx).and_then(|c| c.as_ref())
+    pub fn learnt_count(&self) -> usize {
+        self.learnt_count
     }
 
     pub fn set_empty_clause(&mut self) {
@@ -95,43 +197,121 @@ impl ClauseDb {
         self.has_empty
     }
 
-    pub fn learnt_count(&self) -> usize {
-        self.learnt_count
-    }
+    // -----------------------------------------------------------------------
+    // Learned-clause reduction
+    // -----------------------------------------------------------------------
 
-    /// Remove learned clauses where `should_delete(cr, clause)` is true.
-    /// `should_delete` receives the clause ref so the caller can check whether
-    /// the clause is still the reason of its first literal (locked).
-    /// The caller must rebuild the watch list after calling this.
-    pub fn reduce_learned(&mut self, should_delete: impl Fn(ClauseRef, &Clause) -> bool) {
-        for (idx, slot) in self.clauses.iter_mut().enumerate() {
-            if let Some(c) = slot {
-                if c.learnt && should_delete(ClauseRef(idx as u32), c) {
-                    *slot = None;
+    /// Mark learned clauses for deletion when `should_delete(cr, lbd, activity, lit0)` is true.
+    /// `lit0` is the first literal — used by the caller to check if the clause is a reason.
+    /// Caller must call `rebuild_watches` afterwards.
+    pub fn reduce_learned(
+        &mut self,
+        mut should_delete: impl FnMut(ClauseRef, u32, f32, Literal) -> bool,
+    ) {
+        let mut offset = 0usize;
+        while offset < self.data.len() {
+            let header = self.data[offset];
+            let n = (header >> 16) as usize;
+            let learnt = (header & 2) != 0;
+            let deleted = (header & 1) != 0;
+            if learnt && !deleted {
+                let cr = ClauseRef(offset as u32);
+                let lbd = (header >> 2) & 0x3FFF;
+                let activity = f32::from_bits(self.data[offset + 1 + n]);
+                let lit0 = Literal::from_raw(self.data[offset + 1]);
+                if should_delete(cr, lbd, activity, lit0) {
+                    self.data[offset] |= 1;
                     self.learnt_count -= 1;
                 }
             }
+            offset += n + 2;
         }
     }
-}
 
-/// Iterate the surviving (non-deleted) clauses and re-register their two
-/// watched literals, exactly as `CdclSolver::add_clause` does. Must be called
-/// after `ClauseDb::reduce_learned` so the watch list never references a
-/// deleted clause.
-impl ClauseDb {
+    // -----------------------------------------------------------------------
+    // Arena compaction (called after reduce_learned to reclaim deleted space)
+    // -----------------------------------------------------------------------
+
+    /// Remove all deleted entries from the arena and return `(old_offset, new_offset)` pairs
+    /// for every clause that moved. The caller must remap assignment reasons and binary-clause
+    /// tables before calling `rebuild_watches`.
+    pub fn compact(&mut self) -> Vec<(u32, u32)> {
+        let mut new_data: Vec<u32> = Vec::with_capacity(self.data.len());
+        let mut remaps: Vec<(u32, u32)> = Vec::new();
+        let mut offset = 0usize;
+        while offset < self.data.len() {
+            let header = self.data[offset];
+            let n = (header >> 16) as usize;
+            let deleted = (header & 1) != 0;
+            if !deleted {
+                let new_offset = new_data.len() as u32;
+                let old_offset = offset as u32;
+                if old_offset != new_offset {
+                    remaps.push((old_offset, new_offset));
+                }
+                new_data.extend_from_slice(&self.data[offset..offset + n + 2]);
+            }
+            offset += n + 2;
+        }
+        self.data = new_data;
+        remaps
+    }
+
+    // -----------------------------------------------------------------------
+    // Watch-list reconstruction (called after reduce_learned)
+    // -----------------------------------------------------------------------
+
     pub fn rebuild_watches(&self, watches: &mut super::watched::WatchList) {
         watches.clear();
-        for (idx, slot) in self.clauses.iter().enumerate() {
-            if let Some(c) = slot {
-                watches.watch(c.lits[0].negate(), ClauseRef(idx as u32));
-                watches.watch(c.lits[1].negate(), ClauseRef(idx as u32));
+        let mut offset = 0usize;
+        while offset < self.data.len() {
+            let header = self.data[offset];
+            let n = (header >> 16) as usize;
+            let deleted = (header & 1) != 0;
+            if !deleted && n >= 3 {
+                let cr = ClauseRef(offset as u32);
+                let lits = self.lits(cr);
+                watches.watch(lits[0].negate(), cr, lits[1]);
+                watches.watch(lits[1].negate(), cr, lits[0]);
             }
+            offset += n + 2;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Arena iteration (for inprocessing passes)
+    // -----------------------------------------------------------------------
+
+    /// Call `f(cr, lbd, is_learnt, lits)` for every non-deleted clause of size ≥ min_len.
+    pub fn for_each_clause(
+        &self,
+        min_len: usize,
+        mut f: impl FnMut(ClauseRef, u32, bool, &[Literal]),
+    ) {
+        let mut offset = 0usize;
+        while offset < self.data.len() {
+            let header = self.data[offset];
+            let n = (header >> 16) as usize;
+            let deleted = (header & 1) != 0;
+            if !deleted && n >= min_len {
+                let cr = ClauseRef(offset as u32);
+                let lbd = (header >> 2) & 0x3FFF;
+                let learnt = (header & 2) != 0;
+                // SAFETY: Literal is repr(transparent) over u32
+                let lits = unsafe {
+                    std::slice::from_raw_parts(
+                        self.data[offset + 1..].as_ptr() as *const Literal,
+                        n,
+                    )
+                };
+                f(cr, lbd, learnt, lits);
+            }
+            offset += n + 2;
         }
     }
 }
 
-impl Default for ClauseDb {
+impl Default for ClauseArena {
     fn default() -> Self {
         Self::new()
     }

@@ -98,6 +98,12 @@ impl Assignment {
         self.reason[var as usize]
     }
 
+    /// Update the antecedent for `var` (used after arena compaction to remap offsets).
+    #[inline]
+    pub fn set_reason(&mut self, var: Var, reason: u32) {
+        self.reason[var as usize] = reason;
+    }
+
     #[inline]
     pub fn current_level(&self) -> u32 {
         self.trail_lim.len() as u32
@@ -121,6 +127,21 @@ impl Assignment {
 
     pub fn trail(&self) -> &[Literal] {
         &self.trail
+    }
+
+    /// Return the suffix of the trail that belongs to decision levels > `level`.
+    /// Used by `backtrack_and_reschedule` to avoid scanning the whole trail.
+    ///
+    /// `trail_lim[d]` = index of the first literal assigned at level d+1, so
+    /// `trail_lim[level]` is the start of everything above `level`.
+    pub fn trail_from_level(&self, level: u32) -> &[Literal] {
+        let lim_idx = level as usize;
+        if lim_idx >= self.trail_lim.len() {
+            // Everything on the trail is at or below `level`; nothing to discard.
+            return &[];
+        }
+        let start = self.trail_lim[lim_idx];
+        &self.trail[start..]
     }
 
     pub fn num_assigned(&self) -> usize {

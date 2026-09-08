@@ -1,22 +1,45 @@
-//! Production CDCL solver — Milestone M1.
+//! Production CDCL solver — M1 + M2 performance improvements.
 //!
 //! Implements:
-//! - Two-watched-literal BCP (MiniSAT watch convention)
-//! - 1-UIP conflict analysis with non-chronological backjumping
-//! - VSIDS branching with exponential decay
-//! - Luby restart schedule
-//! - Basic learned-clause deletion by LBD
-//! - Model extraction on SAT
+//! - Two-watched-literal BCP with binary clause fast path
+//! - 1-UIP conflict analysis with recursive clause minimization
+//! - VSIDS with aggressive decay (0.8) and phase saving
+//! - Glucose-style EMA restart (fast/slow LBD EMAs) with Luby fallback
+//! - LBD-based learned-clause deletion with activity tiebreaking
+//! - Failed literal probing (inprocessing) every 10 restarts
+
+// S1-7: Chronological backtracking minimum gap.
+// Only trigger chrono BT when the non-chrono jump would be this many levels deep.
+// At gap=5 this fires for almost any conflict on medium/large instances, forcing
+// many single-level backtracks before reaching the UIP backjump level.
+// Raising to 30 restricts chrono BT to very deep jumps where it genuinely helps.
+const CHRONO_BT_MIN_GAP: u32 = 12;
 
 use crate::{
     assignment::{Assignment, Value},
-    clause::{Clause, ClauseDb, ClauseRef},
+    clause::{ClauseArena, ClauseRef},
     model::Model,
     watched::WatchList,
 };
 use rm_akx::literal::{Literal, Var};
 use smallvec::SmallVec;
+use std::collections::BinaryHeap;
 use std::time::Instant;
+
+// ---------------------------------------------------------------------------
+// Stable/focus mode alternation (Kissat-style)
+// ---------------------------------------------------------------------------
+
+/// Focus mode: aggressive EMA restarts, no walk, faster learning.
+/// Stable mode: Luby restarts with 4× scale, walk enabled before each restart.
+/// Phases alternate every PHASE_LEN restarts.
+const PHASE_LEN: u64 = 16;
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum SolverMode {
+    Focus,
+    Stable,
+}
 
 // ---------------------------------------------------------------------------
 // Result type
@@ -39,13 +62,37 @@ impl PartialEq for SolveResult {
 }
 
 // ---------------------------------------------------------------------------
+// VSIDS heap entry (lazy-deletion max-heap by activity)
+// ---------------------------------------------------------------------------
+
+#[derive(PartialEq)]
+struct VsidsEntry {
+    activity: f64,
+    var: Var,
+}
+impl Eq for VsidsEntry {}
+impl PartialOrd for VsidsEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for VsidsEntry {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.activity
+            .partial_cmp(&other.activity)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| other.var.cmp(&self.var))
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Solver
 // ---------------------------------------------------------------------------
 
 pub struct CdclSolver {
     num_vars: u32,
     assignment: Assignment,
-    db: ClauseDb,
+    db: ClauseArena,
     watches: WatchList,
 
     // VSIDS: activity[var] is bumped on each conflict
@@ -53,12 +100,31 @@ pub struct CdclSolver {
     /// Increment applied to activities on bump; grows by 1/decay each conflict.
     activity_inc: f64,
     activity_decay: f64,
+    /// Max-heap for VSIDS variable selection (lazy deletion).
+    heap: BinaryHeap<VsidsEntry>,
+    /// Phase saving: last known polarity per variable (index = var).
+    polarity: Vec<bool>,
+    /// Reusable buffer for analyze() — avoids per-conflict Vec allocation.
+    trail_buf: Vec<Literal>,
 
     // Luby restart schedule
     luby_u: u64,
     luby_v: u64,
     luby_scale: u64,
     next_restart_conflicts: u64,
+
+    // Glucose-style EMA restart: restart when fast EMA of LBD exceeds slow EMA.
+    // fast alpha = 0.03 (~33 conflict window), slow alpha = 0.00001 (~69k window).
+    lbd_fast_ema: f64,
+    lbd_slow_ema: f64,
+    conflicts_at_last_restart: u64,
+
+    // Binary clause fast path.
+    // binaries[lit.raw()] = list of (implied_lit, clause_ref_raw).
+    // When lit becomes True, each implied_lit must be True (implication).
+    // Binary clauses are stored in the DB for reason tracking but NOT in the
+    // watch list; rebuild_watches skips clauses with lits.len() < 3.
+    binaries: Vec<Vec<(Literal, u32)>>,
 
     // Clause deletion
     learnt_limit: usize,
@@ -69,54 +135,87 @@ pub struct CdclSolver {
     pub propagations: u64,
     pub restarts: u64,
     pub decisions: u64,
+    /// Number of chronological backtracks (S1-7).
+    pub chrono_bts: u64,
 
-    /// Decision level of the first assumption pushed by the current `solve`
-    /// call. Search never backjumps or restarts below this level, so the
-    /// assumptions stay assigned for the whole call.
+    /// Decision level of the first assumption pushed by the current `solve` call.
     base_level: u32,
 
-    /// Highest decision level that belongs to the assumptions of the current
-    /// `solve` call (i.e. `base_level + num_assumptions` when > 0, else
-    /// `base_level`). Backjumps and restarts never go below this, preserving
-    /// every assumption literal on the trail.
+    /// Highest decision level belonging to assumptions of the current `solve` call.
     assumption_floor: u32,
 
     /// Learned clauses produced since the last `drain_learned`. Drained by the
-    /// Reasoner for AKX export; cleared by the solver's LBD-based reduction
-    /// only via removal from the clause DB, never from this queue.
+    /// Reasoner for AKX export.
     learned_outbox: Vec<(Vec<Literal>, u32)>,
 
-    /// DRUP proof log: each entry is one learned clause in DIMACS literal
-    /// encoding (positive = var true, negative = var false). Populated only
-    /// when proof logging is enabled via `enable_proof_logging()`.
-    /// The final entry is always the empty clause `[]` on UNSAT.
+    /// DRUP proof log.
     proof_log: Option<Vec<Vec<i32>>>,
+
+    // S1-3: Timestamp seen array — avoids per-conflict Vec allocation.
+    seen_stamp: Vec<u32>,
+    analyze_stamp: u32,
+
+    // S1-5: Clause activity bumping.
+    clause_inc: f32,
+    clause_decay: f32,
+
+    // S1-6: Timestamp-based LBD computation.
+    lbd_stamp: Vec<u32>,
+    lbd_epoch: u32,
+
+    // Inprocessing: failed literal probing every PROBE_CONFLICT_INTERVAL conflicts.
+    conflicts_at_last_probe: u64,
+
+    // Stable/focus mode alternation.
+    mode: SolverMode,
+    phase_restart_count: u64,
 }
 
 impl CdclSolver {
     pub fn new(num_vars: u32) -> Self {
+        let mut heap = BinaryHeap::with_capacity(num_vars as usize + 1);
+        for var in 1..=num_vars {
+            heap.push(VsidsEntry { activity: 0.0, var });
+        }
         CdclSolver {
             num_vars,
             assignment: Assignment::new(num_vars),
-            db: ClauseDb::new(),
+            db: ClauseArena::new(),
             watches: WatchList::new(num_vars),
             activity: vec![0.0; num_vars as usize + 1],
             activity_inc: 1.0,
-            activity_decay: 0.95,
+            activity_decay: 0.8,          // aggressive VSIDS decay (was 0.95)
+            heap,
+            polarity: vec![false; num_vars as usize + 1],
+            trail_buf: Vec::new(),
             luby_u: 1,
             luby_v: 1,
-            luby_scale: 100,
-            next_restart_conflicts: 100,
+            luby_scale: 350,               // tighter Luby intervals (was 512)
+            next_restart_conflicts: 350,
+            lbd_fast_ema: 0.0,
+            lbd_slow_ema: 0.0,
+            conflicts_at_last_restart: 0,
+            binaries: vec![Vec::new(); (num_vars * 2 + 2) as usize],
             learnt_limit: 2000,
             learnt_limit_inc: 1.1,
             conflicts: 0,
             propagations: 0,
             restarts: 0,
             decisions: 0,
+            chrono_bts: 0,
             base_level: 0,
             assumption_floor: 0,
             learned_outbox: Vec::new(),
             proof_log: None,
+            seen_stamp: vec![0u32; num_vars as usize + 1],
+            analyze_stamp: 0,
+            clause_inc: 1.0,
+            clause_decay: 0.999,
+            lbd_stamp: vec![0u32; num_vars as usize + 2],
+            lbd_epoch: 0,
+            conflicts_at_last_probe: 0,
+            mode: SolverMode::Focus,
+            phase_restart_count: 0,
         }
     }
 
@@ -130,42 +229,30 @@ impl CdclSolver {
     // -----------------------------------------------------------------------
 
     /// Enable DRUP proof logging. Must be called before `solve()`.
-    /// Each learned clause — and the final empty clause on UNSAT — will be
-    /// appended to the internal log.
     pub fn enable_proof_logging(&mut self) {
         self.proof_log = Some(Vec::new());
     }
 
-    /// Consume and return the proof log (DRUP format): each inner `Vec<i32>`
-    /// is one clause in DIMACS literal encoding. The last entry is `[]` (the
-    /// empty clause) if the result was UNSAT. Returns `None` if logging was
-    /// not enabled.
+    /// Consume and return the proof log (DRUP format).
     pub fn take_proof_log(&mut self) -> Option<Vec<Vec<i32>>> {
         self.proof_log.take()
     }
 
-    /// Convert a slice of `Literal`s to DIMACS integer representation.
     fn lits_to_dimacs(lits: &[Literal]) -> Vec<i32> {
         lits.iter()
             .map(|l| {
                 let v = l.var() as i32;
-                if l.is_positive() {
-                    v
-                } else {
-                    -v
-                }
+                if l.is_positive() { v } else { -v }
             })
             .collect()
     }
 
-    /// Append a clause to the proof log (if logging is enabled).
     fn log_proof_clause(&mut self, lits: &[Literal]) {
         if let Some(log) = &mut self.proof_log {
             log.push(Self::lits_to_dimacs(lits));
         }
     }
 
-    /// Append the empty clause to the proof log (signals UNSAT).
     fn log_proof_empty(&mut self) {
         if let Some(log) = &mut self.proof_log {
             log.push(Vec::new());
@@ -177,10 +264,8 @@ impl CdclSolver {
     // -----------------------------------------------------------------------
 
     /// Add a problem clause. Unit clauses are enqueued immediately at level 0.
-    ///
-    /// Watch convention (MiniSAT): a clause with watched literals w0, w1 is
-    /// stored under `(¬w0).raw()` and `(¬w1).raw()`. When `¬w0` becomes True
-    /// (i.e. w0 becomes False), BCP checks `watches[(¬w0).raw()]`.
+    /// Binary clauses go to the binary implication table (fast BCP path) and
+    /// the clause DB (reason tracking), but NOT the watch list.
     pub fn add_clause(&mut self, lits: &[Literal]) {
         match lits.len() {
             0 => {
@@ -198,11 +283,16 @@ impl CdclSolver {
                     }
                 }
             }
+            2 => {
+                // Binary: arena for reason tracking, binary table for BCP, skip watch list.
+                let cr = self.db.add(lits, false, 0);
+                self.binaries[lits[0].negate().raw() as usize].push((lits[1], cr.0));
+                self.binaries[lits[1].negate().raw() as usize].push((lits[0], cr.0));
+            }
             _ => {
-                let sv: SmallVec<[Literal; 4]> = lits.iter().copied().collect();
-                let cr = self.db.add(Clause::new(sv, false));
-                self.watches.watch(lits[0].negate(), cr);
-                self.watches.watch(lits[1].negate(), cr);
+                let cr = self.db.add(lits, false, 0);
+                self.watches.watch(lits[0].negate(), cr, lits[1]);
+                self.watches.watch(lits[1].negate(), cr, lits[0]);
             }
         }
     }
@@ -213,20 +303,11 @@ impl CdclSolver {
 
     /// Solve under optional additional `assumptions`. Returns after at most
     /// `max_conflicts` conflicts (use `u64::MAX` for unlimited).
-    ///
-    /// The assumption literals are pinned at the bottom of the decision stack:
-    /// backjumps and restarts never go below `base_level`, so assumptions stay
-    /// assigned for the whole call and are never re-decided with a flipped
-    /// polarity. On exit the solver is left back at `base_level`, so a fresh
-    /// `solve` with a different assumption set starts clean.
     pub fn solve(&mut self, assumptions: &[Literal], max_conflicts: u64) -> SolveResult {
         self.solve_inner(assumptions, max_conflicts, None)
     }
 
-    /// Solve under optional additional `assumptions`, bounded by both a
-    /// conflict budget and (optionally) a wall-clock deadline. Returns
-    /// `SolveResult::Unknown` as soon as the deadline passes (the benchmark
-    /// runner uses this to honor each problem's `timeout_secs`).
+    /// Solve bounded by both a conflict budget and a wall-clock deadline.
     pub fn solve_with_deadline(
         &mut self,
         assumptions: &[Literal],
@@ -254,11 +335,8 @@ impl CdclSolver {
         };
 
         if self.base_level == 0 && self.settle_root_propagations() {
-            // Level-0 BCP derived False: formula is UNSAT without any search.
-            // Must emit the empty-clause proof entry here; the main loop's
-            // process_conflict_in_loop path is never reached in this case.
             self.log_proof_empty();
-            self.assignment.backtrack_to(0);
+            self.backtrack_and_reschedule(0);
             return SolveResult::Unsat;
         }
 
@@ -268,6 +346,13 @@ impl CdclSolver {
 
         let conflicts_at_entry = self.conflicts;
         let result = loop {
+            // Inprocessing (failed literal probing) may discover UNSAT
+            // without going through the normal conflict path.
+            if self.db.has_empty_clause() {
+                self.log_proof_empty();
+                break SolveResult::Unsat;
+            }
+
             if let Some(conflict_cr) = self.propagate() {
                 if let Some(r) = self.process_conflict_in_loop(conflict_cr) {
                     break r;
@@ -284,36 +369,22 @@ impl CdclSolver {
             }
         };
 
-        self.assignment.backtrack_to(self.base_level);
+        self.backtrack_and_reschedule(self.base_level);
         result
     }
 
-    /// Run level-0 BCP to settle unit clauses added before assumptions are
-    /// pushed. Returns `true` if a conflict is found (formula is already UNSAT).
-    ///
-    /// When assumptions are empty this may be a search resumption; the BCP
-    /// queue is already empty in that case, so this is a fast no-op.
     fn settle_root_propagations(&mut self) -> bool {
         self.propagate().is_some()
     }
 
-    /// Push `assumptions` as decisions at consecutive decision levels.
-    ///
-    /// Returns `SolveResult::Unsat` immediately if any assumption literal is
-    /// already assigned False (contradictory assumptions). Returns `None` if
-    /// all assumptions are satisfied and search can continue.
     fn push_assumptions_onto_trail(&mut self, assumptions: &[Literal]) -> Option<SolveResult> {
         let mut pushed = 0u32;
         for &lit in assumptions {
             match self.assignment.literal_value(lit) {
                 Value::True => {}
                 Value::False => {
-                    // Assumption literal is already forced False at level 0:
-                    // the conjunction (formula ∧ assumptions) is UNSAT.
-                    // The empty-clause entry is missing from the two other
-                    // UNSAT paths; ensure it is logged here too.
                     self.log_proof_empty();
-                    self.assignment.backtrack_to(self.base_level);
+                    self.backtrack_and_reschedule(self.base_level);
                     return Some(SolveResult::Unsat);
                 }
                 Value::Undef => {
@@ -336,12 +407,6 @@ impl CdclSolver {
         None
     }
 
-    /// Handle a BCP conflict discovered inside the main search loop.
-    ///
-    /// Analyzes the conflict, backtracks, adds the learned clause, and
-    /// triggers restart and DB reduction. Returns `SolveResult::Unsat` if the
-    /// conflict is irresolvable under the current assumptions, else `None`
-    /// (search continues).
     fn process_conflict_in_loop(&mut self, conflict_cr: ClauseRef) -> Option<SolveResult> {
         if self.assignment.current_level() == self.base_level {
             self.log_proof_empty();
@@ -349,11 +414,24 @@ impl CdclSolver {
         }
         self.conflicts += 1;
 
+        let current_level = self.assignment.current_level();
         let (learnt, mut backjump_level) = self.analyze(conflict_cr);
         if backjump_level < self.assumption_floor {
             backjump_level = self.assumption_floor;
         }
-        self.assignment.backtrack_to(backjump_level);
+
+        // S1-7: Chronological backtracking (conservative one-level variant).
+        let effective_backjump =
+            if current_level > backjump_level + CHRONO_BT_MIN_GAP
+                && current_level.saturating_sub(1) >= self.assumption_floor
+            {
+                self.chrono_bts += 1;
+                current_level - 1
+            } else {
+                backjump_level
+            };
+
+        self.backtrack_and_reschedule(effective_backjump);
         self.decay_activities();
 
         match self.assignment.literal_value(learnt[0]) {
@@ -367,10 +445,10 @@ impl CdclSolver {
                 if learnt.len() == 1 {
                     self.learned_outbox.push((learnt.to_vec(), 1));
                     self.assignment
-                        .assign(learnt[0], backjump_level, ClauseRef::DECISION.0);
+                        .assign(learnt[0], effective_backjump, ClauseRef::DECISION.0);
                 } else {
                     let cr = self.add_learned_clause(&learnt);
-                    self.assignment.assign(learnt[0], backjump_level, cr.0);
+                    self.assignment.assign(learnt[0], effective_backjump, cr.0);
                 }
             }
         }
@@ -379,10 +457,8 @@ impl CdclSolver {
         None
     }
 
-    /// In the no-conflict branch: trigger a pending restart, make a branching
-    /// decision, or return `SolveResult::Sat` when all variables are assigned.
     fn branch_or_finish(&mut self) -> Option<SolveResult> {
-        if self.conflicts >= self.next_restart_conflicts {
+        if self.should_restart() {
             self.do_restart();
             return None;
         }
@@ -397,24 +473,23 @@ impl CdclSolver {
         }
     }
 
-    /// Import a batch of learned clauses (e.g. from AKX) into the clause
-    /// database.
-    ///
-    /// This is the M1 answer to research gate G0: mid-search importing needs
-    /// **no structural changes** to the trail or clause database — imported
-    /// clauses are integrated at decision level 0, which is where every
-    /// worker returns at a restart/backjump boundary anyway. The worker
-    /// runtime must call this only when the solver is (or has just been
-    /// returned to) level 0, matching the import-point protocol in the spec.
-    ///
-    /// Returns the number of clauses added.
+    /// Import a batch of learned clauses (e.g. from AKX) into the clause database.
     pub fn import_clauses(&mut self, clauses: &[Vec<Literal>]) -> usize {
-        self.assignment.backtrack_to(0);
+        self.backtrack_and_reschedule(0);
         self.base_level = 0;
         for lits in clauses {
             self.add_clause(lits);
         }
         clauses.len()
+    }
+
+    /// Expose arena for inprocessing passes (vivification etc.).
+    pub fn arena(&self) -> &ClauseArena {
+        &self.db
+    }
+
+    pub fn arena_mut(&mut self) -> &mut ClauseArena {
+        &mut self.db
     }
 
     // -----------------------------------------------------------------------
@@ -423,73 +498,113 @@ impl CdclSolver {
 
     /// Run BCP to a fixed point. Returns the conflicting ClauseRef, if any.
     ///
-    /// Watch convention (MiniSAT):
-    ///   `watches[p.raw()]` = clauses woken when literal `p` is assigned True.
-    ///   Each clause stores its two watched literals as `lits[0]`, `lits[1]`.
-    ///   It is registered under `lits[0].negate().raw()` and `lits[1].negate().raw()`.
-    ///   When literal `q = ¬lits[0]` is assigned True, `lits[0]` is False;
-    ///   `watches[q.raw()]` is checked. We rearrange so `lits[1]` is always
-    ///   the watch that became False (triggered the wake) and `lits[0]` is the
-    ///   "other" watch.
+    /// For each newly-True literal `p`:
+    ///   1. Binary fast path: iterate `binaries[p.raw()]` in a tight loop.
+    ///   2. Regular watch list: process 3+ literal clauses as before.
     fn propagate(&mut self) -> Option<ClauseRef> {
         while self.assignment.prop_head < self.assignment.trail().len() {
             let p = self.assignment.trail()[self.assignment.prop_head];
             self.assignment.prop_head += 1;
             self.propagations += 1;
 
-            let mut idx = 0;
-            'clause_loop: loop {
-                let cr = {
-                    let list = self.watches.get(p);
-                    if idx >= list.len() {
-                        break 'clause_loop;
+            // Binary clause fast path.
+            let n_bin = self.binaries[p.raw() as usize].len();
+            for bi in 0..n_bin {
+                let (impl_lit, reason_raw) = self.binaries[p.raw() as usize][bi];
+                match self.assignment.literal_value(impl_lit) {
+                    Value::True => {}
+                    Value::Undef => {
+                        let lvl = self.assignment.current_level();
+                        self.assignment.assign(impl_lit, lvl, reason_raw);
                     }
-                    list[idx]
-                };
-
-                {
-                    let clause = self.db.get_mut(cr);
-                    if clause.lits[0].negate() == p {
-                        clause.lits.swap(0, 1);
+                    Value::False => {
+                        return Some(ClauseRef(reason_raw));
                     }
                 }
+            }
 
-                let other_watch = self.db.get(cr).lits[0];
+            // Regular watch list (3+ literal clauses).
+            let mut wlist = std::mem::take(self.watches.get_mut(p));
+            let n = wlist.len();
+            let (mut i, mut j) = (0usize, 0usize);
+            let mut conflict = None;
 
-                if self.assignment.literal_value(other_watch) == Value::True {
-                    idx += 1;
+            while i < n {
+                let (cr, blocker) = wlist[i];
+                i += 1;
+
+                // Lazy deleted-clause cleanup: drop the watch entry silently.
+                if self.db.is_deleted(cr) {
                     continue;
                 }
 
-                let n = self.db.get(cr).lits.len();
+                // Blocker fast path: if the other watched literal is already True,
+                // the clause is satisfied — skip the arena fetch entirely.
+                // Blockers may be stale, but a stale True blocker still implies
+                // the literal is in the clause and is True, so skipping is safe.
+                if self.assignment.literal_value(blocker) == Value::True {
+                    wlist[j] = (cr, blocker);
+                    j += 1;
+                    continue;
+                }
+
+                // Ensure lits[1] is the watch that just became False (p = lits[1].negate()).
+                if self.db.lit_at(cr, 0).negate() == p {
+                    self.db.swap_lits(cr, 0, 1);
+                }
+                let other = self.db.lit_at(cr, 0);
+
+                // Other watch is True: clause satisfied; refresh the blocker.
+                if self.assignment.literal_value(other) == Value::True {
+                    wlist[j] = (cr, other);
+                    j += 1;
+                    continue;
+                }
+
+                // Search for a new non-false literal to watch.
+                let clause_len = self.db.clause_len(cr);
                 let mut found_new = false;
-                for k in 2..n {
-                    let cand = self.db.get(cr).lits[k];
+                for k in 2..clause_len {
+                    let cand = self.db.lit_at(cr, k);
                     if self.assignment.literal_value(cand) != Value::False {
-                        self.db.get_mut(cr).lits.swap(1, k);
-                        let new_watch = self.db.get(cr).lits[1];
-                        self.watches.remove(p, cr);
-                        self.watches.watch(new_watch.negate(), cr);
+                        self.db.swap_lits(cr, 1, k);
+                        let new_watch_lit = self.db.lit_at(cr, 1);
+                        self.watches.watch(new_watch_lit.negate(), cr, other);
                         found_new = true;
                         break;
                     }
                 }
-
                 if found_new {
                     continue;
                 }
 
-                match self.assignment.literal_value(other_watch) {
-                    Value::False => {
-                        return Some(cr);
-                    }
+                // No new watch: clause is unit or conflicting.
+                wlist[j] = (cr, other);
+                j += 1;
+
+                match self.assignment.literal_value(other) {
                     Value::Undef => {
                         self.assignment
-                            .assign(other_watch, self.assignment.current_level(), cr.0);
-                        idx += 1;
+                            .assign(other, self.assignment.current_level(), cr.0);
+                    }
+                    Value::False => {
+                        while i < n {
+                            wlist[j] = wlist[i];
+                            j += 1;
+                            i += 1;
+                        }
+                        conflict = Some(cr);
+                        break;
                     }
                     Value::True => unreachable!("handled above"),
                 }
+            }
+
+            wlist.truncate(j);
+            *self.watches.get_mut(p) = wlist;
+
+            if let Some(cr) = conflict {
+                return Some(cr);
             }
         }
         None
@@ -500,46 +615,53 @@ impl CdclSolver {
     // -----------------------------------------------------------------------
 
     /// Analyse `conflict_cr` and return (learnt_clause, backjump_level).
-    ///
-    /// The returned clause has the asserting literal at index 0 and the highest
-    /// second-level literal (if any) at index 1 — ready for watched-literal setup.
     fn analyze(&mut self, conflict_cr: ClauseRef) -> (SmallVec<[Literal; 8]>, u32) {
         let current_level = self.assignment.current_level();
-        let mut seen = vec![false; self.num_vars as usize + 1];
+
+        self.analyze_stamp = self.analyze_stamp.wrapping_add(1);
+        if self.analyze_stamp == 0 {
+            self.seen_stamp.iter_mut().for_each(|s| *s = 0);
+            self.analyze_stamp = 1;
+        }
+        let stamp = self.analyze_stamp;
+
         let mut learnt: SmallVec<[Literal; 8]> = SmallVec::new();
         let mut counter = 0usize;
 
         self.process_reason_into(
             conflict_cr,
             current_level,
-            &mut seen,
+            stamp,
             &mut learnt,
             &mut counter,
             None,
         );
 
-        let trail_snapshot: Vec<Literal> = self.assignment.trail().to_vec();
+        let mut trail_snapshot = std::mem::take(&mut self.trail_buf);
+        trail_snapshot.clear();
+        trail_snapshot.extend_from_slice(self.assignment.trail());
+
         let uip = self.find_uip_on_trail(
             &trail_snapshot,
             current_level,
-            &mut seen,
+            stamp,
             &mut learnt,
             &mut counter,
         );
+        self.trail_buf = trail_snapshot;
 
-        self.build_learned_clause(uip, learnt)
+        let (mut clause, backjump_level) = self.build_learned_clause(uip, learnt);
+
+        self.minimize_learned_clause(&mut clause, stamp);
+
+        (clause, backjump_level)
     }
 
-    /// Walk the trail backward to find the 1-UIP literal.
-    ///
-    /// Scans from the end of the trail, resolving each current-level
-    /// antecedent until exactly one current-level literal remains in the
-    /// implied clause — that literal is the UIP.
     fn find_uip_on_trail(
         &mut self,
         trail: &[Literal],
         current_level: u32,
-        seen: &mut [bool],
+        stamp: u32,
         learnt: &mut SmallVec<[Literal; 8]>,
         counter: &mut usize,
     ) -> Literal {
@@ -548,14 +670,14 @@ impl CdclSolver {
             loop {
                 debug_assert!(trail_pos > 0, "1-UIP analysis walked past trail start");
                 trail_pos -= 1;
-                if seen[trail[trail_pos].var() as usize] {
+                if self.seen_stamp[trail[trail_pos].var() as usize] == stamp {
                     break;
                 }
             }
 
             let lit = trail[trail_pos];
             let var = lit.var();
-            seen[var as usize] = false;
+            self.seen_stamp[var as usize] = 0;
 
             if self.assignment.level_of(var) != current_level {
                 continue;
@@ -572,7 +694,7 @@ impl CdclSolver {
                 self.process_reason_into(
                     reason_cr,
                     current_level,
-                    seen,
+                    stamp,
                     learnt,
                     counter,
                     Some(var),
@@ -581,11 +703,6 @@ impl CdclSolver {
         }
     }
 
-    /// Construct the final learned clause: `[¬uip, ...lower-level literals...]`.
-    ///
-    /// Moves the highest-level literal from `learnt` to index 0 (for watched-
-    /// literal setup) and returns the complete clause together with the
-    /// backjump level (the level of that highest-level literal).
     fn build_learned_clause(
         &self,
         uip: Literal,
@@ -611,31 +728,42 @@ impl CdclSolver {
         (clause, backjump_level)
     }
 
-    /// Visit all literals in `cr`'s clause and classify them for 1-UIP analysis.
-    ///
-    /// `resolving_var` is the variable whose antecedent this clause is; that
-    /// literal is skipped to avoid re-processing it (1-UIP resolution). Pass
-    /// `None` for the initial conflict clause, which is processed in full.
     fn process_reason_into(
         &mut self,
         cr: ClauseRef,
         current_level: u32,
-        seen: &mut [bool],
+        stamp: u32,
         learnt: &mut SmallVec<[Literal; 8]>,
         counter: &mut usize,
         resolving_var: Option<Var>,
     ) {
-        let lits: SmallVec<[Literal; 8]> = self.db.get(cr).lits.iter().copied().collect();
-        for lit in lits {
+        // Bump clause activity for reason clauses.
+        self.db.bump_activity(cr, self.clause_inc);
+
+        // LBD update: if the clause's effective LBD has dropped since it was
+        // learned (because some levels have since been backtracked into one), lower
+        // the stored LBD. This can promote a tier-3 clause into tier-2 and prevent
+        // it from being deleted despite still being actively useful.
+        if self.db.is_learnt(cr) && self.db.lbd(cr) > 2 {
+            let lits: SmallVec<[Literal; 8]> = self.db.lits(cr).iter().copied().collect();
+            let new_lbd = self.compute_lbd(&lits);
+            if new_lbd < self.db.lbd(cr) {
+                self.db.set_lbd(cr, new_lbd);
+            }
+        }
+
+        let n = self.db.clause_len(cr);
+        for i in 0..n {
+            let lit = self.db.lit_at(cr, i);
             let var = lit.var();
-            if Some(var) == resolving_var || seen[var as usize] {
+            if Some(var) == resolving_var || self.seen_stamp[var as usize] == stamp {
                 continue;
             }
             let lvl = self.assignment.level_of(var);
             if lvl == 0 {
                 continue;
             }
-            seen[var as usize] = true;
+            self.seen_stamp[var as usize] = stamp;
             self.bump_var_activity(var);
             if lvl == current_level {
                 *counter += 1;
@@ -646,54 +774,124 @@ impl CdclSolver {
     }
 
     // -----------------------------------------------------------------------
+    // Recursive learned-clause minimization
+    // -----------------------------------------------------------------------
+
+    /// Remove redundant literals from a learned clause using recursive DFS up
+    /// the reason graph. A literal is redundant if every variable in its reason
+    /// chain is either at level 0, already in the frontier (seen_stamp), or
+    /// itself redundant. A cumulative work counter caps the total effort.
+    fn minimize_learned_clause(&mut self, learnt: &mut SmallVec<[Literal; 8]>, stamp: u32) {
+        if learnt.len() <= 1 {
+            return;
+        }
+        let mut work = 0u32;
+        let mut i = 1; // index 0 is the UIP; never removed
+        while i < learnt.len() {
+            let var = learnt[i].var();
+            if self.literal_redundant(var, stamp, &mut work) {
+                learnt.swap_remove(i);
+            } else {
+                i += 1;
+            }
+        }
+    }
+
+    fn literal_redundant(&self, var: Var, stamp: u32, work: &mut u32) -> bool {
+        const MAX_WORK: u32 = 100;
+        let reason_cr = ClauseRef(self.assignment.reason_of(var));
+        if reason_cr.is_sentinel() {
+            return false;
+        }
+        let n = self.db.clause_len(reason_cr);
+        *work = work.saturating_add(n as u32);
+        if *work > MAX_WORK {
+            return false;
+        }
+        for i in 0..n {
+            let rv = self.db.lit_at(reason_cr, i).var();
+            if rv == var {
+                continue;
+            }
+            if self.assignment.level_of(rv) == 0 {
+                continue;
+            }
+            if self.seen_stamp[rv as usize] == stamp {
+                continue;
+            }
+            if !self.literal_redundant(rv, stamp, work) {
+                return false;
+            }
+        }
+        true
+    }
+
+    // -----------------------------------------------------------------------
     // Learned clause management
     // -----------------------------------------------------------------------
 
     fn add_learned_clause(&mut self, lits: &[Literal]) -> ClauseRef {
         debug_assert!(lits.len() >= 2);
         let lbd = self.compute_lbd(lits);
-        let sv: SmallVec<[Literal; 4]> = lits.iter().copied().collect();
-        let mut clause = Clause::new(sv, true);
-        clause.lbd = lbd;
 
-        let cr = self.db.add(clause);
-        self.watches.watch(lits[0].negate(), cr);
-        self.watches.watch(lits[1].negate(), cr);
+        // Update Glucose-style LBD EMAs for adaptive restart decisions.
+        let lf = lbd as f64;
+        self.lbd_fast_ema = 0.03 * lf + 0.97 * self.lbd_fast_ema;
+        self.lbd_slow_ema = 0.00001 * lf + 0.99999 * self.lbd_slow_ema;
+
+        let cr = self.db.add(lits, true, lbd);
+
+        if lits.len() == 2 {
+            // Binary learned clause: fast-path table only, not the watch list.
+            self.binaries[lits[0].negate().raw() as usize].push((lits[1], cr.0));
+            self.binaries[lits[1].negate().raw() as usize].push((lits[0], cr.0));
+        } else {
+            self.watches.watch(lits[0].negate(), cr, lits[1]);
+            self.watches.watch(lits[1].negate(), cr, lits[0]);
+        }
         self.learned_outbox.push((lits.to_vec(), lbd));
         cr
     }
 
-    /// Drain the learned clauses (and their LBD scores) produced since the
-    /// last call. Cleared by this method; used by the Reasoner to build
-    /// exportable AKX clause knowledge.
+    /// Drain the learned clauses produced since the last call. Used by the
+    /// Reasoner to build exportable AKX clause knowledge.
     pub fn drain_learned(&mut self) -> Vec<(Vec<Literal>, u32)> {
         std::mem::take(&mut self.learned_outbox)
     }
 
-    fn compute_lbd(&self, lits: &[Literal]) -> u32 {
-        let mut levels: SmallVec<[u32; 8]> = SmallVec::new();
-        for lit in lits {
-            let lvl = self.assignment.level_of(lit.var());
-            if !levels.contains(&lvl) {
-                levels.push(lvl);
+    /// S1-6: Compute LBD (Literal Block Distance) using a timestamp array.
+    fn compute_lbd(&mut self, lits: &[Literal]) -> u32 {
+        self.lbd_epoch = self.lbd_epoch.wrapping_add(1);
+        if self.lbd_epoch == 0 {
+            self.lbd_stamp.iter_mut().for_each(|s| *s = 0);
+            self.lbd_epoch = 1;
+        }
+        let ep = self.lbd_epoch;
+        let mut lbd = 0u32;
+        for &lit in lits {
+            let lvl = self.assignment.level_of(lit.var()) as usize;
+            if lvl < self.lbd_stamp.len() && self.lbd_stamp[lvl] != ep {
+                self.lbd_stamp[lvl] = ep;
+                lbd += 1;
             }
         }
-        levels.len() as u32
+        lbd
     }
 
-    /// Remove low-quality learned clauses when the database exceeds `learnt_limit`.
-    ///
-    /// A clause is retained if its LBD ≤ 2 (high-quality "glue" clause) or if
-    /// it is currently locked as the reason for a trail assignment. The watch
-    /// lists are rebuilt after deletion to remove stale entries.
     fn maybe_reduce_db(&mut self) {
         if self.db.learnt_count() <= self.learnt_limit {
             return;
         }
-        self.db.reduce_learned(|cr, c| {
-            c.lbd > 2 && self.assignment.reason_of(c.lits[0].var()) != cr.0
+        // Deletion predicate: tier-1 (lbd≤2) never deleted, tier-2 (lbd 3-6) kept
+        // unless stale, tier-3 (lbd>6) always deleted unless it's a reason clause.
+        self.db.reduce_learned(|cr, lbd, activity, lit0| {
+            lbd > 2
+                && self.assignment.reason_of(lit0.var()) != cr.0
+                && (lbd > 6 || activity < 0.0001)
         });
-        self.db.rebuild_watches(&mut self.watches);
+        // Stale watch entries for deleted clauses are purged lazily during BCP
+        // (the propagate() loop checks is_deleted before accessing clause data).
+        // This avoids an O(arena_size) full scan per reduction.
         self.learnt_limit = (self.learnt_limit as f64 * self.learnt_limit_inc) as usize;
     }
 
@@ -708,6 +906,10 @@ impl CdclSolver {
                 *a *= 1e-100;
             }
             self.activity_inc *= 1e-100;
+            self.rebuild_heap();
+        } else {
+            self.heap
+                .push(VsidsEntry { activity: self.activity[var as usize], var });
         }
     }
 
@@ -715,37 +917,517 @@ impl CdclSolver {
         self.activity_inc /= self.activity_decay;
     }
 
+    fn rebuild_heap(&mut self) {
+        self.heap.clear();
+        for var in 1..=self.num_vars {
+            self.heap
+                .push(VsidsEntry { activity: self.activity[var as usize], var });
+        }
+    }
+
+    /// Reschedule all variables that will be unassigned by backtracking to
+    /// `target_level`, then perform the backtrack.
+    fn backtrack_and_reschedule(&mut self, target_level: u32) {
+        let to_reschedule: SmallVec<[Literal; 32]> = self
+            .assignment
+            .trail_from_level(target_level)
+            .iter()
+            .copied()
+            .collect();
+        for lit in to_reschedule {
+            self.heap.push(VsidsEntry {
+                activity: self.activity[lit.var() as usize],
+                var: lit.var(),
+            });
+        }
+        self.assignment.backtrack_to(target_level);
+    }
+
     // -----------------------------------------------------------------------
     // Branching
     // -----------------------------------------------------------------------
 
-    /// VSIDS: pick the highest-activity unassigned variable, positive polarity.
-    fn pick_branch(&self) -> Option<Literal> {
-        (1..=self.num_vars)
-            .filter(|&v| !self.assignment.is_assigned(v))
-            .max_by(|&a, &b| {
-                self.activity[a as usize]
-                    .partial_cmp(&self.activity[b as usize])
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            })
-            .map(Literal::positive)
+    fn pick_branch(&mut self) -> Option<Literal> {
+        loop {
+            let entry = self.heap.pop()?;
+            let var = entry.var;
+            if self.assignment.is_assigned(var) {
+                continue;
+            }
+            if entry.activity < self.activity[var as usize] {
+                continue;
+            }
+            return Some(if self.polarity[var as usize] {
+                Literal::positive(var)
+            } else {
+                Literal::negative(var)
+            });
+        }
     }
 
     // -----------------------------------------------------------------------
-    // Restarts (Luby schedule)
+    // Restarts (Luby schedule + Glucose EMA)
     // -----------------------------------------------------------------------
 
-    fn maybe_restart(&mut self) {
+    /// Returns true when a restart should fire: either Luby schedule is due, or
+    /// the fast LBD EMA has risen above 0.8× the slow EMA (search is thrashing).
+    fn should_restart(&self) -> bool {
         if self.conflicts >= self.next_restart_conflicts {
+            return true;
+        }
+        // EMA restart only fires in Focus mode; Stable relies on Luby schedule.
+        if self.mode != SolverMode::Focus {
+            return false;
+        }
+        // Require at least 500 conflicts since last restart before firing EMA.
+        // The slow EMA (α=1e-5) needs ~70k conflicts to converge; during warm-up
+        // lbd_fast >> lbd_slow always, so the raw ratio check would fire constantly
+        // without this guard.
+        let conflicts_since = self.conflicts.saturating_sub(self.conflicts_at_last_restart);
+        self.lbd_slow_ema > 0.0
+            && conflicts_since >= 500
+            && self.lbd_fast_ema > self.lbd_slow_ema * 0.8
+    }
+
+    fn maybe_restart(&mut self) {
+        if self.should_restart() {
             self.do_restart();
         }
     }
 
     fn do_restart(&mut self) {
-        self.assignment.backtrack_to(self.assumption_floor);
+        // Phase saving: record current polarities before clearing the trail.
+        for &lit in self.assignment.trail() {
+            self.polarity[lit.var() as usize] = lit.is_positive();
+        }
+        // Target phase walk: only in Stable mode so UNSAT instances are not
+        // penalised by local search that can never find a satisfying assignment.
+        if self.mode == SolverMode::Stable && self.assumption_floor == 0 {
+            self.walk_phase();
+        }
+        self.backtrack_and_reschedule(self.assumption_floor);
         self.restarts += 1;
+        self.conflicts_at_last_restart = self.conflicts;
+
+        // Stable/focus mode phase bookkeeping.
+        self.phase_restart_count += 1;
+        if self.phase_restart_count >= PHASE_LEN {
+            self.phase_restart_count = 0;
+            self.mode = match self.mode {
+                SolverMode::Focus => SolverMode::Stable,
+                SolverMode::Stable => SolverMode::Focus,
+            };
+        }
+
+        // Luby schedule: 4× wider intervals in Stable mode so the walk has
+        // more conflicts to work with between restarts.
         let next = luby_next(&mut self.luby_u, &mut self.luby_v);
-        self.next_restart_conflicts = self.conflicts + next * self.luby_scale;
+        let effective_scale = if self.mode == SolverMode::Stable {
+            self.luby_scale * 4
+        } else {
+            self.luby_scale
+        };
+        self.next_restart_conflicts = self.conflicts + next * effective_scale;
+
+        // Run failed literal probing every PROBE_CONFLICT_INTERVAL conflicts.
+        // Tied to conflicts (not restart count) so EMA-frequent restarts don't
+        // cause runaway probe overhead on hard instances.
+        const PROBE_CONFLICT_INTERVAL: u64 = 5000;
+        if self.assumption_floor == 0
+            && self.conflicts.saturating_sub(self.conflicts_at_last_probe)
+                >= PROBE_CONFLICT_INTERVAL
+        {
+            self.conflicts_at_last_probe = self.conflicts;
+            self.inprocess_probe();
+            // Vivify right after probing: both inprocessing passes share the
+            // PROBE_CONFLICT_INTERVAL gate so neither fires more than once per window.
+            if !self.db.has_empty_clause() {
+                self.inprocess_vivify();
+            }
+        }
+
+        // Decay clause activity on restart.
+        self.clause_inc /= self.clause_decay;
+        if self.clause_inc > 1e20 {
+            self.clause_inc = 1.0;
+            self.db.rescale_activities(1e-20);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Inprocessing: vivification (clause strengthening)
+    // -----------------------------------------------------------------------
+
+    /// Strengthen learned clauses by trying to shorten them via BCP.
+    ///
+    /// For each candidate clause C = {l0, l1, …, l_{k-1}} we push ¬l0, ¬l1, …
+    /// one by one at level 1 and propagate.  If a conflict arises, C is subsumed
+    /// (delete it).  If some l_j becomes True, C can be replaced by a shorter
+    /// clause (the assumed-False prefix plus l_j).
+    ///
+    /// Up to MAX_VIVIFY clauses are tried per call.  Called right after
+    /// `inprocess_probe` to amortise the level-0 cost.
+    fn inprocess_vivify(&mut self) {
+        debug_assert_eq!(self.assignment.current_level(), 0);
+        const MAX_VIVIFY: usize = 400;
+
+        // Collect candidates (LBD ≤ 8, size ≥ 3) before mutating the arena.
+        let mut candidates: Vec<(ClauseRef, u32)> = Vec::new();
+        self.db.for_each_clause(3, |cr, lbd, learnt, _| {
+            if learnt && lbd <= 8 {
+                candidates.push((cr, lbd));
+            }
+        });
+
+        let mut tried = 0;
+        for (cr, saved_lbd) in candidates {
+            if tried >= MAX_VIVIFY {
+                break;
+            }
+            if self.db.is_deleted(cr) {
+                continue;
+            }
+            let n = self.db.clause_len(cr);
+            // Copy lits: we need ownership so we can call &mut self methods below.
+            let lits: Vec<Literal> = (0..n).map(|i| self.db.lit_at(cr, i)).collect();
+
+            // Skip if already satisfied at level 0.
+            if lits.iter().any(|&l| {
+                matches!(self.assignment.literal_value(l), Value::True)
+                    && self.assignment.level_of(l.var()) == 0
+            }) {
+                continue;
+            }
+
+            tried += 1;
+            self.assignment.new_decision_level();
+
+            // Track which literals formed the "assumed-False" prefix.
+            let mut assumed: Vec<Literal> = Vec::new();
+            // Result: None=no change, Delete=subsumed, Shorten(v)=replace
+            let mut result: Option<Vec<Literal>> = None;
+
+            'vivify: for i in 0..n - 1 {
+                let lit = lits[i];
+                match self.assignment.literal_value(lit) {
+                    Value::True => {
+                        // lit became True (implied by earlier assumptions).
+                        // Clause shortens to the assumed prefix + this literal.
+                        let mut shorter = assumed.clone();
+                        shorter.push(lit);
+                        result = Some(shorter);
+                        break 'vivify;
+                    }
+                    Value::False => {
+                        // Already forced False; literal is redundant in C.
+                        continue;
+                    }
+                    Value::Undef => {
+                        self.assignment
+                            .assign(lit.negate(), 1, ClauseRef::DECISION.0);
+                        assumed.push(lit);
+                        match self.propagate() {
+                            Some(_) => {
+                                // Conflict: C is subsumed — mark for deletion.
+                                result = Some(Vec::new()); // empty = delete marker
+                                break 'vivify;
+                            }
+                            None => {
+                                // Check if any remaining literal became True.
+                                for j in i + 1..n {
+                                    if matches!(
+                                        self.assignment.literal_value(lits[j]),
+                                        Value::True
+                                    ) {
+                                        let mut shorter = assumed.clone();
+                                        shorter.push(lits[j]);
+                                        result = Some(shorter);
+                                        break 'vivify;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            self.backtrack_and_reschedule(0);
+
+            match result {
+                None => {}
+                Some(new_lits) if new_lits.is_empty() => {
+                    // Subsumed: delete.
+                    self.db.mark_deleted(cr);
+                }
+                Some(new_lits) if new_lits.len() < n => {
+                    self.db.mark_deleted(cr);
+                    let new_lbd = saved_lbd.min(new_lits.len() as u32);
+                    match new_lits.len() {
+                        0 => unreachable!(),
+                        1 => {
+                            let unit = new_lits[0];
+                            match self.assignment.literal_value(unit) {
+                                Value::Undef => {
+                                    self.assignment
+                                        .assign(unit, 0, ClauseRef::DECISION.0);
+                                    if self.propagate().is_some() {
+                                        self.db.set_empty_clause();
+                                        return;
+                                    }
+                                }
+                                Value::False => {
+                                    self.db.set_empty_clause();
+                                    return;
+                                }
+                                Value::True => {}
+                            }
+                        }
+                        2 => {
+                            let new_cr = self.db.add(&new_lits, true, 1);
+                            self.binaries[new_lits[0].negate().raw() as usize]
+                                .push((new_lits[1], new_cr.0));
+                            self.binaries[new_lits[1].negate().raw() as usize]
+                                .push((new_lits[0], new_cr.0));
+                        }
+                        _ => {
+                            let new_cr = self.db.add(&new_lits, true, new_lbd);
+                            self.watches.watch(
+                                new_lits[0].negate(),
+                                new_cr,
+                                new_lits[1],
+                            );
+                            self.watches.watch(
+                                new_lits[1].negate(),
+                                new_cr,
+                                new_lits[0],
+                            );
+                        }
+                    }
+                }
+                Some(_) => {
+                    // Same length or empty: no improvement.
+                }
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Target phase walk (local search to improve polarity table per restart)
+    // -----------------------------------------------------------------------
+
+    /// Greedy WalkSAT-style local search over the current polarity table.
+    ///
+    /// Iterates up to `4 × num_vars` flip steps.  Each step picks a random
+    /// unsatisfied clause and flips the variable in that clause with the lowest
+    /// break count (fewest currently-singleton-satisfied clauses lost).
+    /// The best assignment seen (most clauses satisfied) is committed back to
+    /// `self.polarity` so future decisions are guided toward it.
+    ///
+    /// Called once per restart, after phase saving and before backtracking.
+    /// Has no effect when assumption_floor > 0 (incremental solving context).
+    fn walk_phase(&mut self) {
+        if self.assumption_floor > 0 {
+            return;
+        }
+        let n = self.num_vars as usize;
+        let max_steps = n * 4;
+
+        // Collect all non-deleted clauses (size ≥ 2) into flat storage.
+        // We copy literals out of the arena so we can borrow `self.polarity`
+        // mutably later without fighting the borrow checker.
+        let mut clauses: Vec<Vec<Literal>> = Vec::new();
+        self.db.for_each_clause(2, |_, _, _, lits| {
+            clauses.push(lits.to_vec());
+        });
+        let nc = clauses.len();
+        if nc == 0 {
+            return;
+        }
+
+        // Occurrence lists: literal raw → list of clause indices (u32 to save memory).
+        let lit_cap = 2 * n + 4;
+        let mut occs: Vec<Vec<u32>> = vec![Vec::new(); lit_cap];
+        for (ci, c) in clauses.iter().enumerate() {
+            for &l in c {
+                let raw = l.raw() as usize;
+                if raw < lit_cap {
+                    occs[raw].push(ci as u32);
+                }
+            }
+        }
+
+        // Walk assignment: start from the current saved polarity table.
+        let mut wa: Vec<bool> = self.polarity.clone(); // indexed 0..=n
+
+        // Per-clause satisfaction count (number of true literals).
+        let mut sat_count: Vec<u8> = clauses
+            .iter()
+            .map(|c| {
+                c.iter()
+                    .filter(|&&l| {
+                        let v = l.var() as usize;
+                        if l.is_positive() { wa[v] } else { !wa[v] }
+                    })
+                    .count()
+                    .min(255) as u8
+            })
+            .collect();
+
+        let mut total_sat: usize = sat_count.iter().filter(|&&s| s > 0).count();
+        let mut best_score = total_sat;
+        let mut best_phase = wa.clone();
+
+        // LCG RNG seeded from solver state (deterministic, no std::time).
+        let mut rng: u64 = self.conflicts
+            .wrapping_mul(0x9e3779b97f4a7c15)
+            .wrapping_add((self.restarts as u64).wrapping_mul(0x6c62272e07bb0142));
+
+        for _ in 0..max_steps {
+            // Pick a random clause; retry once if it happens to be satisfied.
+            rng = rng
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            let mut ci = (rng >> 33) as usize % nc;
+            if sat_count[ci] > 0 {
+                rng = rng
+                    .wrapping_mul(6_364_136_223_846_793_005)
+                    .wrapping_add(1_442_695_040_888_963_407);
+                ci = (rng >> 33) as usize % nc;
+                if sat_count[ci] > 0 {
+                    continue;
+                }
+            }
+
+            // Find the variable in this clause with the minimum break count.
+            let clause = &clauses[ci];
+            let mut flip_var = 0usize;
+            let mut min_break = usize::MAX;
+
+            for &l in clause {
+                let v = l.var() as usize;
+                if v == 0 || v > n {
+                    continue;
+                }
+                let cur_lit = if wa[v] {
+                    Literal::positive(v as u32)
+                } else {
+                    Literal::negative(v as u32)
+                };
+                let brk: usize = occs[cur_lit.raw() as usize]
+                    .iter()
+                    .filter(|&&c| sat_count[c as usize] == 1)
+                    .count();
+                if brk < min_break {
+                    min_break = brk;
+                    flip_var = v;
+                }
+                if min_break == 0 {
+                    break;
+                }
+            }
+            if flip_var == 0 {
+                continue;
+            }
+
+            // Perform the flip and update sat_count incrementally.
+            wa[flip_var] = !wa[flip_var];
+            let (gain_lit, lose_lit) = if wa[flip_var] {
+                (
+                    Literal::positive(flip_var as u32),
+                    Literal::negative(flip_var as u32),
+                )
+            } else {
+                (
+                    Literal::negative(flip_var as u32),
+                    Literal::positive(flip_var as u32),
+                )
+            };
+
+            for &c in &occs[gain_lit.raw() as usize] {
+                let c = c as usize;
+                if sat_count[c] == 0 {
+                    total_sat += 1;
+                }
+                sat_count[c] = sat_count[c].saturating_add(1);
+            }
+            for &c in &occs[lose_lit.raw() as usize] {
+                let c = c as usize;
+                if sat_count[c] == 1 {
+                    total_sat -= 1;
+                }
+                sat_count[c] = sat_count[c].saturating_sub(1);
+            }
+
+            if total_sat > best_score {
+                best_score = total_sat;
+                best_phase = wa.clone();
+            }
+        }
+
+        // Commit the best polarity found back to the solver.
+        for v in 1..=n {
+            self.polarity[v] = best_phase[v];
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Inprocessing: failed literal probing
+    // -----------------------------------------------------------------------
+
+    /// Probe each unassigned variable at level 1. If assigning a literal leads
+    /// to a BCP conflict, its negation is forced as a level-0 unit. Discovers
+    /// backbone variables and equivalences cheaply between restarts.
+    ///
+    /// Capped at MAX_PROBES assignments per call to bound overhead.
+    fn inprocess_probe(&mut self) {
+        debug_assert_eq!(self.assignment.current_level(), 0);
+        const MAX_PROBES: u32 = 200;
+        let mut probed = 0u32;
+        for var in 1..=self.num_vars {
+            if probed >= MAX_PROBES {
+                break;
+            }
+            if self.assignment.is_assigned(var) {
+                continue;
+            }
+            for polarity in [true, false] {
+                if self.assignment.is_assigned(var) {
+                    break;
+                }
+                probed += 1;
+                let probe_lit = if polarity {
+                    Literal::positive(var)
+                } else {
+                    Literal::negative(var)
+                };
+                self.assignment.new_decision_level();
+                self.assignment.assign(probe_lit, 1, ClauseRef::DECISION.0);
+                let conflict = self.propagate();
+                if conflict.is_some() {
+                    // Failed literal: probe_lit → contradiction; force its negation.
+                    let forced = probe_lit.negate();
+                    self.backtrack_and_reschedule(0);
+                    match self.assignment.literal_value(forced) {
+                        Value::True => {} // already forced by other means
+                        Value::False => {
+                            // Both polarities lead to contradiction: UNSAT.
+                            self.db.set_empty_clause();
+                            return;
+                        }
+                        Value::Undef => {
+                            self.assignment.assign(forced, 0, ClauseRef::DECISION.0);
+                            if self.propagate().is_some() {
+                                // Level-0 BCP conflict: UNSAT.
+                                self.db.set_empty_clause();
+                                return;
+                            }
+                        }
+                    }
+                } else {
+                    self.backtrack_and_reschedule(0);
+                }
+            }
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -798,17 +1480,13 @@ mod tests {
                 let sat = clause.iter().any(|&lit| {
                     let var = (lit.unsigned_abs() - 1) as u64;
                     let val = (mask >> var) & 1 == 1;
-                    if lit > 0 {
-                        val
-                    } else {
-                        !val
-                    }
+                    if lit > 0 { val } else { !val }
                 });
                 if !sat {
                     continue 'outer;
                 }
             }
-            return true; // all clauses satisfied
+            return true;
         }
         false
     }
@@ -897,7 +1575,6 @@ mod tests {
     // Brute-force oracle comparison on random 3-SAT instances
     // -----------------------------------------------------------------------
 
-    /// Simple LCG for reproducible pseudo-random tests.
     struct Lcg {
         state: u64,
     }
@@ -972,9 +1649,6 @@ mod tests {
         assert_eq!(mismatches, 0, "{mismatches} mismatches in oracle test");
     }
 
-    /// Broader oracle sweep: several variable counts, a range of clause counts,
-    /// and many seeds. For every SAT result the returned model must be a
-    /// complete assignment that satisfies all clauses.
     #[test]
     fn oracle_sweep_broad() {
         let mut rng = Lcg::new(7);
@@ -1025,7 +1699,6 @@ mod tests {
 
     #[test]
     fn solve_with_assumptions_sat() {
-        // (x1 ∨ x2) with assumption ¬x2 forces x1 in any model.
         let clauses = vec![vec![1, 2]];
         let mut s = dimacs_to_solver(2, &clauses);
         match s.solve(&[Literal::negative(2)], u64::MAX) {
@@ -1043,7 +1716,6 @@ mod tests {
 
     #[test]
     fn solve_with_assumptions_unsat() {
-        // Unit clause (x1) contradicts assumption ¬x1.
         let mut s = dimacs_to_solver(1, &[vec![1]]);
         assert_eq!(
             s.solve(&[Literal::negative(1)], u64::MAX),
@@ -1051,7 +1723,6 @@ mod tests {
         );
     }
 
-    /// Brute-force oracle for solving under a literal assumption set.
     fn brute_force_assumptions(
         num_vars: u32,
         clauses: &[Vec<i32>],
@@ -1059,7 +1730,6 @@ mod tests {
     ) -> bool {
         'outer: for mask in 0u64..(1u64 << num_vars) {
             for &a in assumptions {
-                // Bit mask is 0-indexed; DIMACS variables are 1-indexed.
                 let var = (a.var() - 1) as u64;
                 let val = (mask >> var) & 1 == 1;
                 let ok = if a.is_positive() { val } else { !val };
@@ -1071,11 +1741,7 @@ mod tests {
                 let sat = clause.iter().any(|&lit| {
                     let var = (lit.unsigned_abs() - 1) as u64;
                     let val = (mask >> var) & 1 == 1;
-                    if lit > 0 {
-                        val
-                    } else {
-                        !val
-                    }
+                    if lit > 0 { val } else { !val }
                 });
                 if !sat {
                     continue 'outer;
@@ -1086,8 +1752,6 @@ mod tests {
         false
     }
 
-    /// Random assumptions must agree with the brute-force oracle, and any SAT
-    /// model must satisfy the assumptions and all clauses.
     #[test]
     fn oracle_with_random_assumptions() {
         let mut rng = Lcg::new(99);
@@ -1125,15 +1789,12 @@ mod tests {
         }
     }
 
-    /// Incremental use: several `solve` calls with different assumption sets
-    /// on one solver must give the same answers as independent solves.
     #[test]
     fn repeated_assumption_solves_are_independent() {
         // (x1 ∨ x2) ∧ (¬x1 ∨ x3)
         let clauses = vec![vec![1, 2], vec![-1, 3]];
         let mut s = dimacs_to_solver(3, &clauses);
 
-        // Under ¬x2: x1 forced; then x3 forced.
         match s.solve(&[Literal::negative(2)], u64::MAX) {
             SolveResult::Sat(m) => {
                 assert!(m.satisfies(Literal::positive(1)));
@@ -1142,13 +1803,11 @@ mod tests {
             other => panic!("expected SAT, got {other:?}"),
         }
 
-        // Under ¬x1 ∧ ¬x2: (x1∨x2) has both literals false.
         assert_eq!(
             s.solve(&[Literal::negative(1), Literal::negative(2)], u64::MAX),
             SolveResult::Unsat
         );
 
-        // Back to a satisfiable assumption set; must still work after UNSAT.
         match s.solve(&[Literal::positive(3)], u64::MAX) {
             SolveResult::Sat(m) => {
                 assert!(m.satisfies(Literal::positive(3)));
@@ -1158,16 +1817,11 @@ mod tests {
         }
     }
 
-    /// G0 gate: imported clauses integrate into a live solver at level 0 with
-    /// no structural changes to the trail or clause database.
     #[test]
     fn import_clauses_mid_search_g0() {
-        // (¬x1 ∨ ¬x2 ∨ ¬x3) is SAT and solved without any conflicts, leaving
-        // the solver in a clean, re-usable state.
         let mut s = dimacs_to_solver(3, &[vec![-1, -2, -3]]);
         assert!(matches!(s.solve(&[], 0), SolveResult::Sat(_)));
 
-        // Import unit clauses x1, x2, x3 mid-solve — the clause is falsified.
         let units: Vec<Vec<Literal>> = vec![vec![1], vec![2], vec![3]]
             .into_iter()
             .map(|c| c.into_iter().map(|l| Literal::positive(l as u32)).collect())
@@ -1211,20 +1865,17 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Pigeonhole: pigeons(n) = n+1 pigeons in n holes — classic hard UNSAT
+    // Pigeonhole: n+1 pigeons in n holes — classic hard UNSAT
     // -----------------------------------------------------------------------
 
-    /// Pigeonhole principle: variable(p, h) = pigeon p in hole h.
     fn pigeonhole(pigeons: u32, holes: u32) -> (u32, Vec<Vec<i32>>) {
         let var = |p: u32, h: u32| -> i32 { (p * holes + h + 1) as i32 };
         let num_vars = pigeons * holes;
         let mut clauses: Vec<Vec<i32>> = Vec::new();
 
-        // Each pigeon must be in at least one hole.
         for p in 0..pigeons {
             clauses.push((0..holes).map(|h| var(p, h)).collect());
         }
-        // No two pigeons share a hole.
         for h in 0..holes {
             for p1 in 0..pigeons {
                 for p2 in (p1 + 1)..pigeons {
@@ -1259,21 +1910,14 @@ mod tests {
         }
     }
 
-    /// Regression (hard instance panic): learnt-clause reduction must neither
-    /// delete a clause still used as a trail reason nor leave stale entries in
-    /// the two-watched-literal index. PHP(8,7) is large enough to trigger
-    /// several reductions before the root conflict is found.
     #[test]
     fn reduction_keeps_reasons_and_watches_live() {
         let (nv, clauses) = pigeonhole(8, 7);
         let mut s = dimacs_to_solver(nv, &clauses);
-        // Collapse the learnt limit so reduction fires almost immediately.
         s.learnt_limit = 4;
         assert_eq!(s.solve(&[], u64::MAX), SolveResult::Unsat);
     }
 
-    /// A wall-clock deadline must stop the search with `Unknown` even when the
-    /// conflict budget is unlimited.
     #[test]
     fn deadline_returns_unknown_with_propagation() {
         let (nv, clauses) = pigeonhole(10, 9);
@@ -1282,8 +1926,8 @@ mod tests {
             .checked_add(std::time::Duration::from_millis(30))
             .unwrap();
         match s.solve_with_deadline(&[], u64::MAX, Some(deadline)) {
-            SolveResult::Unknown => {} // expected: too hard for 30ms
-            SolveResult::Unsat => {}   // allowed if the search completed
+            SolveResult::Unknown => {}
+            SolveResult::Unsat => {}
             SolveResult::Sat(_) => panic!("PHP(10,9) is UNSAT"),
         }
     }
