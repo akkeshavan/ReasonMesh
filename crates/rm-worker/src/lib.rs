@@ -310,6 +310,17 @@ fn finish_unsat(
     }
 }
 
+/// D1-7: SplitMix64 hash-mix so worker seeds are well-distributed even when
+/// `cfg.seed` is small (e.g. 0 or 1). A simple additive offset `seed + i`
+/// produces correlated seeds that share initial RNG state; the hash breaks
+/// that correlation.
+fn splitmix64(mut x: u64) -> u64 {
+    x = x.wrapping_add(0x9e3779b97f4a7c15);
+    x = (x ^ (x >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
+    x = (x ^ (x >> 27)).wrapping_mul(0x94d049bb133111eb);
+    x ^ (x >> 31)
+}
+
 fn run_worker(
     worker: WorkerId,
     problem: &Problem,
@@ -320,7 +331,8 @@ fn run_worker(
     deadline: Option<Duration>,
 ) -> WorkerOutcome {
     let solver = problem.solver();
-    let work = make_work_unit_with(assumptions.clone(), cfg.seed + worker.0 as u64);
+    let seed = splitmix64(cfg.seed ^ ((worker.0 as u64).wrapping_shl(32)));
+    let work = make_work_unit_with(assumptions.clone(), seed);
     let mut reasoner = CdclReasoner::with_import_policy(
         ReasonerId(worker.0),
         worker,

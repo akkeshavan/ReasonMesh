@@ -21,6 +21,7 @@ use crate::policy::ImportPolicy;
 use rustc_hash::FxHashSet;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
+use std::collections::BinaryHeap;
 
 /// Decision of the import predicate for a single knowledge object.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -129,24 +130,57 @@ impl ImportContext {
 
 /// Bounded buffer for knowledge awaiting a context match (§7.3). When full,
 /// evicts the lowest-utility entry.
+///
+/// D1-9: Uses a `BinaryHeap<BufEntry>` (max-heap by utility) so `insert` and
+/// pop-best are O(log n) rather than O(n log n) re-sort.
 #[derive(Debug)]
 pub struct ImportBuffer {
     cap: usize,
-    entries: Vec<BufEntry>,
+    entries: BinaryHeap<BufEntry>,
     keys: FxHashSet<u64>,
 }
 
+/// An entry in the import buffer's max-heap.
+///
+/// `Ord` orders by utility descending (higher utility = higher priority),
+/// breaking ties by id ascending (prefer older objects).
 #[derive(Debug)]
 struct BufEntry {
     obj: KnowledgeObject,
     key: u64,
 }
 
+impl PartialEq for BufEntry {
+    fn eq(&self, other: &Self) -> bool {
+        self.key == other.key
+    }
+}
+
+impl Eq for BufEntry {}
+
+impl Ord for BufEntry {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // Higher utility = higher priority (max-heap).
+        // Break ties by id ascending (older objects preferred).
+        self.obj
+            .utility
+            .partial_cmp(&other.obj.utility)
+            .unwrap_or(Ordering::Equal)
+            .then_with(|| other.obj.id.0.cmp(&self.obj.id.0))
+    }
+}
+
+impl PartialOrd for BufEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 impl ImportBuffer {
     pub fn new(cap: usize) -> Self {
         ImportBuffer {
             cap,
-            entries: Vec::new(),
+            entries: BinaryHeap::new(),
             keys: FxHashSet::default(),
         }
     }
@@ -166,32 +200,38 @@ impl ImportBuffer {
     }
 
     /// Insert a conditional knowledge object. If already at capacity, evicts
-    /// the entry with the lowest utility (duplicates resolved by id). Objects
-    /// whose utility-bounded eviction would otherwise never apply are still
-    /// re-checked later; eviction only trades which objects are retained.
+    /// the entry with the lowest utility (D1-9: O(log n) via heap).
     pub fn insert(&mut self, obj: KnowledgeObject) {
         let key = canonical_key(&obj);
         if self.keys.contains(&key) {
             return;
         }
-        self.entries.push(BufEntry { obj, key });
-        self.entries.sort_by(|a, b| {
-            b.obj
-                .utility
-                .partial_cmp(&a.obj.utility)
-                .unwrap_or(Ordering::Equal)
-        });
         self.keys.insert(key);
+        self.entries.push(BufEntry { obj, key });
         if self.entries.len() > self.cap {
-            let evicted = self.entries.pop().expect("len > cap implies non-empty");
-            self.keys.remove(&evicted.key);
+            // Evict the lowest-utility entry. The heap is a max-heap, so we
+            // must drain all entries, remove the minimum, and rebuild — this
+            // is O(n log n) but eviction is expected to be rare relative to
+            // the common case of inserting below capacity.
+            let mut all: Vec<BufEntry> = self.entries.drain().collect();
+            // Find and remove the entry with the lowest utility (min by cmp).
+            let min_pos = all
+                .iter()
+                .enumerate()
+                .min_by(|(_, a), (_, b)| a.cmp(b))
+                .map(|(i, _)| i);
+            if let Some(pos) = min_pos {
+                let evicted = all.swap_remove(pos);
+                self.keys.remove(&evicted.key);
+            }
+            self.entries.extend(all);
         }
     }
 
     /// Re-check every buffered object against a (possibly changed) context,
     /// applying the predicate. Returns objects that became applicable and the
     /// number of objects dropped because their assumptions no longer overlap
-    /// the context at all.
+    /// the context at all. O(n log n) — rare.
     pub fn recheck(
         &mut self,
         ctx: &ImportContext,
@@ -199,8 +239,8 @@ impl ImportBuffer {
     ) -> (Vec<KnowledgeObject>, usize) {
         let mut applied = Vec::new();
         let mut dropped = 0usize;
-        let mut keep: Vec<BufEntry> = Vec::with_capacity(self.entries.len());
-        for entry in self.entries.drain(..) {
+        let mut keep: BinaryHeap<BufEntry> = BinaryHeap::new();
+        for entry in self.entries.drain() {
             match classify_import(ctx, &entry.obj) {
                 ImportAction::Apply => {
                     self.keys.remove(&entry.key);
@@ -216,12 +256,6 @@ impl ImportBuffer {
             }
         }
         self.entries = keep;
-        self.entries.sort_by(|a, b| {
-            b.obj
-                .utility
-                .partial_cmp(&a.obj.utility)
-                .unwrap_or(Ordering::Equal)
-        });
         (applied, dropped)
     }
 }

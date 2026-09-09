@@ -4,8 +4,8 @@
   "solver_version": "0.1.0",
   "git_revision": "unknown",
   "run_wall": {
-    "secs": 114,
-    "nanos": 350140583
+    "secs": 100,
+    "nanos": 159507791
   },
   "problems": [
     {
@@ -15,7 +15,7 @@
       "matches_expected": true,
       "wall": {
         "secs": 0,
-        "nanos": 758955125
+        "nanos": 765707858
       },
       "timed_out": false,
       "conflicts": 397040,
@@ -42,13 +42,13 @@
       "matches_expected": true,
       "wall": {
         "secs": 13,
-        "nanos": 153006209
+        "nanos": 116084879
       },
       "timed_out": false,
-      "conflicts": 2220800,
-      "decisions": 2284365,
-      "propagations": 27911570,
-      "restarts": 5281,
+      "conflicts": 2448878,
+      "decisions": 2520301,
+      "propagations": 30905144,
+      "restarts": 5984,
       "knowledge": {
         "exported": 0,
         "published": 0,
@@ -69,13 +69,13 @@
       "matches_expected": false,
       "wall": {
         "secs": 60,
-        "nanos": 474749875
+        "nanos": 416155895
       },
       "timed_out": true,
-      "conflicts": 4691314,
-      "decisions": 4806806,
-      "propagations": 61669091,
-      "restarts": 10060,
+      "conflicts": 5739858,
+      "decisions": 5876519,
+      "propagations": 74510403,
+      "restarts": 12270,
       "knowledge": {
         "exported": 0,
         "published": 0,
@@ -94,14 +94,14 @@
       "outcome": "Unsat",
       "matches_expected": true,
       "wall": {
-        "secs": 13,
-        "nanos": 63174667
+        "secs": 8,
+        "nanos": 720485607
       },
       "timed_out": false,
-      "conflicts": 1831784,
-      "decisions": 2204376,
-      "propagations": 75679779,
-      "restarts": 4093,
+      "conflicts": 1865424,
+      "decisions": 2242816,
+      "propagations": 76898936,
+      "restarts": 4208,
       "knowledge": {
         "exported": 0,
         "published": 0,
@@ -120,14 +120,14 @@
       "outcome": "Unsat",
       "matches_expected": true,
       "wall": {
-        "secs": 26,
-        "nanos": 899816375
+        "secs": 17,
+        "nanos": 140872312
       },
       "timed_out": false,
-      "conflicts": 2717831,
-      "decisions": 3264353,
-      "propagations": 113344738,
-      "restarts": 6371,
+      "conflicts": 2693383,
+      "decisions": 3227681,
+      "propagations": 112786633,
+      "restarts": 6298,
       "knowledge": {
         "exported": 0,
         "published": 0,
@@ -146,9 +146,9 @@
     "problems": 5,
     "solved": 4,
     "unsolved": 1,
-    "solved_total_ns": 53874952376,
-    "par2_ns": 173874952376,
-    "par10_ns": 653874952376,
+    "solved_total_ns": 39743150656,
+    "par2_ns": 159743150656,
+    "par10_ns": 639743150656,
     "timeout_ns": 60000000000
   }
 }

@@ -1,0 +1,98 @@
+{
+    "schema_version": 1,
+    "experiment": "g4-distributed",
+    "description": "4-node AKX TCP sharing vs single-node 16w baseline",
+    "timeout_secs": 180,
+    "problems": [
+        {
+            "name": "php-9-8",
+            "single_node": {
+                "workers": 16,
+                "verdict": "s UNSATISFIABLE",
+                "wall_secs": 0.852,
+                "wall_ms": 852
+            },
+            "distributed": {
+                "nodes": 4,
+                "workers_per_node": 4,
+                "total_workers": 16,
+                "verdict": "s UNSATISFIABLE",
+                "wall_secs": 13.038,
+                "wall_ms": 13038
+            },
+            "speedup": 0.065
+        },
+        {
+            "name": "php-10-9",
+            "single_node": {
+                "workers": 16,
+                "verdict": "s UNSATISFIABLE",
+                "wall_secs": 12.203,
+                "wall_ms": 12203
+            },
+            "distributed": {
+                "nodes": 4,
+                "workers_per_node": 4,
+                "total_workers": 16,
+                "verdict": "s UNSATISFIABLE",
+                "wall_secs": 29.937,
+                "wall_ms": 29937
+            },
+            "speedup": 0.408
+        },
+        {
+            "name": "r3sat-238-1",
+            "single_node": {
+                "workers": 16,
+                "verdict": "s SATISFIABLE",
+                "wall_secs": 0.09,
+                "wall_ms": 90
+            },
+            "distributed": {
+                "nodes": 4,
+                "workers_per_node": 4,
+                "total_workers": 16,
+                "verdict": "s SATISFIABLE",
+                "wall_secs": 13.038,
+                "wall_ms": 13038
+            },
+            "speedup": 0.007
+        },
+        {
+            "name": "r3sat-238-2",
+            "single_node": {
+                "workers": 16,
+                "verdict": "s UNSATISFIABLE",
+                "wall_secs": 7.434,
+                "wall_ms": 7434
+            },
+            "distributed": {
+                "nodes": 4,
+                "workers_per_node": 4,
+                "total_workers": 16,
+                "verdict": "s UNSATISFIABLE",
+                "wall_secs": 13.037,
+                "wall_ms": 13037
+            },
+            "speedup": 0.57
+        },
+        {
+            "name": "r3sat-242-1",
+            "single_node": {
+                "workers": 16,
+                "verdict": "s SATISFIABLE",
+                "wall_secs": 0.098,
+                "wall_ms": 98
+            },
+            "distributed": {
+                "nodes": 4,
+                "workers_per_node": 4,
+                "total_workers": 16,
+                "verdict": "s SATISFIABLE",
+                "wall_secs": 13.036,
+                "wall_ms": 13036
+            },
+            "speedup": 0.008
+        }
+    ]
+}

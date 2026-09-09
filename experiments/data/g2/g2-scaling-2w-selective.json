@@ -4,8 +4,8 @@
   "solver_version": "0.1.0",
   "git_revision": "unknown",
   "run_wall": {
-    "secs": 84,
-    "nanos": 631558000
+    "secs": 91,
+    "nanos": 664450356
   },
   "problems": [
     {
@@ -15,7 +15,7 @@
       "matches_expected": true,
       "wall": {
         "secs": 0,
-        "nanos": 499352333
+        "nanos": 699359214
       },
       "timed_out": false,
       "conflicts": 82146,
@@ -41,22 +41,22 @@
       "expected": "unsat",
       "matches_expected": true,
       "wall": {
-        "secs": 8,
-        "nanos": 473013042
+        "secs": 10,
+        "nanos": 621859061
       },
       "timed_out": false,
-      "conflicts": 530655,
-      "decisions": 546615,
-      "propagations": 6666678,
-      "restarts": 1272,
+      "conflicts": 515002,
+      "decisions": 530331,
+      "propagations": 6450522,
+      "restarts": 1219,
       "knowledge": {
-        "exported": 10274,
-        "published": 10274,
-        "received": 10274,
-        "applied": 10270,
+        "exported": 10018,
+        "published": 10018,
+        "received": 10018,
+        "applied": 10017,
         "buffered": 0,
-        "discarded": 4,
-        "bus_published": 10274,
+        "discarded": 1,
+        "bus_published": 10018,
         "bus_deduplicated": 0,
         "bus_evicted": 0,
         "bus_backpressure": 0
@@ -69,21 +69,21 @@
       "matches_expected": false,
       "wall": {
         "secs": 60,
-        "nanos": 365592750
+        "nanos": 444561440
       },
       "timed_out": true,
-      "conflicts": 1693610,
-      "decisions": 1735415,
-      "propagations": 21363499,
-      "restarts": 3609,
+      "conflicts": 1436025,
+      "decisions": 1472282,
+      "propagations": 18611089,
+      "restarts": 3067,
       "knowledge": {
-        "exported": 2880,
-        "published": 2880,
-        "received": 2880,
-        "applied": 2880,
+        "exported": 1827,
+        "published": 1827,
+        "received": 1827,
+        "applied": 1827,
         "buffered": 0,
         "discarded": 0,
-        "bus_published": 2880,
+        "bus_published": 1827,
         "bus_deduplicated": 0,
         "bus_evicted": 0,
         "bus_backpressure": 0
@@ -94,8 +94,8 @@
       "outcome": "Unsat",
       "matches_expected": true,
       "wall": {
-        "secs": 6,
-        "nanos": 42212542
+        "secs": 8,
+        "nanos": 75952319
       },
       "timed_out": false,
       "conflicts": 406066,
@@ -120,23 +120,23 @@
       "outcome": "Unsat",
       "matches_expected": true,
       "wall": {
-        "secs": 9,
-        "nanos": 251031667
+        "secs": 11,
+        "nanos": 822313571
       },
       "timed_out": false,
-      "conflicts": 520291,
-      "decisions": 619895,
-      "propagations": 21520050,
-      "restarts": 1239,
+      "conflicts": 508555,
+      "decisions": 606325,
+      "propagations": 21054097,
+      "restarts": 1198,
       "knowledge": {
-        "exported": 7916,
-        "published": 7864,
-        "received": 7864,
-        "applied": 7864,
+        "exported": 7207,
+        "published": 7156,
+        "received": 7156,
+        "applied": 7156,
         "buffered": 0,
         "discarded": 0,
-        "bus_published": 7864,
-        "bus_deduplicated": 52,
+        "bus_published": 7156,
+        "bus_deduplicated": 51,
         "bus_evicted": 0,
         "bus_backpressure": 0
       }
@@ -146,9 +146,9 @@
     "problems": 5,
     "solved": 4,
     "unsolved": 1,
-    "solved_total_ns": 24265609584,
-    "par2_ns": 144265609584,
-    "par10_ns": 624265609584,
+    "solved_total_ns": 31219484165,
+    "par2_ns": 151219484165,
+    "par10_ns": 631219484165,
     "timeout_ns": 60000000000
   }
 }

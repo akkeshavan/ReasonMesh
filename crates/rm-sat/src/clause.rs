@@ -41,6 +41,7 @@ impl ClauseRef {
 pub struct ClauseArena {
     data: Vec<u32>,
     learnt_count: usize,
+    problem_count: usize,
     has_empty: bool,
 }
 
@@ -49,6 +50,7 @@ impl ClauseArena {
         ClauseArena {
             data: Vec::with_capacity(1 << 16),
             learnt_count: 0,
+            problem_count: 0,
             has_empty: false,
         }
     }
@@ -177,6 +179,8 @@ impl ClauseArena {
         self.data.push(0u32); // activity = 0.0
         if learnt {
             self.learnt_count += 1;
+        } else {
+            self.problem_count += 1;
         }
         ClauseRef(offset)
     }
@@ -187,6 +191,11 @@ impl ClauseArena {
 
     pub fn learnt_count(&self) -> usize {
         self.learnt_count
+    }
+
+    /// Number of non-learned (problem) clauses currently in the arena.
+    pub fn problem_count(&self) -> usize {
+        self.problem_count
     }
 
     pub fn set_empty_clause(&mut self) {
@@ -292,7 +301,7 @@ impl ClauseArena {
     pub fn for_each_clause(
         &self,
         min_len: usize,
-        mut f: impl FnMut(ClauseRef, u32, bool, &[Literal]),
+        f: impl FnMut(ClauseRef, u32, bool, &[Literal]),
     ) {
         self.for_each_clause_from(0, min_len, f);
     }

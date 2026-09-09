@@ -126,16 +126,26 @@ impl PartitionTree {
         self.nodes.is_empty()
     }
 
-    /// All nodes currently `Open` (dispatchable), oldest-first by id.
+    /// All nodes currently `Open` (dispatchable).
+    ///
+    /// D1-8: Sorted deepest-cube-first (more constraints ⇒ smaller subproblem
+    /// ⇒ higher priority). Ties broken by id ascending (oldest first at the
+    /// same depth).
     pub fn open_nodes(&self) -> Vec<NodeId> {
-        let mut ids: Vec<NodeId> = self
+        let mut nodes: Vec<(&NodeId, &PartitionNode)> = self
             .nodes
             .iter()
             .filter(|(_, n)| n.status == NodeStatus::Open)
-            .map(|(id, _)| *id)
             .collect();
-        ids.sort();
-        ids
+        // Sort deepest first; break ties by id (oldest first at same depth).
+        nodes.sort_by(|(a_id, a_node), (b_id, b_node)| {
+            b_node
+                .cube
+                .len()
+                .cmp(&a_node.cube.len())
+                .then(a_id.cmp(b_id))
+        });
+        nodes.into_iter().map(|(id, _)| *id).collect()
     }
 
     /// Leaf nodes that are not yet terminal (Open or Assigned).

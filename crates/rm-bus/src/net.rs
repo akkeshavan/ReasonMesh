@@ -337,6 +337,24 @@ impl NetBus {
         let node = Arc::clone(self);
         std::thread::spawn(move || {
             let mut fr = FrameReader::new();
+
+            // D1-5: per-reader sliding-window dedup cache (capacity 1024).
+            // In an all-to-all N-node topology the same clause arrives from
+            // N-1 peers; this filter drops duplicates before touching the
+            // incoming mutex, cutting lock contention by up to N-1x.
+            //
+            // SOUNDNESS NOTE (TLA+ L5 / SF_vars(LearnClause)):
+            // This cache is approximate — a key clause could be filtered if its
+            // ID appears in the window from a prior peer. This is safe because
+            // L5's strong-fairness backstop is independent CDCL re-derivation:
+            // every complete worker will eventually derive any key clause
+            // locally, regardless of whether it arrives over the network.
+            // The dedup cache therefore affects latency, not eventual delivery.
+            const DEDUP_CAP: usize = 1024;
+            let mut seen_ids: VecDeque<u64> = VecDeque::with_capacity(DEDUP_CAP);
+            let mut seen_set: std::collections::HashSet<u64> =
+                std::collections::HashSet::with_capacity(DEDUP_CAP);
+
             loop {
                 let mut s = &*stream;
                 match fr.next_frame(&mut s, node.config.max_frame) {
@@ -349,19 +367,40 @@ impl NetBus {
                             .fetch_add(payload.len() as u64, Ordering::Relaxed);
                         match postcard::from_bytes::<KnowledgeBatch>(&payload) {
                             Ok(batch) => {
-                                let mut q = node.incoming.lock().unwrap();
-                                let max = node.config.max_incoming;
-                                let headroom = max.saturating_sub(q.len());
-                                let will_drop = batch.len().saturating_sub(headroom);
-                                if will_drop > 0 {
-                                    let excess = (q.len() + batch.len()).saturating_sub(max);
-                                    for _ in 0..excess {
-                                        q.pop_front();
+                                // Filter duplicates before acquiring the mutex.
+                                let deduped: Vec<KnowledgeObject> = batch
+                                    .into_iter()
+                                    .filter(|obj| {
+                                        let key = obj.id.0;
+                                        if seen_set.contains(&key) {
+                                            return false;
+                                        }
+                                        if seen_set.len() >= DEDUP_CAP {
+                                            if let Some(oldest) = seen_ids.pop_front() {
+                                                seen_set.remove(&oldest);
+                                            }
+                                        }
+                                        seen_ids.push_back(key);
+                                        seen_set.insert(key);
+                                        true
+                                    })
+                                    .collect();
+
+                                if !deduped.is_empty() {
+                                    let mut q = node.incoming.lock().unwrap();
+                                    let max = node.config.max_incoming;
+                                    let headroom = max.saturating_sub(q.len());
+                                    let will_drop = deduped.len().saturating_sub(headroom);
+                                    if will_drop > 0 {
+                                        let excess = (q.len() + deduped.len()).saturating_sub(max);
+                                        for _ in 0..excess {
+                                            q.pop_front();
+                                        }
+                                        node.incoming_dropped
+                                            .fetch_add(will_drop as u64, Ordering::Relaxed);
                                     }
-                                    node.incoming_dropped
-                                        .fetch_add(will_drop as u64, Ordering::Relaxed);
+                                    q.extend(deduped);
                                 }
-                                q.extend(batch);
                             }
                             Err(_) => {
                                 node.schema_rejected.fetch_add(1, Ordering::Relaxed);

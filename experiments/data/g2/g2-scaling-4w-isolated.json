@@ -4,8 +4,8 @@
   "solver_version": "0.1.0",
   "git_revision": "unknown",
   "run_wall": {
-    "secs": 94,
-    "nanos": 307745625
+    "secs": 100,
+    "nanos": 52346929
   },
   "problems": [
     {
@@ -15,7 +15,7 @@
       "matches_expected": true,
       "wall": {
         "secs": 0,
-        "nanos": 565887917
+        "nanos": 770633354
       },
       "timed_out": false,
       "conflicts": 198520,
@@ -41,14 +41,14 @@
       "expected": "unsat",
       "matches_expected": true,
       "wall": {
-        "secs": 11,
-        "nanos": 798711875
+        "secs": 14,
+        "nanos": 978659347
       },
       "timed_out": false,
-      "conflicts": 1289092,
-      "decisions": 1326550,
-      "propagations": 16074872,
-      "restarts": 3063,
+      "conflicts": 1253074,
+      "decisions": 1289836,
+      "propagations": 15713041,
+      "restarts": 3004,
       "knowledge": {
         "exported": 0,
         "published": 0,
@@ -69,13 +69,13 @@
       "matches_expected": false,
       "wall": {
         "secs": 60,
-        "nanos": 352638792
+        "nanos": 465173869
       },
       "timed_out": true,
-      "conflicts": 3166786,
-      "decisions": 3241292,
-      "propagations": 41221671,
-      "restarts": 6732,
+      "conflicts": 2874010,
+      "decisions": 2942819,
+      "propagations": 37415208,
+      "restarts": 6134,
       "knowledge": {
         "exported": 0,
         "published": 0,
@@ -94,8 +94,8 @@
       "outcome": "Unsat",
       "matches_expected": true,
       "wall": {
-        "secs": 7,
-        "nanos": 470218583
+        "secs": 8,
+        "nanos": 614786712
       },
       "timed_out": false,
       "conflicts": 932712,
@@ -120,14 +120,14 @@
       "outcome": "Unsat",
       "matches_expected": true,
       "wall": {
-        "secs": 14,
-        "nanos": 119977625
+        "secs": 15,
+        "nanos": 222260826
       },
       "timed_out": false,
-      "conflicts": 1334307,
-      "decisions": 1597985,
-      "propagations": 55935487,
-      "restarts": 3085,
+      "conflicts": 1263644,
+      "decisions": 1516046,
+      "propagations": 52921363,
+      "restarts": 3058,
       "knowledge": {
         "exported": 0,
         "published": 0,
@@ -146,9 +146,9 @@
     "problems": 5,
     "solved": 4,
     "unsolved": 1,
-    "solved_total_ns": 33954796000,
-    "par2_ns": 153954796000,
-    "par10_ns": 633954796000,
+    "solved_total_ns": 39586340239,
+    "par2_ns": 159586340239,
+    "par10_ns": 639586340239,
     "timeout_ns": 60000000000
   }
 }

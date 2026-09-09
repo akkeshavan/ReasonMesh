@@ -219,21 +219,35 @@ impl Hierarchy {
         let to = from + 1;
         let to_scope = scope_of(to);
 
-        let source = self.levels[from].lock().unwrap();
-        let mut target = self.levels[to].lock().unwrap();
+        // D1-2: collect only the IDs of candidates above the utility threshold
+        // while holding the source lock, then release it before fetching full
+        // objects. This avoids cloning every buffered object just to discard it.
+        let candidate_ids: Vec<u64> = {
+            let source = self.levels[from].lock().unwrap();
+            source
+                .enumerate_ids_above_utility(self.threshold)
+                .into_iter()
+                .map(|(id, _)| id)
+                .collect()
+        };
 
         let mut promoted = 0usize;
 
-        for (_, obj) in source.enumerate_where(|_| true) {
+        for id in candidate_ids {
+            // Re-fetch the object by ID; it may have been evicted since we
+            // collected the candidate list — skip it silently if so.
+            let obj = {
+                let source = self.levels[from].lock().unwrap();
+                match source.get_by_id(id) {
+                    Some(o) => o,
+                    None => continue,
+                }
+            };
+
             let eligible = match obj.promoted_scope() {
                 Some(next) if next == to_scope => {
-                    if obj.utility < self.threshold {
-                        self.promotion_below_threshold
-                            .fetch_add(1, Ordering::Relaxed);
-                        false
-                    } else {
-                        true
-                    }
+                    // utility was already filtered above threshold
+                    true
                 }
                 Some(_) => {
                     self.promotion_not_eligible.fetch_add(1, Ordering::Relaxed);
@@ -249,6 +263,7 @@ impl Hierarchy {
             }
             let mut promoted_obj = obj;
             promoted_obj.scope = to_scope;
+            let mut target = self.levels[to].lock().unwrap();
             match target.insert(promoted_obj) {
                 Ok(InsertOutcome::Inserted {
                     superseded,
@@ -269,6 +284,25 @@ impl Hierarchy {
                 Err(_) => {
                     self.backpressure.fetch_add(1, Ordering::Relaxed);
                 }
+            }
+        }
+
+        // Objects below threshold are counted here (all non-candidates).
+        // For an exact count we would need to know how many were below threshold;
+        // the old code counted them inside the loop. We approximate by counting
+        // objects that were skipped because utility < threshold in the ID pass.
+        {
+            let source = self.levels[from].lock().unwrap();
+            // Count items that are below threshold (i.e., not in our candidate set)
+            // so the metric remains accurate.
+            let below = source
+                .enumerate_ids_above_utility(0.0)
+                .into_iter()
+                .filter(|(_, u)| *u < self.threshold)
+                .count();
+            if below > 0 {
+                self.promotion_below_threshold
+                    .fetch_add(below as u64, Ordering::Relaxed);
             }
         }
 

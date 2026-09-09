@@ -1,0 +1,764 @@
+{
+  "schema_version": 1,
+  "manifest": "g2-vs-z3",
+  "solver_version": "0.1.0",
+  "git_revision": "unknown",
+  "run_wall": {
+    "secs": 547,
+    "nanos": 298683417
+  },
+  "problems": [
+    {
+      "name": "php-7-6",
+      "outcome": "Unsat",
+      "expected": "unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 4032792
+      },
+      "timed_out": false,
+      "conflicts": 2576,
+      "decisions": 3300,
+      "propagations": 27196,
+      "restarts": 4,
+      "knowledge": {
+        "exported": 0,
+        "published": 0,
+        "received": 0,
+        "applied": 0,
+        "buffered": 0,
+        "discarded": 0,
+        "bus_published": 0,
+        "bus_deduplicated": 0,
+        "bus_evicted": 0,
+        "bus_backpressure": 0
+      },
+      "baselines": [
+        {
+          "name": "cadical-1t",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 55035042
+          },
+          "timed_out": false
+        },
+        {
+          "name": "z3-1t",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 55037667
+          },
+          "timed_out": false
+        }
+      ]
+    },
+    {
+      "name": "php-8-7",
+      "outcome": "Unsat",
+      "expected": "unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 164282542
+      },
+      "timed_out": false,
+      "conflicts": 40260,
+      "decisions": 48407,
+      "propagations": 453720,
+      "restarts": 72,
+      "knowledge": {
+        "exported": 424,
+        "published": 424,
+        "received": 424,
+        "applied": 424,
+        "buffered": 0,
+        "discarded": 0,
+        "bus_published": 424,
+        "bus_deduplicated": 0,
+        "bus_evicted": 0,
+        "bus_backpressure": 0
+      },
+      "baselines": [
+        {
+          "name": "cadical-1t",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 53444875
+          },
+          "timed_out": false
+        },
+        {
+          "name": "z3-1t",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 55035959
+          },
+          "timed_out": false
+        }
+      ]
+    },
+    {
+      "name": "php-9-8",
+      "outcome": "Unsat",
+      "expected": "unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 1,
+        "nanos": 8205500
+      },
+      "timed_out": false,
+      "conflicts": 188268,
+      "decisions": 222095,
+      "propagations": 2403612,
+      "restarts": 120,
+      "knowledge": {
+        "exported": 727,
+        "published": 723,
+        "received": 723,
+        "applied": 723,
+        "buffered": 0,
+        "discarded": 0,
+        "bus_published": 723,
+        "bus_deduplicated": 4,
+        "bus_evicted": 0,
+        "bus_backpressure": 0
+      },
+      "baselines": [
+        {
+          "name": "cadical-1t",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 367341750
+          },
+          "timed_out": false
+        },
+        {
+          "name": "z3-1t",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 159862667
+          },
+          "timed_out": false
+        }
+      ]
+    },
+    {
+      "name": "php-10-9",
+      "outcome": "Unsat",
+      "expected": "unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 6,
+        "nanos": 986844083
+      },
+      "timed_out": false,
+      "conflicts": 744647,
+      "decisions": 879231,
+      "propagations": 9327411,
+      "restarts": 257,
+      "knowledge": {
+        "exported": 214,
+        "published": 214,
+        "received": 214,
+        "applied": 214,
+        "buffered": 0,
+        "discarded": 0,
+        "bus_published": 214,
+        "bus_deduplicated": 0,
+        "bus_evicted": 0,
+        "bus_backpressure": 0
+      },
+      "baselines": [
+        {
+          "name": "cadical-1t",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 3,
+            "nanos": 824720750
+          },
+          "timed_out": false
+        },
+        {
+          "name": "z3-1t",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 1,
+            "nanos": 562479292
+          },
+          "timed_out": false
+        }
+      ]
+    },
+    {
+      "name": "php-11-10",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 60,
+        "nanos": 101307417
+      },
+      "timed_out": true,
+      "conflicts": 2371362,
+      "decisions": 2893577,
+      "propagations": 32245309,
+      "restarts": 753,
+      "knowledge": {
+        "exported": 34,
+        "published": 34,
+        "received": 34,
+        "applied": 34,
+        "buffered": 0,
+        "discarded": 0,
+        "bus_published": 34,
+        "bus_deduplicated": 0,
+        "bus_evicted": 0,
+        "bus_backpressure": 0
+      },
+      "baselines": [
+        {
+          "name": "cadical-1t",
+          "outcome": "Unknown",
+          "wall": {
+            "secs": 60,
+            "nanos": 15074708
+          },
+          "timed_out": true
+        },
+        {
+          "name": "z3-1t",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 5,
+            "nanos": 241788541
+          },
+          "timed_out": false
+        }
+      ]
+    },
+    {
+      "name": "php-12-11",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 60,
+        "nanos": 101069667
+      },
+      "timed_out": true,
+      "conflicts": 2602829,
+      "decisions": 3260201,
+      "propagations": 37275005,
+      "restarts": 782,
+      "knowledge": {
+        "exported": 0,
+        "published": 0,
+        "received": 0,
+        "applied": 0,
+        "buffered": 0,
+        "discarded": 0,
+        "bus_published": 0,
+        "bus_deduplicated": 0,
+        "bus_evicted": 0,
+        "bus_backpressure": 0
+      },
+      "baselines": [
+        {
+          "name": "cadical-1t",
+          "outcome": "Unknown",
+          "wall": {
+            "secs": 60,
+            "nanos": 29269875
+          },
+          "timed_out": true
+        },
+        {
+          "name": "z3-1t",
+          "outcome": "Unknown",
+          "wall": {
+            "secs": 60,
+            "nanos": 20535583
+          },
+          "timed_out": true
+        }
+      ]
+    },
+    {
+      "name": "php-13-12",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 60,
+        "nanos": 198965458
+      },
+      "timed_out": true,
+      "conflicts": 2682149,
+      "decisions": 3427447,
+      "propagations": 38578240,
+      "restarts": 813,
+      "knowledge": {
+        "exported": 0,
+        "published": 0,
+        "received": 0,
+        "applied": 0,
+        "buffered": 0,
+        "discarded": 0,
+        "bus_published": 0,
+        "bus_deduplicated": 0,
+        "bus_evicted": 0,
+        "bus_backpressure": 0
+      },
+      "baselines": [
+        {
+          "name": "cadical-1t",
+          "outcome": "Unknown",
+          "wall": {
+            "secs": 60,
+            "nanos": 51232917
+          },
+          "timed_out": true
+        },
+        {
+          "name": "z3-1t",
+          "outcome": "Unknown",
+          "wall": {
+            "secs": 60,
+            "nanos": 23315500
+          },
+          "timed_out": true
+        }
+      ]
+    },
+    {
+      "name": "r3sat-150-r425",
+      "outcome": "Sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 57342167
+      },
+      "timed_out": false,
+      "conflicts": 17744,
+      "decisions": 23752,
+      "propagations": 523808,
+      "restarts": 40,
+      "knowledge": {
+        "exported": 1628,
+        "published": 1628,
+        "received": 1628,
+        "applied": 1628,
+        "buffered": 0,
+        "discarded": 0,
+        "bus_published": 1628,
+        "bus_deduplicated": 0,
+        "bus_evicted": 0,
+        "bus_backpressure": 0
+      },
+      "baselines": [
+        {
+          "name": "cadical-1t",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 55756458
+          },
+          "timed_out": false
+        },
+        {
+          "name": "z3-1t",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 52186709
+          },
+          "timed_out": false
+        }
+      ]
+    },
+    {
+      "name": "r3sat-180-r425",
+      "outcome": "Sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 5308541
+      },
+      "timed_out": false,
+      "conflicts": 1480,
+      "decisions": 2340,
+      "propagations": 53108,
+      "restarts": 4,
+      "knowledge": {
+        "exported": 0,
+        "published": 0,
+        "received": 0,
+        "applied": 0,
+        "buffered": 0,
+        "discarded": 0,
+        "bus_published": 0,
+        "bus_deduplicated": 0,
+        "bus_evicted": 0,
+        "bus_backpressure": 0
+      },
+      "baselines": [
+        {
+          "name": "cadical-1t",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60024208
+          },
+          "timed_out": false
+        },
+        {
+          "name": "z3-1t",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 50316292
+          },
+          "timed_out": false
+        }
+      ]
+    },
+    {
+      "name": "r3sat-210-r425",
+      "outcome": "Sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 43344458
+      },
+      "timed_out": false,
+      "conflicts": 13276,
+      "decisions": 18876,
+      "propagations": 505836,
+      "restarts": 32,
+      "knowledge": {
+        "exported": 636,
+        "published": 636,
+        "received": 636,
+        "applied": 636,
+        "buffered": 0,
+        "discarded": 0,
+        "bus_published": 636,
+        "bus_deduplicated": 0,
+        "bus_evicted": 0,
+        "bus_backpressure": 0
+      },
+      "baselines": [
+        {
+          "name": "cadical-1t",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 56805959
+          },
+          "timed_out": false
+        },
+        {
+          "name": "z3-1t",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 52804958
+          },
+          "timed_out": false
+        }
+      ]
+    },
+    {
+      "name": "r3sat-238-1",
+      "outcome": "Sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 100917000
+      },
+      "timed_out": false,
+      "conflicts": 25518,
+      "decisions": 36769,
+      "propagations": 1038112,
+      "restarts": 59,
+      "knowledge": {
+        "exported": 1360,
+        "published": 1360,
+        "received": 1360,
+        "applied": 1360,
+        "buffered": 0,
+        "discarded": 0,
+        "bus_published": 1360,
+        "bus_deduplicated": 0,
+        "bus_evicted": 0,
+        "bus_backpressure": 0
+      },
+      "baselines": [
+        {
+          "name": "cadical-1t",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 234231375
+          },
+          "timed_out": false
+        },
+        {
+          "name": "z3-1t",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 1,
+            "nanos": 983536833
+          },
+          "timed_out": false
+        }
+      ]
+    },
+    {
+      "name": "r3sat-238-2",
+      "outcome": "Unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 9,
+        "nanos": 980362959
+      },
+      "timed_out": false,
+      "conflicts": 490477,
+      "decisions": 589075,
+      "propagations": 18990140,
+      "restarts": 245,
+      "knowledge": {
+        "exported": 21090,
+        "published": 20911,
+        "received": 20911,
+        "applied": 20904,
+        "buffered": 0,
+        "discarded": 7,
+        "bus_published": 20911,
+        "bus_deduplicated": 179,
+        "bus_evicted": 0,
+        "bus_backpressure": 0
+      },
+      "baselines": [
+        {
+          "name": "cadical-1t",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 2,
+            "nanos": 92367875
+          },
+          "timed_out": false
+        },
+        {
+          "name": "z3-1t",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 2,
+            "nanos": 247072958
+          },
+          "timed_out": false
+        }
+      ]
+    },
+    {
+      "name": "r3sat-240-r425",
+      "outcome": "Unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 16,
+        "nanos": 782089333
+      },
+      "timed_out": false,
+      "conflicts": 675340,
+      "decisions": 811052,
+      "propagations": 26597053,
+      "restarts": 252,
+      "knowledge": {
+        "exported": 22574,
+        "published": 22562,
+        "received": 22562,
+        "applied": 22560,
+        "buffered": 0,
+        "discarded": 2,
+        "bus_published": 22562,
+        "bus_deduplicated": 12,
+        "bus_evicted": 0,
+        "bus_backpressure": 0
+      },
+      "baselines": [
+        {
+          "name": "cadical-1t",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 3,
+            "nanos": 173485417
+          },
+          "timed_out": false
+        },
+        {
+          "name": "z3-1t",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 4,
+            "nanos": 649250875
+          },
+          "timed_out": false
+        }
+      ]
+    },
+    {
+      "name": "r3sat-242-1",
+      "outcome": "Sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 47215250
+      },
+      "timed_out": false,
+      "conflicts": 14840,
+      "decisions": 21001,
+      "propagations": 609022,
+      "restarts": 36,
+      "knowledge": {
+        "exported": 496,
+        "published": 369,
+        "received": 369,
+        "applied": 363,
+        "buffered": 0,
+        "discarded": 6,
+        "bus_published": 369,
+        "bus_deduplicated": 127,
+        "bus_evicted": 0,
+        "bus_backpressure": 0
+      },
+      "baselines": [
+        {
+          "name": "cadical-1t",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 106730292
+          },
+          "timed_out": false
+        },
+        {
+          "name": "z3-1t",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 378017959
+          },
+          "timed_out": false
+        }
+      ]
+    },
+    {
+      "name": "r3sat-242-2",
+      "outcome": "Sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 1,
+        "nanos": 441033625
+      },
+      "timed_out": false,
+      "conflicts": 176741,
+      "decisions": 219962,
+      "propagations": 7230391,
+      "restarts": 120,
+      "knowledge": {
+        "exported": 7678,
+        "published": 7564,
+        "received": 7564,
+        "applied": 7564,
+        "buffered": 0,
+        "discarded": 0,
+        "bus_published": 7564,
+        "bus_deduplicated": 114,
+        "bus_evicted": 0,
+        "bus_backpressure": 0
+      },
+      "baselines": [
+        {
+          "name": "cadical-1t",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 1,
+            "nanos": 329770500
+          },
+          "timed_out": false
+        },
+        {
+          "name": "z3-1t",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 1,
+            "nanos": 380147375
+          },
+          "timed_out": false
+        }
+      ]
+    },
+    {
+      "name": "r3sat-246-1",
+      "outcome": "Sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 252958250
+      },
+      "timed_out": false,
+      "conflicts": 56380,
+      "decisions": 75712,
+      "propagations": 2439252,
+      "restarts": 80,
+      "knowledge": {
+        "exported": 2804,
+        "published": 2804,
+        "received": 2804,
+        "applied": 2804,
+        "buffered": 0,
+        "discarded": 0,
+        "bus_published": 2804,
+        "bus_deduplicated": 0,
+        "bus_evicted": 0,
+        "bus_backpressure": 0
+      },
+      "baselines": [
+        {
+          "name": "cadical-1t",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 429600042
+          },
+          "timed_out": false
+        },
+        {
+          "name": "z3-1t",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 110048500
+          },
+          "timed_out": false
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "problems": 16,
+    "solved": 13,
+    "unsolved": 3,
+    "solved_total_ns": 36873936500,
+    "par2_ns": 396873936500,
+    "par10_ns": 1836873936500,
+    "timeout_ns": 60000000000
+  }
+}

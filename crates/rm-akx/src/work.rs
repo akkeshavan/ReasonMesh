@@ -28,9 +28,11 @@ pub struct WorkBudget {
 
 impl Default for WorkBudget {
     fn default() -> Self {
+        // D1-6: lower defaults to match Glucose-Syrup inter-sharing frequency.
+        // Workers that find a solution still short-circuit immediately.
         WorkBudget {
-            max_conflicts: 5_000,
-            max_ms: 500,
+            max_conflicts: 2_000,
+            max_ms: 100,
         }
     }
 }

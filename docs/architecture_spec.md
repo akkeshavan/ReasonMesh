@@ -529,11 +529,16 @@ experimental workers remain incomplete.
 
 ## 9.1 CDCL(T) worker requirements
 
-- Two-watched-literal Boolean propagation, first-UIP conflict analysis,
-  non-chronological backjumping, and restart policies.
-- Modular branching heuristics (VSIDS/EVSIDS and later alternatives).
-- Clause quality metrics including LBD, activity, size, age, origin, and
-  observed import utility.
+- Two-watched-literal Boolean propagation (copy-down two-pointer BCP loop),
+  first-UIP conflict analysis with binary self-subsumption minimization,
+  non-chronological backjumping with optional chronological backtracking
+  (conservative one-level variant; applied when backjump gap ≥ 5 levels),
+  and restart policies (Luby sequence, default scale 512).
+- Modular branching heuristics (VSIDS with lazy-deletion max-heap and phase
+  saving; EVSIDS and later alternatives).
+- Clause quality metrics including LBD, clause activity bumping/decay, size,
+  age, origin, and observed import utility; deletion predicate combines LBD
+  and activity thresholds.
 - Incremental assumption solving so that cube-based work units do not require
   full solver reconstruction.
 - Import queues separated from propagation-critical structures; imported
@@ -686,9 +691,11 @@ pub enum BusError {
 }
 ```
 
-Initial implementations: in-process bounded MPSC queues and TCP/QUIC network
-transport. RDMA/MPI can be explored later; solver semantics must not depend
-on either.
+Initial implementations: in-process sharded bus (16 independent MPSC queues,
+routed by `conclusion_key % 16` to preserve per-conclusion dedup and
+unconditional-supersedes-conditional semantics without cross-shard
+coordination) and TCP/QUIC network transport. RDMA/MPI can be explored later;
+solver semantics must not depend on either.
 
 ## 12.2 Communication policies
 
@@ -712,9 +719,9 @@ Each scope level maintains a bounded ring buffer:
 | Scope | Default buffer limit | Eviction policy |
 |---|---|---|
 | Worker-local | 64 MB | LRU by last-access time |
-| Node | 256 MB | Lowest utility score first |
-| Cluster | 1 GB | Lowest utility score; then oldest |
-| Global | Configurable | Lowest utility score; then oldest |
+| Node | 256 MB | Lowest utility score first (min-heap, O(log n) amortized) |
+| Cluster | 1 GB | Lowest utility score; then oldest (min-heap, O(log n) amortized) |
+| Global | Configurable | Lowest utility score; then oldest (min-heap, O(log n) amortized) |
 
 When a buffer is full, the incoming item is compared against the lowest-utility
 item in the buffer:

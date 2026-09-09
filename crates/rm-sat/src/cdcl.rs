@@ -88,6 +88,21 @@ impl Ord for VsidsEntry {
 }
 
 // ---------------------------------------------------------------------------
+// BCP branch-frequency counters
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct BcpStats {
+    pub binary_checks: u64,
+    pub watch_entries_visited: u64,
+    pub blocker_hits: u64,
+    pub clause_fetches: u64,
+    pub new_watch_found: u64,
+    pub unit_props: u64,
+    pub bcp_conflicts: u64,
+}
+
+// ---------------------------------------------------------------------------
 // Solver
 // ---------------------------------------------------------------------------
 
@@ -139,6 +154,15 @@ pub struct CdclSolver {
     pub decisions: u64,
     /// Number of chronological backtracks (S1-7).
     pub chrono_bts: u64,
+
+    // BCP branch counters (always enabled; single-cycle increments don't move the needle)
+    pub bcp_binary_checks: u64,     // total binary-clause implication checks
+    pub bcp_watch_visits: u64,      // total watch-list entries visited
+    pub bcp_blocker_hits: u64,      // blocker was True → clause skipped entirely
+    pub bcp_clause_fetches: u64,    // fell through to arena access (blocker miss)
+    pub bcp_new_watch: u64,         // found a new non-false watch literal
+    pub bcp_unit_props: u64,        // clause became unit → forced an assignment
+    pub bcp_conflicts: u64,         // clause became conflicting
 
     /// Decision level of the first assumption pushed by the current `solve` call.
     base_level: u32,
@@ -213,6 +237,13 @@ impl CdclSolver {
             restarts: 0,
             decisions: 0,
             chrono_bts: 0,
+            bcp_binary_checks: 0,
+            bcp_watch_visits: 0,
+            bcp_blocker_hits: 0,
+            bcp_clause_fetches: 0,
+            bcp_new_watch: 0,
+            bcp_unit_props: 0,
+            bcp_conflicts: 0,
             base_level: 0,
             assumption_floor: 0,
             learned_outbox: Vec::new(),
@@ -235,6 +266,19 @@ impl CdclSolver {
     /// Number of variables in the formula (index 0 is unused).
     pub fn num_vars(&self) -> u32 {
         self.num_vars
+    }
+
+    /// BCP branch-frequency counters accumulated over the entire solve.
+    pub fn bcp_stats(&self) -> BcpStats {
+        BcpStats {
+            binary_checks: self.bcp_binary_checks,
+            watch_entries_visited: self.bcp_watch_visits,
+            blocker_hits: self.bcp_blocker_hits,
+            clause_fetches: self.bcp_clause_fetches,
+            new_watch_found: self.bcp_new_watch,
+            unit_props: self.bcp_unit_props,
+            bcp_conflicts: self.bcp_conflicts,
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -535,6 +579,7 @@ impl CdclSolver {
 
             // Binary clause fast path.
             let n_bin = self.binaries[p.raw() as usize].len();
+            self.bcp_binary_checks += n_bin as u64;
             for bi in 0..n_bin {
                 let (impl_lit, reason_raw) = self.binaries[p.raw() as usize][bi];
                 match self.assignment.literal_value(impl_lit) {
@@ -552,6 +597,7 @@ impl CdclSolver {
             // Regular watch list (3+ literal clauses).
             let mut wlist = std::mem::take(self.watches.get_mut(p));
             let n = wlist.len();
+            self.bcp_watch_visits += n as u64;
             let (mut i, mut j) = (0usize, 0usize);
             let mut conflict = None;
 
@@ -569,10 +615,14 @@ impl CdclSolver {
                 // Blockers may be stale, but a stale True blocker still implies
                 // the literal is in the clause and is True, so skipping is safe.
                 if self.assignment.literal_value(blocker) == Value::True {
+                    self.bcp_blocker_hits += 1;
                     wlist[j] = (cr, blocker);
                     j += 1;
                     continue;
                 }
+
+                // Fell through: must load the clause from the arena.
+                self.bcp_clause_fetches += 1;
 
                 // Ensure lits[1] is the watch that just became False (p = lits[1].negate()).
                 if self.db.lit_at(cr, 0).negate() == p {
@@ -601,6 +651,7 @@ impl CdclSolver {
                     }
                 }
                 if found_new {
+                    self.bcp_new_watch += 1;
                     continue;
                 }
 
@@ -610,10 +661,12 @@ impl CdclSolver {
 
                 match self.assignment.literal_value(other) {
                     Value::Undef => {
+                        self.bcp_unit_props += 1;
                         self.assignment
                             .assign(other, self.assignment.current_level(), cr.0);
                     }
                     Value::False => {
+                        self.bcp_conflicts += 1;
                         while i < n {
                             wlist[j] = wlist[i];
                             j += 1;
@@ -915,9 +968,7 @@ impl CdclSolver {
                 && self.assignment.reason_of(lit0.var()) != cr.0
                 && (lbd > 6 || activity < 0.0001)
         });
-        // Stale watch entries for deleted clauses are purged lazily during BCP
-        // (the propagate() loop checks is_deleted before accessing clause data).
-        // This avoids an O(arena_size) full scan per reduction.
+        // Stale watch entries for deleted clauses are purged lazily during BCP.
         self.learnt_limit = (self.learnt_limit as f64 * self.learnt_limit_inc) as usize;
     }
 
@@ -1068,20 +1119,21 @@ impl CdclSolver {
         };
         self.next_restart_conflicts = self.conflicts + next * effective_scale;
 
-        // Run failed literal probing every PROBE_CONFLICT_INTERVAL conflicts.
+        // Run inprocessing every INPROCESS_INTERVAL conflicts (probe → vivify → subsume).
         // Tied to conflicts (not restart count) so EMA-frequent restarts don't
-        // cause runaway probe overhead on hard instances.
-        const PROBE_CONFLICT_INTERVAL: u64 = 5000;
+        // cause runaway overhead on hard instances.
+        const INPROCESS_INTERVAL: u64 = 2000;
         if self.assumption_floor == 0
             && self.conflicts.saturating_sub(self.conflicts_at_last_probe)
-                >= PROBE_CONFLICT_INTERVAL
+                >= INPROCESS_INTERVAL
         {
             self.conflicts_at_last_probe = self.conflicts;
             self.inprocess_probe();
-            // Vivify right after probing: both inprocessing passes share the
-            // PROBE_CONFLICT_INTERVAL gate so neither fires more than once per window.
             if !self.db.has_empty_clause() {
                 self.inprocess_vivify();
+            }
+            if !self.db.has_empty_clause() {
+                self.inprocess_subsume();
             }
         }
 
@@ -1097,26 +1149,33 @@ impl CdclSolver {
     // Inprocessing: vivification (clause strengthening)
     // -----------------------------------------------------------------------
 
-    /// Strengthen learned clauses by trying to shorten them via BCP.
+    /// Strengthen clauses by trying to shorten them via BCP.
     ///
     /// For each candidate clause C = {l0, l1, …, l_{k-1}} we push ¬l0, ¬l1, …
     /// one by one at level 1 and propagate.  If a conflict arises, C is subsumed
     /// (delete it).  If some l_j becomes True, C can be replaced by a shorter
     /// clause (the assumed-False prefix plus l_j).
     ///
-    /// Up to MAX_VIVIFY clauses are tried per call.  Called right after
-    /// `inprocess_probe` to amortise the level-0 cost.
+    /// Candidates are sorted by LBD ascending so the most useful clauses are
+    /// processed first within the budget.  Non-learnt clauses (BVE resolvents,
+    /// short problem clauses) are included at LBD ≤ 4 — they often have the
+    /// lowest LBD and highest leverage.
     fn inprocess_vivify(&mut self) {
         debug_assert_eq!(self.assignment.current_level(), 0);
-        const MAX_VIVIFY: usize = 400;
+        const MAX_VIVIFY: usize = 2000;
 
-        // Collect candidates (LBD ≤ 8, size ≥ 3) before mutating the arena.
+        // Collect LEARNT candidates (size ≥ 3, LBD ≤ 8) sorted by LBD ascending.
+        // Only learnt clauses are vivified: vivifying problem clauses via level-1
+        // propagation chains that go through learned clauses is unsound when those
+        // learned clauses are later deleted by reduction.
         let mut candidates: Vec<(ClauseRef, u32)> = Vec::new();
         self.db.for_each_clause(3, |cr, lbd, learnt, _| {
             if learnt && lbd <= 8 {
                 candidates.push((cr, lbd));
             }
         });
+        // Sort by LBD ascending so the highest-leverage clauses are tried first.
+        candidates.sort_unstable_by_key(|&(_, lbd)| lbd);
 
         let mut tried = 0;
         for (cr, saved_lbd) in candidates {
@@ -1251,6 +1310,117 @@ impl CdclSolver {
     }
 
     // -----------------------------------------------------------------------
+    // Inprocessing: forward subsumption elimination
+    // -----------------------------------------------------------------------
+
+    /// Remove clauses that are subsumed by a strictly shorter clause.
+    ///
+    /// For each clause C (iterated shortest-first), look up every clause D that
+    /// shares at least one literal with C.  If C ⊆ D (every literal of C occurs
+    /// in D) and |D| > |C|, delete D — it is redundant.
+    ///
+    /// A 64-bit signature (bitmask of var % 64) pre-filters candidates so the
+    /// full subset check only runs when the signature is compatible.  Caps at
+    /// MAX_CHECKS candidate pairs per call to bound wall-clock cost.
+    fn inprocess_subsume(&mut self) {
+        debug_assert_eq!(self.assignment.current_level(), 0);
+        const MAX_CHECKS: usize = 10_000;
+
+        let lit_cap = (self.num_vars * 2 + 2) as usize;
+
+        // Collect all non-deleted clauses ≥ 2 with their signature and length.
+        let mut entries: Vec<(ClauseRef, usize, u64)> = Vec::new();
+        self.db.for_each_clause(2, |cr, _, _, lits| {
+            let mut sig: u64 = 0;
+            for &l in lits {
+                sig |= 1u64 << (l.var() % 64);
+            }
+            entries.push((cr, lits.len(), sig));
+        });
+        // Shorter clauses first: they are potential subsumers.
+        entries.sort_unstable_by_key(|&(_, len, _)| len);
+
+        // Build occurrence lists: literal raw index → indices into `entries`.
+        let mut occs: Vec<Vec<usize>> = vec![Vec::new(); lit_cap];
+        for (ei, &(cr, len, _)) in entries.iter().enumerate() {
+            for i in 0..len {
+                let raw = self.db.lit_at(cr, i).raw() as usize;
+                if raw < lit_cap {
+                    occs[raw].push(ei);
+                }
+            }
+        }
+
+        let mut checks = 0usize;
+        let mut any_deleted = false;
+
+        'outer: for ei in 0..entries.len() {
+            let (cr_c, len_c, sig_c) = entries[ei];
+            if self.db.is_deleted(cr_c) {
+                continue;
+            }
+            // Collect lits of C (copy out to avoid borrow conflict).
+            let lits_c: SmallVec<[Literal; 16]> =
+                (0..len_c).map(|i| self.db.lit_at(cr_c, i)).collect();
+
+            // Choose the literal in C with the smallest occurrence list as pivot.
+            let pivot_raw = lits_c
+                .iter()
+                .map(|l| l.raw() as usize)
+                .filter(|&r| r < lit_cap)
+                .min_by_key(|&r| occs[r].len())
+                .unwrap_or(usize::MAX);
+            if pivot_raw == usize::MAX {
+                continue;
+            }
+
+            for &ej in &occs[pivot_raw] {
+                if ej <= ei {
+                    continue; // only check strictly larger entries
+                }
+                let (cr_d, len_d, sig_d) = entries[ej];
+                if len_d <= len_c {
+                    continue;
+                }
+                if self.db.is_deleted(cr_d) {
+                    continue;
+                }
+                if sig_c & sig_d != sig_c {
+                    continue; // signature says C cannot be a subset of D
+                }
+
+                // A learned clause must never subsume a problem clause: the
+                // learned clause may be deleted by reduction, which would make
+                // the problem clause necessary again — but it's already gone.
+                if self.db.is_learnt(cr_c) && !self.db.is_learnt(cr_d) {
+                    continue;
+                }
+
+                checks += 1;
+                if checks > MAX_CHECKS {
+                    break 'outer;
+                }
+
+                // Full subset check: every literal of C must appear in D.
+                let lits_d: SmallVec<[Literal; 16]> =
+                    (0..len_d).map(|i| self.db.lit_at(cr_d, i)).collect();
+                if lits_c.iter().all(|&l| lits_d.contains(&l)) {
+                    self.db.mark_deleted(cr_d);
+                    any_deleted = true;
+                }
+            }
+        }
+
+        // BCP handles deleted watch entries lazily, so no rebuild needed unless
+        // we also need deterministic watch counts.  A rebuild here keeps the watch
+        // list tight and avoids accumulating stale entries across many inprocessing
+        // rounds.
+        if any_deleted {
+            self.db.rebuild_watches(&mut self.watches);
+        }
+    }
+
+    // -----------------------------------------------------------------------
     // Target phase walk (local search to improve polarity table per restart)
     // -----------------------------------------------------------------------
 
@@ -1269,7 +1439,7 @@ impl CdclSolver {
             return;
         }
         let n = self.num_vars as usize;
-        let max_steps = n * 4;
+        let max_steps = n * 16;
 
         // Collect all non-deleted clauses (size ≥ 2) into flat storage.
         // We copy literals out of the arena so we can borrow `self.polarity`
@@ -1337,8 +1507,48 @@ impl CdclSolver {
                 }
             }
 
-            // Find the variable in this clause with the minimum break count.
+            // 15% noise: pick a random literal from the clause instead of
+            // greedily picking the minimum break-count variable.  This lets
+            // WalkSAT escape local optima that have no zero-break flip.
+            rng = rng
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            let noise = (rng >> 33) % 100 < 15;
             let clause = &clauses[ci];
+
+            if noise {
+                rng = rng
+                    .wrapping_mul(6_364_136_223_846_793_005)
+                    .wrapping_add(1_442_695_040_888_963_407);
+                let pick = (rng >> 33) as usize % clause.len();
+                let v = clause[pick].var() as usize;
+                if v == 0 || v > n {
+                    continue;
+                }
+                wa[v] = !wa[v];
+                let (gain_lit, lose_lit) = if wa[v] {
+                    (Literal::positive(v as u32), Literal::negative(v as u32))
+                } else {
+                    (Literal::negative(v as u32), Literal::positive(v as u32))
+                };
+                for &c in &occs[gain_lit.raw() as usize] {
+                    let c = c as usize;
+                    if sat_count[c] == 0 { total_sat += 1; }
+                    sat_count[c] = sat_count[c].saturating_add(1);
+                }
+                for &c in &occs[lose_lit.raw() as usize] {
+                    let c = c as usize;
+                    if sat_count[c] == 1 { total_sat -= 1; }
+                    sat_count[c] = sat_count[c].saturating_sub(1);
+                }
+                if total_sat > best_score {
+                    best_score = total_sat;
+                    best_phase = wa.clone();
+                }
+                continue;
+            }
+
+            // Find the variable in this clause with the minimum break count.
             let mut flip_var = 0usize;
             let mut min_break = usize::MAX;
 
@@ -1415,56 +1625,67 @@ impl CdclSolver {
 
     /// Probe each unassigned variable at level 1. If assigning a literal leads
     /// to a BCP conflict, its negation is forced as a level-0 unit. Discovers
-    /// backbone variables and equivalences cheaply between restarts.
+    /// backbone variables cheaply between restarts.
     ///
-    /// Capped at MAX_PROBES assignments per call to bound overhead.
+    /// Runs up to MAX_ROUNDS passes; each pass probes up to MAX_PROBES_PER_ROUND
+    /// variables. Stops early when no new unit is discovered (fixpoint).
     fn inprocess_probe(&mut self) {
         debug_assert_eq!(self.assignment.current_level(), 0);
-        const MAX_PROBES: u32 = 200;
-        let mut probed = 0u32;
-        for var in 1..=self.num_vars {
-            if probed >= MAX_PROBES {
-                break;
-            }
-            if self.assignment.is_assigned(var) {
-                continue;
-            }
-            for polarity in [true, false] {
-                if self.assignment.is_assigned(var) {
+        const MAX_PROBES_PER_ROUND: u32 = 400;
+        const MAX_ROUNDS: u32 = 3;
+
+        for _ in 0..MAX_ROUNDS {
+            let trail_len_before = self.assignment.trail().len();
+            let mut probed = 0u32;
+
+            for var in 1..=self.num_vars {
+                if probed >= MAX_PROBES_PER_ROUND {
                     break;
                 }
-                probed += 1;
-                let probe_lit = if polarity {
-                    Literal::positive(var)
-                } else {
-                    Literal::negative(var)
-                };
-                self.assignment.new_decision_level();
-                self.assignment.assign(probe_lit, 1, ClauseRef::DECISION.0);
-                let conflict = self.propagate();
-                if conflict.is_some() {
-                    // Failed literal: probe_lit → contradiction; force its negation.
-                    let forced = probe_lit.negate();
-                    self.backtrack_and_reschedule(0);
-                    match self.assignment.literal_value(forced) {
-                        Value::True => {} // already forced by other means
-                        Value::False => {
-                            // Both polarities lead to contradiction: UNSAT.
-                            self.db.set_empty_clause();
-                            return;
-                        }
-                        Value::Undef => {
-                            self.assignment.assign(forced, 0, ClauseRef::DECISION.0);
-                            if self.propagate().is_some() {
-                                // Level-0 BCP conflict: UNSAT.
+                if self.assignment.is_assigned(var) {
+                    continue;
+                }
+                for polarity in [true, false] {
+                    if self.assignment.is_assigned(var) {
+                        break;
+                    }
+                    probed += 1;
+                    let probe_lit = if polarity {
+                        Literal::positive(var)
+                    } else {
+                        Literal::negative(var)
+                    };
+                    self.assignment.new_decision_level();
+                    self.assignment.assign(probe_lit, 1, ClauseRef::DECISION.0);
+                    let conflict = self.propagate();
+                    if conflict.is_some() {
+                        // Failed literal: probe_lit → contradiction; force its negation.
+                        let forced = probe_lit.negate();
+                        self.backtrack_and_reschedule(0);
+                        match self.assignment.literal_value(forced) {
+                            Value::True => {} // already forced by other means
+                            Value::False => {
+                                // Both polarities lead to contradiction: UNSAT.
                                 self.db.set_empty_clause();
                                 return;
                             }
+                            Value::Undef => {
+                                self.assignment.assign(forced, 0, ClauseRef::DECISION.0);
+                                if self.propagate().is_some() {
+                                    self.db.set_empty_clause();
+                                    return;
+                                }
+                            }
                         }
+                    } else {
+                        self.backtrack_and_reschedule(0);
                     }
-                } else {
-                    self.backtrack_and_reschedule(0);
                 }
+            }
+
+            // Fixpoint: no new level-0 units derived this round.
+            if self.assignment.trail().len() == trail_len_before {
+                break;
             }
         }
     }

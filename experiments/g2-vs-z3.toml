@@ -1,0 +1,110 @@
+# G2 comparison: ReasonMesh 4-worker selective portfolio vs. CaDiCaL 3.0 and Z3 5.1
+# (both single-threaded).
+#
+# CaDiCaL is the primary SAT-layer comparison (SAT competition winner, state of the
+# art CDCL).  Z3 is included as the dominant SMT solver whose internal SAT engine
+# (also CDCL-based) is world-class.  This is the primary external comparison for
+# the paper (§18).
+#
+# Problems: seven PHP pigeonhole instances (all UNSAT) plus nine random 3-SAT
+# instances at/above the phase transition (n=150..246, ratio≈4.25).
+schema_version = 1
+name = "g2-vs-z3"
+description = "G2: ReasonMesh 4w-selective vs. CaDiCaL 3.0 and Z3 5.1 on PHP + random-3-SAT"
+
+[solver]
+workers = 4
+seed = 1
+deterministic = false
+clause_sharing = true
+export_min_utility = 0.25
+import_min_utility = 0.143
+max_conflicts_per_problem = 5000000
+timeout_secs = 60
+
+[output]
+dir = "results/g2/vs-z3"
+trace = false
+
+[[baselines]]
+name = "cadical-1t"
+binary = "cadical"
+
+[[baselines]]
+name = "z3-1t"
+binary = "z3"
+
+# --- PHP pigeonhole (all UNSAT) ---
+
+[[problems]]
+name = "php-7-6"
+file = "../benchmarks/g1/php-7-6.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "php-8-7"
+file = "../benchmarks/g1/php-8-7.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "php-9-8"
+file = "../benchmarks/g1/php-9-8.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "php-10-9"
+file = "../benchmarks/g1/php-10-9.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "php-11-10"
+file = "../benchmarks/g1/php-11-10.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "php-12-11"
+file = "../benchmarks/g1/php-12-11.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "php-13-12"
+file = "../benchmarks/g1/php-13-12.cnf"
+expect = "unsat"
+
+# --- Random 3-SAT near phase transition (n=150..246) ---
+
+[[problems]]
+name = "r3sat-150-r425"
+file = "../benchmarks/g2/r3sat-150-r425.cnf"
+
+[[problems]]
+name = "r3sat-180-r425"
+file = "../benchmarks/g2/r3sat-180-r425.cnf"
+
+[[problems]]
+name = "r3sat-210-r425"
+file = "../benchmarks/g2/r3sat-210-r425.cnf"
+
+[[problems]]
+name = "r3sat-238-1"
+file = "../benchmarks/g2/r3sat-238-1.cnf"
+
+[[problems]]
+name = "r3sat-238-2"
+file = "../benchmarks/g2/r3sat-238-2.cnf"
+
+[[problems]]
+name = "r3sat-240-r425"
+file = "../benchmarks/g2/r3sat-240-r425.cnf"
+
+[[problems]]
+name = "r3sat-242-1"
+file = "../benchmarks/g2/r3sat-242-1.cnf"
+
+[[problems]]
+name = "r3sat-242-2"
+file = "../benchmarks/g2/r3sat-242-2.cnf"
+
+[[problems]]
+name = "r3sat-246-1"
+file = "../benchmarks/g2/r3sat-246-1.cnf"

@@ -10,7 +10,7 @@ pub mod reasoner;
 pub mod vmtf;
 pub mod watched;
 
-pub use cdcl::{CdclSolver, SolveResult};
+pub use cdcl::{BcpStats, CdclSolver, SolveResult};
 pub use dimacs::{parse_dimacs, DimacsCnf, DimacsError};
 pub use model::Model;
 pub use reasoner::{make_work_unit, CdclReasoner};

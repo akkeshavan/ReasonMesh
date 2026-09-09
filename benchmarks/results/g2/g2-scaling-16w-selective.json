@@ -1,0 +1,154 @@
+{
+  "schema_version": 1,
+  "manifest": "g2-scaling-16w-selective",
+  "solver_version": "0.1.0",
+  "git_revision": "unknown",
+  "run_wall": {
+    "secs": 274,
+    "nanos": 751833659
+  },
+  "problems": [
+    {
+      "name": "php-9-8",
+      "outcome": "Unsat",
+      "expected": "unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 747377838
+      },
+      "timed_out": false,
+      "conflicts": 656103,
+      "decisions": 678512,
+      "propagations": 7903967,
+      "restarts": 2032,
+      "knowledge": {
+        "exported": 26688,
+        "published": 26672,
+        "received": 26672,
+        "applied": 26672,
+        "buffered": 0,
+        "discarded": 0,
+        "bus_published": 26672,
+        "bus_deduplicated": 16,
+        "bus_evicted": 0,
+        "bus_backpressure": 0
+      }
+    },
+    {
+      "name": "php-10-9",
+      "outcome": "Unsat",
+      "expected": "unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 10,
+        "nanos": 540741819
+      },
+      "timed_out": false,
+      "conflicts": 4133512,
+      "decisions": 4257754,
+      "propagations": 52029452,
+      "restarts": 9832,
+      "knowledge": {
+        "exported": 79376,
+        "published": 79375,
+        "received": 79375,
+        "applied": 79365,
+        "buffered": 0,
+        "discarded": 10,
+        "bus_published": 79375,
+        "bus_deduplicated": 1,
+        "bus_evicted": 0,
+        "bus_backpressure": 0
+      }
+    },
+    {
+      "name": "php-11-10",
+      "outcome": "Unsat",
+      "expected": "unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 243,
+        "nanos": 114665980
+      },
+      "timed_out": false,
+      "conflicts": 20195171,
+      "decisions": 20698602,
+      "propagations": 244709676,
+      "restarts": 38598,
+      "knowledge": {
+        "exported": 118769,
+        "published": 118767,
+        "received": 118767,
+        "applied": 118767,
+        "buffered": 0,
+        "discarded": 0,
+        "bus_published": 118767,
+        "bus_deduplicated": 2,
+        "bus_evicted": 0,
+        "bus_backpressure": 0
+      }
+    },
+    {
+      "name": "r3sat-238-2",
+      "outcome": "Unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 8,
+        "nanos": 175708187
+      },
+      "timed_out": false,
+      "conflicts": 3230570,
+      "decisions": 3859152,
+      "propagations": 130713850,
+      "restarts": 8160,
+      "knowledge": {
+        "exported": 48752,
+        "published": 48320,
+        "received": 48320,
+        "applied": 48320,
+        "buffered": 0,
+        "discarded": 0,
+        "bus_published": 48320,
+        "bus_deduplicated": 432,
+        "bus_evicted": 0,
+        "bus_backpressure": 0
+      }
+    },
+    {
+      "name": "r3sat-240-r425",
+      "outcome": "Unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 12,
+        "nanos": 173084236
+      },
+      "timed_out": false,
+      "conflicts": 4016379,
+      "decisions": 4790091,
+      "propagations": 166251684,
+      "restarts": 9380,
+      "knowledge": {
+        "exported": 55562,
+        "published": 55148,
+        "received": 55148,
+        "applied": 55148,
+        "buffered": 0,
+        "discarded": 0,
+        "bus_published": 55148,
+        "bus_deduplicated": 414,
+        "bus_evicted": 0,
+        "bus_backpressure": 0
+      }
+    }
+  ],
+  "summary": {
+    "problems": 5,
+    "solved": 5,
+    "unsolved": 0,
+    "solved_total_ns": 274751578060,
+    "par2_ns": 274751578060,
+    "par10_ns": 274751578060,
+    "timeout_ns": 300000000000
+  }
+}

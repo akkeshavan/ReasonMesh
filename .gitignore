@@ -22,3 +22,6 @@ tla/MC_TTrace_*.tla
 tla/MC_TTrace_*.bin
 tla/*.dot
 tla/*.out
+
+# Hetzner provisioning — contains live IP addresses and key paths
+scripts/env.sh

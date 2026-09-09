@@ -1,0 +1,142 @@
+# G3 gate: ReasonMesh (16w selective AKX) vs Z3, CaDiCaL, and Kissat.
+#
+# Problem set spans all three difficulty tiers:
+#   - PHP (pure resolution, highly structured UNSAT)
+#   - Random 3-SAT near the phase transition (variable, benefits from sharing)
+#   - Tseitin (structured, benefits from clause sharing)
+#
+# Run on CCX53 (32 vCPU AMD EPYC). Timeout 300s per problem.
+# ReasonMesh uses 16 workers with selective AKX sharing (the best intra-node config).
+# Baselines are single-threaded, which is the standard comparison point.
+schema_version = 1
+name = "g3-vs-all-baselines"
+description = "G3: ReasonMesh 16w-selective vs Z3, CaDiCaL, Kissat on full problem set"
+
+[solver]
+workers = 16
+seed = 1
+deterministic = false
+clause_sharing = true
+export_min_utility = 0.25
+import_min_utility = 0.143
+max_conflicts_per_problem = 10000000
+timeout_secs = 600
+
+[output]
+dir = "results/g3"
+trace = false
+
+[[baselines]]
+name = "z3-1t"
+binary = "z3"
+args = ["-dimacs"]
+
+[[baselines]]
+name = "cadical"
+binary = "cadical"
+args = []
+
+[[baselines]]
+name = "kissat"
+binary = "kissat"
+args = []
+
+# ── PHP (pigeonhole principle) ────────────────────────────────────────────────
+# Pure resolution — requires exponential proof size. Classic hard UNSAT.
+
+[[problems]]
+name = "php-9-8"
+file = "../benchmarks/g1/php-9-8.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "php-10-9"
+file = "../benchmarks/g1/php-10-9.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "php-11-10"
+file = "../benchmarks/g1/php-11-10.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "php-12-11"
+file = "../benchmarks/g1/php-12-11.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "php-13-12"
+file = "../benchmarks/g1/php-13-12.cnf"
+expect = "unsat"
+
+# ── Random 3-SAT near the phase transition (238 vars) ─────────────────────────
+# Phase-transition instances: ratio 4.27 clauses/var. Variable outcome.
+
+[[problems]]
+name = "r3sat-238-1"
+file = "../benchmarks/g2/r3sat-238-1.cnf"
+
+[[problems]]
+name = "r3sat-238-2"
+file = "../benchmarks/g2/r3sat-238-2.cnf"
+
+[[problems]]
+name = "r3sat-240-r425"
+file = "../benchmarks/g2/r3sat-240-r425.cnf"
+
+[[problems]]
+name = "r3sat-242-1"
+file = "../benchmarks/g2/r3sat-242-1.cnf"
+
+[[problems]]
+name = "r3sat-242-2"
+file = "../benchmarks/g2/r3sat-242-2.cnf"
+
+# ── Random 3-SAT (500 vars) ───────────────────────────────────────────────────
+# Harder instances; 16 workers + sharing should show clear benefit here.
+
+[[problems]]
+name = "r3sat-500-1"
+file = "../benchmarks/g3/r3sat-500/r3sat-500-1.cnf"
+
+[[problems]]
+name = "r3sat-500-2"
+file = "../benchmarks/g3/r3sat-500/r3sat-500-2.cnf"
+
+[[problems]]
+name = "r3sat-500-3"
+file = "../benchmarks/g3/r3sat-500/r3sat-500-3.cnf"
+
+[[problems]]
+name = "r3sat-500-4"
+file = "../benchmarks/g3/r3sat-500/r3sat-500-4.cnf"
+
+[[problems]]
+name = "r3sat-500-5"
+file = "../benchmarks/g3/r3sat-500/r3sat-500-5.cnf"
+
+# ── Tseitin (structured bitvector-style encoding) ─────────────────────────────
+
+[[problems]]
+name = "tseitin-600-1"
+file = "../benchmarks/g3/tseitin/tseitin-600-1.cnf"
+
+[[problems]]
+name = "tseitin-600-2"
+file = "../benchmarks/g3/tseitin/tseitin-600-2.cnf"
+
+[[problems]]
+name = "tseitin-800-1"
+file = "../benchmarks/g3/tseitin/tseitin-800-1.cnf"
+
+[[problems]]
+name = "tseitin-800-2"
+file = "../benchmarks/g3/tseitin/tseitin-800-2.cnf"
+
+[[problems]]
+name = "tseitin-1000-1"
+file = "../benchmarks/g3/tseitin/tseitin-1000-1.cnf"
+
+[[problems]]
+name = "tseitin-1000-2"
+file = "../benchmarks/g3/tseitin/tseitin-1000-2.cnf"
