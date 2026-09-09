@@ -1,0 +1,45 @@
+schema_version = 1
+name = "quick-check"
+
+[solver]
+workers = 4
+seed = 1
+deterministic = false
+clause_sharing = true
+export_min_utility = 0.25
+import_min_utility = 0.143
+max_conflicts_per_problem = 5000000
+timeout_secs = 120
+
+[output]
+dir = "results/quick"
+trace = false
+
+[[baselines]]
+name = "cadical-1t"
+binary = "cadical"
+
+[[problems]]
+name = "php-10-9"
+file = "../benchmarks/g1/php-10-9.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "r3sat-150-r425"
+file = "../benchmarks/g2/r3sat-150-r425.cnf"
+expect = "sat"
+
+[[problems]]
+name = "r3sat-238-1"
+file = "../benchmarks/g2/r3sat-238-1.cnf"
+expect = "sat"
+
+[[problems]]
+name = "r3sat-238-2"
+file = "../benchmarks/g2/r3sat-238-2.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "r3sat-240-r425"
+file = "../benchmarks/g2/r3sat-240-r425.cnf"
+expect = "unsat"

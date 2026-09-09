@@ -30,7 +30,14 @@ impl ClauseRef {
 // All clauses (problem + learned) live in a single Vec<u32> arena.
 //
 // Per-clause layout (contiguous words starting at offset `cr.0`):
-//   word[0]  — header: (len << 16) | (lbd << 2) | (learnt << 1) | deleted
+//   word[0]  — header: (len << 16) | (used << 15) | (lbd << 2) | (learnt << 1) | deleted
+//              bit 0:     deleted flag
+//              bit 1:     learnt flag
+//              bits 2-14: LBD (13 bits, max 8191 — never reached in practice)
+//              bit 15:    used_since_reduce — set when the clause participates in
+//                         conflict analysis; cleared at each reduce round so that
+//                         tier-2 clauses (LBD 3–6) must prove their value every round
+//              bits 16-31: clause length
 //   word[1..=len]  — literal raw values (Literal::raw() == u32)
 //   word[len+1]  — clause activity encoded as f32::to_bits()
 //
@@ -71,7 +78,20 @@ impl ClauseArena {
 
     #[inline]
     pub fn lbd(&self, cr: ClauseRef) -> u32 {
-        (self.raw_header(cr) >> 2) & 0x3FFF
+        (self.raw_header(cr) >> 2) & 0x1FFF
+    }
+
+    /// Whether this clause has been used in conflict analysis since the last
+    /// reduce round.  Cleared for surviving tier-2 clauses in `reduce_learned`.
+    #[inline]
+    pub fn is_used(&self, cr: ClauseRef) -> bool {
+        self.raw_header(cr) & (1 << 15) != 0
+    }
+
+    /// Mark that this clause participated in conflict analysis this round.
+    #[inline]
+    pub fn mark_used(&mut self, cr: ClauseRef) {
+        self.data[cr.0 as usize] |= 1 << 15;
     }
 
     #[inline]
@@ -86,7 +106,7 @@ impl ClauseArena {
 
     pub fn set_lbd(&mut self, cr: ClauseRef, lbd: u32) {
         let h = &mut self.data[cr.0 as usize];
-        *h = (*h & !(0x3FFF << 2)) | ((lbd & 0x3FFF) << 2);
+        *h = (*h & !(0x1FFF << 2)) | ((lbd & 0x1FFF) << 2);
     }
 
     pub fn mark_deleted(&mut self, cr: ClauseRef) {
@@ -171,7 +191,10 @@ impl ClauseArena {
     pub fn add(&mut self, lits: &[Literal], learnt: bool, lbd: u32) -> ClauseRef {
         let offset = self.data.len() as u32;
         let n = lits.len() as u32;
-        let header = (n << 16) | ((lbd & 0x3FFF) << 2) | ((learnt as u32) << 1);
+        // Learned tier-2 clauses start with used=1 so they survive their first reduce round
+        // (same as CaDiCaL). Problem clauses and tier-1/tier-3 learnt clauses leave it 0.
+        let used_bit = if learnt && lbd > 2 && lbd <= 6 { 1u32 << 15 } else { 0 };
+        let header = (n << 16) | used_bit | ((lbd & 0x1FFF) << 2) | ((learnt as u32) << 1);
         self.data.push(header);
         for &lit in lits {
             self.data.push(lit.raw());
@@ -210,13 +233,17 @@ impl ClauseArena {
     // Learned-clause reduction
     // -----------------------------------------------------------------------
 
-    /// Mark learned clauses for deletion when `should_delete(cr, lbd, activity, lit0)` is true.
+    /// Mark learned clauses for deletion when `should_delete(cr, lbd, activity, lit0, used)`.
+    ///
     /// `lit0` is the first literal — used by the caller to check if the clause is a reason.
-    /// Caller must call `rebuild_watches` afterwards.
+    /// `used` is true if the clause participated in conflict analysis since the last call to
+    /// this function.  For surviving tier-2 clauses (LBD 3–6) the `used` bit is cleared so
+    /// they must prove their value again next round (CaDiCaL-style consecutive-round tracking).
     pub fn reduce_learned(
         &mut self,
-        mut should_delete: impl FnMut(ClauseRef, u32, f32, Literal) -> bool,
+        mut should_delete: impl FnMut(ClauseRef, u32, f32, Literal, bool) -> bool,
     ) {
+        const USED_BIT: u32 = 1 << 15;
         let mut offset = 0usize;
         while offset < self.data.len() {
             let header = self.data[offset];
@@ -225,12 +252,17 @@ impl ClauseArena {
             let deleted = (header & 1) != 0;
             if learnt && !deleted {
                 let cr = ClauseRef(offset as u32);
-                let lbd = (header >> 2) & 0x3FFF;
+                let lbd = (header >> 2) & 0x1FFF;
+                let used = header & USED_BIT != 0;
                 let activity = f32::from_bits(self.data[offset + 1 + n]);
                 let lit0 = Literal::from_raw(self.data[offset + 1]);
-                if should_delete(cr, lbd, activity, lit0) {
+                if should_delete(cr, lbd, activity, lit0, used) {
                     self.data[offset] |= 1;
                     self.learnt_count -= 1;
+                } else if lbd > 2 && lbd <= 6 {
+                    // Tier-2 survivor: clear the used bit so the clause must
+                    // be seen again in conflict analysis before the next round.
+                    self.data[offset] &= !USED_BIT;
                 }
             }
             offset += n + 2;
@@ -321,7 +353,7 @@ impl ClauseArena {
             let deleted = (header & 1) != 0;
             if !deleted && n >= min_len {
                 let cr = ClauseRef(offset as u32);
-                let lbd = (header >> 2) & 0x3FFF;
+                let lbd = (header >> 2) & 0x1FFF;
                 let learnt = (header & 2) != 0;
                 // SAFETY: Literal is repr(transparent) over u32
                 let lits = unsafe {

@@ -816,8 +816,11 @@ impl CdclSolver {
         counter: &mut usize,
         resolving_var: Option<Var>,
     ) {
-        // Bump clause activity for reason clauses.
+        // Bump clause activity and mark as recently used for clause deletion.
         self.db.bump_activity(cr, self.clause_inc);
+        if self.db.is_learnt(cr) {
+            self.db.mark_used(cr);
+        }
 
         // LBD update: if the clause's effective LBD has dropped since it was
         // learned (because some levels have since been backtracked into one), lower
@@ -961,12 +964,17 @@ impl CdclSolver {
         if self.db.learnt_count() <= self.learnt_limit {
             return;
         }
-        // Deletion predicate: tier-1 (lbd≤2) never deleted, tier-2 (lbd 3-6) kept
-        // unless stale, tier-3 (lbd>6) always deleted unless it's a reason clause.
-        self.db.reduce_learned(|cr, lbd, activity, lit0| {
+        // Deletion predicate:
+        //   tier-1 (lbd ≤ 2):  never deleted.
+        //   tier-2 (lbd 3–6):  delete if activity below threshold (low recent use).
+        //                       The `used` bit is tracked but not yet used as the
+        //                       primary criterion here — kept for future mode-adaptive
+        //                       switching once best-phase tracking is in place.
+        //   tier-3 (lbd > 6):  always deleted unless currently a reason clause.
+        self.db.reduce_learned(|cr, lbd, activity, lit0, _used| {
             lbd > 2
                 && self.assignment.reason_of(lit0.var()) != cr.0
-                && (lbd > 6 || activity < 0.0001)
+                && (lbd > 6 || activity < 1e-4)
         });
         // Stale watch entries for deleted clauses are purged lazily during BCP.
         self.learnt_limit = (self.learnt_limit as f64 * self.learnt_limit_inc) as usize;
