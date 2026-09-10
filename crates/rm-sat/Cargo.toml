@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 rm-akx   = { workspace = true }
+rm-gpu   = { workspace = true }
 rm-ir    = { workspace = true }
 thiserror = { workspace = true }
 serde    = { workspace = true }
