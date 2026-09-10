@@ -15,7 +15,11 @@ struct WalkParams {
     steps:          u32,
     seed:           u64,
     noise_pct:      u32,
-    _pad:           u32,
+    /// Percentage of variables to randomly flip from initial_polarity when
+    /// seeding each trajectory (0 = start exactly from CDCL phase; 20 = 20%
+    /// of variables flipped, exploring near the current phase rather than
+    /// replacing it with a random assignment).
+    init_noise_pct: u32,
 }
 
 pub struct MetalAccelerator {
@@ -78,7 +82,7 @@ impl GpuAccelerator for MetalAccelerator {
         &self,
         clauses: &[GpuClause],
         num_vars: u32,
-        _initial_polarity: &[bool],
+        initial_polarity: &[bool],
         seed: u64,
         num_trajectories: u32,
         steps_per_var: u32,
@@ -127,6 +131,11 @@ impl GpuAccelerator for MetalAccelerator {
             occ_data_vec.push(0); // Metal forbids zero-length buffers
         }
 
+        // ---- Initial polarity buffer (CDCL phase hint, index 0 unused) ----
+        let init_pol_u8: Vec<u8> = (0..=nv as usize)
+            .map(|v| if v < initial_polarity.len() && initial_polarity[v] { 1u8 } else { 0u8 })
+            .collect();
+
         // ---- Per-thread data sizes ----
         let assign_bytes = traj * (nv as usize + 1);
         let sat_bytes    = traj * nc as usize;
@@ -143,40 +152,48 @@ impl GpuAccelerator for MetalAccelerator {
             steps,
             seed,
             noise_pct:      15,
-            _pad:           0,
+            // 20% of variables flipped from the CDCL phase per trajectory.
+            // Trajectories start near the current phase and explore outward —
+            // WalkSAT refines rather than replaces the solver's polarity table.
+            init_noise_pct: 20,
         };
 
         // ---- Allocate buffers (all StorageModeShared for zero-copy) ----
-        let buf_clause_lits = make_buffer(&self.device, &flat_lits);
-        let buf_clause_len  = make_buffer(&self.device, &flat_len);
-        let buf_occ_data    = make_buffer(&self.device, &occ_data_vec);
-        let buf_occ_start   = make_buffer(&self.device, &occ_start_vec);
-        let buf_occ_count   = make_buffer(&self.device, &occ_count_vec);
-        let buf_assign      = make_buffer_zeroed(&self.device, assign_bytes);
-        let buf_clause_sat  = make_buffer_zeroed(&self.device, sat_bytes);
-        let buf_out         = make_buffer_zeroed(&self.device, out_bytes);
-        let buf_params      = make_buffer(&self.device, std::slice::from_ref(&params));
+        let buf_clause_lits   = make_buffer(&self.device, &flat_lits);
+        let buf_clause_len    = make_buffer(&self.device, &flat_len);
+        let buf_occ_data      = make_buffer(&self.device, &occ_data_vec);
+        let buf_occ_start     = make_buffer(&self.device, &occ_start_vec);
+        let buf_occ_count     = make_buffer(&self.device, &occ_count_vec);
+        let buf_assign        = make_buffer_zeroed(&self.device, assign_bytes);
+        let buf_clause_sat    = make_buffer_zeroed(&self.device, sat_bytes);
+        let buf_out           = make_buffer_zeroed(&self.device, out_bytes);
+        let buf_params        = make_buffer(&self.device, std::slice::from_ref(&params));
+        let buf_init_polarity = make_buffer(&self.device, &init_pol_u8);
 
         // ---- Encode and dispatch ----
         let cmd_buf = self.queue.new_command_buffer();
         let encoder = cmd_buf.new_compute_command_encoder();
         encoder.set_compute_pipeline_state(&self.pipeline_walk);
-        encoder.set_buffer(0, Some(&buf_clause_lits), 0);
-        encoder.set_buffer(1, Some(&buf_clause_len),  0);
-        encoder.set_buffer(2, Some(&buf_occ_data),    0);
-        encoder.set_buffer(3, Some(&buf_occ_start),   0);
-        encoder.set_buffer(4, Some(&buf_occ_count),   0);
-        encoder.set_buffer(5, Some(&buf_assign),      0);
-        encoder.set_buffer(6, Some(&buf_clause_sat),  0);
-        encoder.set_buffer(7, Some(&buf_out),         0);
-        encoder.set_buffer(8, Some(&buf_params),      0);
+        encoder.set_buffer(0, Some(&buf_clause_lits),   0);
+        encoder.set_buffer(1, Some(&buf_clause_len),    0);
+        encoder.set_buffer(2, Some(&buf_occ_data),      0);
+        encoder.set_buffer(3, Some(&buf_occ_start),     0);
+        encoder.set_buffer(4, Some(&buf_occ_count),     0);
+        encoder.set_buffer(5, Some(&buf_assign),        0);
+        encoder.set_buffer(6, Some(&buf_clause_sat),    0);
+        encoder.set_buffer(7, Some(&buf_out),           0);
+        encoder.set_buffer(8, Some(&buf_params),        0);
+        encoder.set_buffer(9, Some(&buf_init_polarity), 0);
 
-        let max_tg = self.pipeline_walk.max_total_threads_per_threadgroup() as usize;
+        let max_tg  = self.pipeline_walk.max_total_threads_per_threadgroup() as usize;
         let tg_size = max_tg.min(256).min(traj);
-        let groups  = (traj + tg_size - 1) / tg_size;
 
-        encoder.dispatch_thread_groups(
-            MTLSize { width: groups as u64, height: 1, depth: 1 },
+        // dispatch_threads dispatches exactly `traj` threads; Metal handles the
+        // partial last threadgroup internally. Using dispatch_thread_groups would
+        // launch ceil(traj/tg_size)*tg_size threads (up to tg_size-1 extras),
+        // causing those threads to write beyond buf_assign / buf_out bounds.
+        encoder.dispatch_threads(
+            MTLSize { width: traj as u64, height: 1, depth: 1 },
             MTLSize { width: tg_size as u64, height: 1, depth: 1 },
         );
         encoder.end_encoding();

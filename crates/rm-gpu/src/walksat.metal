@@ -8,24 +8,25 @@ struct WalkParams {
     uint  max_clause_len;
     uint  steps;
     ulong seed;
-    uint  noise_pct;   // e.g. 15 = 15 % noise
-    uint  _pad;
+    uint  noise_pct;       // e.g. 15 = 15% random flip instead of greedy
+    uint  init_noise_pct;  // % of vars to flip from initial_polarity at startup
 };
 
-// Literal raw-index encoding (same as rm-akx Literal):
+// Literal raw-index encoding:
 //   positive literal for variable v: raw = v * 2
 //   negative literal for variable v: raw = v * 2 + 1
 
 kernel void walksat(
-    device const int*       clause_lits  [[ buffer(0) ]],  // flat, padded rows [ci * mcl + k]
-    device const uint*      clause_len   [[ buffer(1) ]],  // length of clause ci
-    device const uint*      occ_data     [[ buffer(2) ]],  // concatenated occurrence lists
-    device const uint*      occ_start    [[ buffer(3) ]],  // start in occ_data for lit_raw
-    device const uint*      occ_count    [[ buffer(4) ]],  // number of entries for lit_raw
-    device uint8_t*         assign       [[ buffer(5) ]],  // [tid * (nv+1) + var]
-    device uint8_t*         clause_sat   [[ buffer(6) ]],  // [tid * nc + ci]
-    device uint2*           out          [[ buffer(7) ]],  // (best_sat_count, tid) per thread
-    device const WalkParams* params      [[ buffer(8) ]],
+    device const int*        clause_lits     [[ buffer(0) ]],  // flat, padded rows [ci * mcl + k]
+    device const uint*       clause_len      [[ buffer(1) ]],  // length of clause ci
+    device const uint*       occ_data        [[ buffer(2) ]],  // concatenated occurrence lists
+    device const uint*       occ_start       [[ buffer(3) ]],  // start in occ_data for lit_raw
+    device const uint*       occ_count       [[ buffer(4) ]],  // number of entries for lit_raw
+    device uint8_t*          assign          [[ buffer(5) ]],  // [tid * (nv+1) + var]
+    device uint8_t*          clause_sat      [[ buffer(6) ]],  // [tid * nc + ci]
+    device uint2*            out             [[ buffer(7) ]],  // (best_sat_count, tid) per thread
+    device const WalkParams* params          [[ buffer(8) ]],
+    device const uint8_t*    initial_polarity[[ buffer(9) ]],  // CDCL phase hint [0..nv]
     uint tid [[ thread_position_in_grid ]]
 ) {
     const uint nv    = params->num_vars;
@@ -33,14 +34,7 @@ kernel void walksat(
     const uint mcl   = params->max_clause_len;
     const uint steps = params->steps;
 
-    // Guard against extra threads in the last threadgroup.
-    // num_trajectories is embedded in the dispatch size; threads beyond
-    // it have nothing to do.  We use nc == 0 as a proxy for "no work"
-    // — the host never launches this kernel with nc == 0 — so just
-    // guard on the out-of-bounds trajectory case via the dispatch shape.
-    // (The host ensures dispatch size == num_trajectories exactly.)
-
-    device uint8_t* my_assign = assign    + (ulong)tid * (nv + 1);
+    device uint8_t* my_assign = assign     + (ulong)tid * (nv + 1);
     device uint8_t* my_sat    = clause_sat + (ulong)tid * nc;
 
     // Per-thread RNG (xorshift-mix of seed and tid).
@@ -49,10 +43,15 @@ kernel void walksat(
     rng *= 0xff51afd7ed558ccdUL;
     rng ^= rng >> 33;
 
-    // Initialise assignment randomly.
+    // Initialise assignment from initial_polarity with init_noise_pct% random flips.
+    // Each trajectory starts near the CDCL's current phase rather than from a
+    // purely random point, so WalkSAT refines the existing phase table rather
+    // than replacing it with unstructured noise.
     for (uint v = 1; v <= nv; v++) {
         rng = rng * 6364136223846793005UL + 1442695040888963407UL;
-        my_assign[v] = (uint8_t)((rng >> 33) & 1);
+        uint8_t base  = initial_polarity[v];
+        uint    flip  = ((rng >> 33) % 100) < params->init_noise_pct;
+        my_assign[v]  = base ^ (uint8_t)flip;
     }
 
     // Compute initial clause-satisfaction counts.
@@ -61,13 +60,13 @@ kernel void walksat(
         uint len = clause_len[ci];
         uint s = 0;
         for (uint k = 0; k < len; k++) {
-            int  lit = clause_lits[ci * mcl + k];
-            uint var = (uint)(lit < 0 ? -lit : lit);
+            int  lit  = clause_lits[ci * mcl + k];
+            uint var  = (uint)(lit < 0 ? -lit : lit);
             uint8_t want = (lit > 0) ? 1u : 0u;
             if (my_assign[var] == want) s++;
         }
         uint8_t sat = (uint8_t)min(s, 255u);
-        my_sat[ci] = sat;
+        my_sat[ci]  = sat;
         if (sat > 0) total_sat++;
     }
 
@@ -106,7 +105,6 @@ kernel void walksat(
                 int  lit = clause_lits[pick * mcl + k];
                 uint var = (uint)(lit < 0 ? -lit : lit);
                 if (var == 0 || var > nv) continue;
-                // Raw index of the literal that is currently TRUE for this var.
                 uint cur_raw = var * 2 + (my_assign[var] ? 0u : 1u);
                 uint oc  = occ_count[cur_raw];
                 uint os  = occ_start[cur_raw];
@@ -128,12 +126,9 @@ kernel void walksat(
         uint8_t new_val = my_assign[flip_var] ^ 1u;
         my_assign[flip_var] = new_val;
 
-        // old literal (what it WAS before flip): opposite sign of new_val
         uint old_raw = flip_var * 2 + (new_val ? 1u : 0u);
-        // new literal: same sign as new_val
         uint new_raw = flip_var * 2 + (new_val ? 0u : 1u);
 
-        // Clauses containing the old literal lose a satisfied literal.
         {
             uint oc = occ_count[old_raw];
             uint os = occ_start[old_raw];
@@ -143,7 +138,6 @@ kernel void walksat(
                 if (my_sat[ci] > 0) my_sat[ci]--;
             }
         }
-        // Clauses containing the new literal gain a satisfied literal.
         {
             uint oc = occ_count[new_raw];
             uint os = occ_start[new_raw];
