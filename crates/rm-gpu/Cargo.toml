@@ -1,13 +1,21 @@
 [package]
 name = "rm-gpu"
-description = "GPU worker interface stub (future milestone)"
+description = "GPU accelerator interface — WalkSAT and lookahead kernels"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+
+[features]
+default = []
+metal = ["dep:metal"]
 
 [dependencies]
 rm-akx    = { workspace = true }
 thiserror = { workspace = true }
 serde     = { workspace = true }
 log       = { workspace = true }
+
+[dependencies.metal]
+version = "0.29"
+optional = true

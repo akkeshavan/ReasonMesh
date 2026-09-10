@@ -24,6 +24,7 @@ use crate::{
     watched::WatchList,
 };
 use rm_akx::literal::{Literal, Var};
+use rm_gpu::GpuClause;
 use smallvec::SmallVec;
 use std::collections::BinaryHeap;
 use std::time::Instant;
@@ -203,6 +204,10 @@ pub struct CdclSolver {
     bve_eliminated: Vec<ElimEntry>,
     // Set to true after the first BVE pass so it never re-runs.
     bve_done: bool,
+
+    /// Optional GPU accelerator for parallel WalkSAT phase guidance.
+    /// When None, the existing sequential CPU walk_phase is used unchanged.
+    gpu: Option<Box<dyn rm_gpu::GpuAccelerator>>,
 }
 
 impl CdclSolver {
@@ -260,12 +265,20 @@ impl CdclSolver {
             vmtf: VmtfList::new(num_vars),
             bve_eliminated: Vec::new(),
             bve_done: false,
+            gpu: None,
         }
     }
 
     /// Number of variables in the formula (index 0 is unused).
     pub fn num_vars(&self) -> u32 {
         self.num_vars
+    }
+
+    /// Attach a GPU accelerator for parallel WalkSAT phase guidance.
+    /// When set, each `walk_phase()` call dispatches 10 000 trajectories to the
+    /// GPU instead of the single-trajectory CPU path.
+    pub fn set_gpu(&mut self, gpu: Box<dyn rm_gpu::GpuAccelerator>) {
+        self.gpu = Some(gpu);
     }
 
     /// BCP branch-frequency counters accumulated over the entire solve.
@@ -1462,7 +1475,70 @@ impl CdclSolver {
     // Target phase walk (local search to improve polarity table per restart)
     // -----------------------------------------------------------------------
 
-    /// Greedy WalkSAT-style local search over the current polarity table.
+    /// Dispatch walk to GPU (if available) or the sequential CPU walk.
+    fn walk_phase(&mut self) {
+        if self.assumption_floor > 0 {
+            return;
+        }
+        if self.gpu.is_some() {
+            self.walk_phase_gpu();
+        } else {
+            self.walk_phase_cpu();
+        }
+    }
+
+    /// GPU-accelerated walk: dispatches 10 000 independent WalkSAT trajectories
+    /// to the Metal (or CUDA) backend and writes back the best polarity found.
+    fn walk_phase_gpu(&mut self) {
+        let n = self.num_vars as usize;
+        let mut gpu_clauses: Vec<GpuClause> = Vec::new();
+        self.db.for_each_clause(2, |_, _, _, lits| {
+            let dimacs: Vec<i32> = lits
+                .iter()
+                .map(|l| {
+                    let v = l.var() as i32;
+                    if l.is_positive() { v } else { -v }
+                })
+                .collect();
+            gpu_clauses.push(GpuClause { lits: dimacs });
+        });
+        if gpu_clauses.is_empty() {
+            return;
+        }
+
+        let initial_polarity = self.polarity.clone();
+        let seed = self.conflicts
+            .wrapping_mul(0x9e3779b97f4a7c15)
+            .wrapping_add((self.restarts as u64).wrapping_mul(0x6c62272e07bb0142));
+
+        // Compute sat_count for the current polarity (the "before" score).
+        let initial_score = {
+            let pol = &self.polarity;
+            gpu_clauses.iter().filter(|c| {
+                c.lits.iter().any(|&l| {
+                    let v = l.unsigned_abs() as usize;
+                    v >= 1 && v <= n && (l > 0) == pol[v]
+                })
+            }).count()
+        };
+
+        let result = self.gpu.as_ref().unwrap().walk(
+            &gpu_clauses,
+            self.num_vars,
+            &initial_polarity,
+            seed,
+            10_000,
+            4,
+        );
+
+        if result.sat_count > initial_score {
+            for v in 1..=n {
+                self.polarity[v] = result.polarity[v];
+            }
+        }
+    }
+
+    /// Sequential single-trajectory WalkSAT.
     ///
     /// Iterates up to `4 × num_vars` flip steps.  Each step picks a random
     /// unsatisfied clause and flips the variable in that clause with the lowest
@@ -1472,7 +1548,7 @@ impl CdclSolver {
     ///
     /// Called once per restart, after phase saving and before backtracking.
     /// Has no effect when assumption_floor > 0 (incremental solving context).
-    fn walk_phase(&mut self) {
+    fn walk_phase_cpu(&mut self) {
         if self.assumption_floor > 0 {
             return;
         }
