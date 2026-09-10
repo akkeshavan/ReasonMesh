@@ -13,7 +13,7 @@
 // At gap=5 this fires for almost any conflict on medium/large instances, forcing
 // many single-level backtracks before reaching the UIP backjump level.
 // Raising to 30 restricts chrono BT to very deep jumps where it genuinely helps.
-const CHRONO_BT_MIN_GAP: u32 = 12;
+const CHRONO_BT_MIN_GAP: u32 = 30;
 
 use crate::{
     assignment::{Assignment, Value},
@@ -235,7 +235,7 @@ impl CdclSolver {
             lbd_slow_ema: 0.0,
             conflicts_at_last_restart: 0,
             binaries: vec![Vec::new(); (num_vars * 2 + 2) as usize],
-            learnt_limit: 2000,
+            learnt_limit: 5000,
             learnt_limit_inc: 1.1,
             conflicts: 0,
             propagations: 0,
@@ -890,7 +890,7 @@ impl CdclSolver {
     }
 
     fn literal_redundant(&self, var: Var, stamp: u32, work: &mut u32) -> bool {
-        const MAX_WORK: u32 = 100;
+        const MAX_WORK: u32 = 500;
         let reason_cr = ClauseRef(self.assignment.reason_of(var));
         if reason_cr.is_sentinel() {
             return false;
@@ -1160,6 +1160,11 @@ impl CdclSolver {
             };
         }
 
+        // Mode-dependent VSIDS decay: Stable mode uses slower decay (0.95) to
+        // remember long-term variable importance across Luby restarts; Focus uses
+        // aggressive decay (0.8) for rapid reorientation after each conflict.
+        self.activity_decay = if self.mode == SolverMode::Stable { 0.95 } else { 0.8 };
+
         // Luby schedule: 4× wider intervals in Stable mode so the walk has
         // more conflicts to work with between restarts.
         let next = luby_next(&mut self.luby_u, &mut self.luby_v);
@@ -1170,10 +1175,11 @@ impl CdclSolver {
         };
         self.next_restart_conflicts = self.conflicts + next * effective_scale;
 
-        // Run inprocessing every INPROCESS_INTERVAL conflicts (probe → vivify → subsume).
+        // Run inprocessing every INPROCESS_INTERVAL conflicts
+        // (probe → vivify → subsume → strengthen).
         // Tied to conflicts (not restart count) so EMA-frequent restarts don't
         // cause runaway overhead on hard instances.
-        const INPROCESS_INTERVAL: u64 = 5_000;
+        const INPROCESS_INTERVAL: u64 = 2_000;
         if self.assumption_floor == 0
             && self.conflicts.saturating_sub(self.conflicts_at_last_probe)
                 >= INPROCESS_INTERVAL
@@ -1185,6 +1191,9 @@ impl CdclSolver {
             }
             if !self.db.has_empty_clause() {
                 self.inprocess_subsume();
+            }
+            if !self.db.has_empty_clause() {
+                self.inprocess_strengthen();
             }
         }
 
@@ -1213,7 +1222,7 @@ impl CdclSolver {
     /// lowest LBD and highest leverage.
     fn inprocess_vivify(&mut self) {
         debug_assert_eq!(self.assignment.current_level(), 0);
-        const MAX_VIVIFY: usize = 2000;
+        const MAX_VIVIFY: usize = 5000;
 
         // Collect LEARNT candidates (size ≥ 3, LBD ≤ 8) sorted by LBD ascending.
         // Only learnt clauses are vivified: vivifying problem clauses via level-1
@@ -1221,7 +1230,7 @@ impl CdclSolver {
         // learned clauses are later deleted by reduction.
         let mut candidates: Vec<(ClauseRef, u32)> = Vec::new();
         self.db.for_each_clause(3, |cr, lbd, learnt, _| {
-            if learnt && lbd <= 8 {
+            if learnt && lbd <= 16 {
                 candidates.push((cr, lbd));
             }
         });
@@ -1375,7 +1384,7 @@ impl CdclSolver {
     /// MAX_CHECKS candidate pairs per call to bound wall-clock cost.
     fn inprocess_subsume(&mut self) {
         debug_assert_eq!(self.assignment.current_level(), 0);
-        const MAX_CHECKS: usize = 10_000;
+        const MAX_CHECKS: usize = 50_000;
 
         let lit_cap = (self.num_vars * 2 + 2) as usize;
 
@@ -1469,6 +1478,155 @@ impl CdclSolver {
         if any_deleted {
             self.db.rebuild_watches(&mut self.watches);
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Inprocessing: binary self-subsuming resolution (clause strengthening)
+    // -----------------------------------------------------------------------
+
+    /// For each binary clause (¬p ∨ q) and each long clause C containing both
+    /// p and q, remove p from C (self-subsuming resolution on p).
+    ///
+    /// Particularly effective on PHP: binary hole-conflict clauses (¬x_pi ∨ ¬x_pj)
+    /// can shorten many learned clauses, driving down LBD and improving proof quality.
+    /// Each call is capped at MAX_STRENGTHENS operations to bound wall-clock cost.
+    fn inprocess_strengthen(&mut self) {
+        debug_assert_eq!(self.assignment.current_level(), 0);
+        const MAX_STRENGTHENS: usize = 8_000;
+
+        let nv = self.num_vars as usize;
+        let lit_cap = (2 * nv + 4).min(self.binaries.len());
+
+        // Build occurrence lists for non-deleted long (≥3) clauses.
+        let mut occ: Vec<Vec<ClauseRef>> = vec![Vec::new(); lit_cap];
+        self.db.for_each_clause(3, |cr, _, _, lits| {
+            for &l in lits {
+                let r = l.raw() as usize;
+                if r < lit_cap {
+                    occ[r].push(cr);
+                }
+            }
+        });
+
+        // Collect (clause, literal-to-remove) pairs.
+        // For binary (¬p ∨ q): any long clause C with both p_lit and q can have p_lit removed.
+        let mut to_shrink: Vec<(ClauseRef, Literal)> = Vec::new();
+
+        'outer: for p_lit_raw in 0..lit_cap {
+            let p_lit = Literal::from_raw(p_lit_raw as u32);
+            let bin_snapshot: Vec<(Literal, u32)> = self.binaries[p_lit_raw].clone();
+            for (q, _) in bin_snapshot {
+                let q_raw = q.raw() as usize;
+                if q_raw >= lit_cap {
+                    continue;
+                }
+                for &cr in &occ[p_lit_raw] {
+                    if to_shrink.len() >= MAX_STRENGTHENS {
+                        break 'outer;
+                    }
+                    if self.db.is_deleted(cr) {
+                        continue;
+                    }
+                    let n = self.db.clause_len(cr);
+                    // occ guarantees p_lit ∈ C; need q also in C.
+                    let has_q = (0..n).any(|i| self.db.lit_at(cr, i) == q);
+                    if !has_q {
+                        continue;
+                    }
+                    // Skip if resolvent would be a tautology.
+                    let has_neg_q = (0..n).any(|i| self.db.lit_at(cr, i) == q.negate());
+                    if has_neg_q {
+                        continue;
+                    }
+                    // Skip reason clauses: removing a literal could invalidate the reason.
+                    let is_reason = (0..n).any(|i| {
+                        let v = self.db.lit_at(cr, i).var();
+                        self.assignment.reason_of(v) == cr.0
+                    });
+                    if is_reason {
+                        continue;
+                    }
+                    to_shrink.push((cr, p_lit));
+                }
+            }
+        }
+
+        if to_shrink.is_empty() {
+            return;
+        }
+
+        // Apply: delete original, add shortened version.
+        // One clause may only be processed once per pass (further literals removed next pass).
+        let mut queued: std::collections::HashSet<u32> = std::collections::HashSet::new();
+        let mut to_add: Vec<(Vec<Literal>, bool)> = Vec::new();
+
+        for (cr, remove_lit) in to_shrink {
+            if queued.contains(&cr.0) || self.db.is_deleted(cr) {
+                continue;
+            }
+            let n = self.db.clause_len(cr);
+            let is_learnt = self.db.is_learnt(cr);
+            let new_lits: Vec<Literal> = (0..n)
+                .map(|i| self.db.lit_at(cr, i))
+                .filter(|&l| l != remove_lit)
+                .collect();
+            if new_lits.len() < n {
+                queued.insert(cr.0);
+                to_add.push((new_lits, is_learnt));
+            }
+        }
+
+        for &cr_raw in &queued {
+            self.db.mark_deleted(ClauseRef(cr_raw));
+        }
+
+        let mut any_unit = false;
+        for (new_lits, is_learnt) in to_add {
+            match new_lits.len() {
+                0 => {
+                    self.db.set_empty_clause();
+                    return;
+                }
+                1 => {
+                    let unit = new_lits[0];
+                    match self.assignment.literal_value(unit) {
+                        Value::Undef => {
+                            self.assignment.assign(unit, 0, ClauseRef::DECISION.0);
+                            any_unit = true;
+                        }
+                        Value::False => {
+                            self.db.set_empty_clause();
+                            return;
+                        }
+                        Value::True => {}
+                    }
+                }
+                2 => {
+                    let cr = self.db.add(&new_lits, is_learnt, 1);
+                    self.binaries[new_lits[0].negate().raw() as usize]
+                        .push((new_lits[1], cr.0));
+                    self.binaries[new_lits[1].negate().raw() as usize]
+                        .push((new_lits[0], cr.0));
+                }
+                _ => {
+                    // Conservative LBD estimate: use clause length (actual LBD can only
+                    // be lower; compute_lbd requires level info we have at level 0).
+                    let estimated_lbd = new_lits.len() as u32;
+                    let cr = self.db.add(&new_lits, is_learnt, estimated_lbd);
+                    self.watches.watch(new_lits[0].negate(), cr, new_lits[1]);
+                    self.watches.watch(new_lits[1].negate(), cr, new_lits[0]);
+                }
+            }
+        }
+
+        if any_unit {
+            if self.propagate().is_some() {
+                self.db.set_empty_clause();
+                return;
+            }
+        }
+
+        self.db.rebuild_watches(&mut self.watches);
     }
 
     // -----------------------------------------------------------------------
@@ -1765,14 +1923,25 @@ impl CdclSolver {
     /// variables. Stops early when no new unit is discovered (fixpoint).
     fn inprocess_probe(&mut self) {
         debug_assert_eq!(self.assignment.current_level(), 0);
-        const MAX_PROBES_PER_ROUND: u32 = 400;
-        const MAX_ROUNDS: u32 = 3;
+        const MAX_PROBES_PER_ROUND: u32 = 1200;
+        const MAX_ROUNDS: u32 = 5;
+
+        // Probe high-activity variables first: they are most likely to be backbone
+        // and yield the most unit propagations when forced.
+        let mut probe_vars: Vec<Var> = (1..=self.num_vars)
+            .filter(|&v| !self.assignment.is_assigned(v))
+            .collect();
+        probe_vars.sort_unstable_by(|&a, &b| {
+            self.activity[b as usize]
+                .partial_cmp(&self.activity[a as usize])
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         for _ in 0..MAX_ROUNDS {
             let trail_len_before = self.assignment.trail().len();
             let mut probed = 0u32;
 
-            for var in 1..=self.num_vars {
+            for &var in &probe_vars {
                 if probed >= MAX_PROBES_PER_ROUND {
                     break;
                 }
