@@ -820,17 +820,14 @@ impl CdclSolver {
         self.db.bump_activity(cr, self.clause_inc);
         if self.db.is_learnt(cr) {
             self.db.mark_used(cr);
-        }
-
-        // LBD update: if the clause's effective LBD has dropped since it was
-        // learned (because some levels have since been backtracked into one), lower
-        // the stored LBD. This can promote a tier-3 clause into tier-2 and prevent
-        // it from being deleted despite still being actively useful.
-        if self.db.is_learnt(cr) && self.db.lbd(cr) > 2 {
-            let lits: SmallVec<[Literal; 8]> = self.db.lits(cr).iter().copied().collect();
-            let new_lbd = self.compute_lbd(&lits);
-            if new_lbd < self.db.lbd(cr) {
-                self.db.set_lbd(cr, new_lbd);
+            // Lower the stored LBD if the clause's effective LBD has dropped
+            // (some levels have since collapsed), promoting tier-3 → tier-2.
+            if self.db.lbd(cr) > 2 {
+                let lits: SmallVec<[Literal; 8]> = self.db.lits(cr).iter().copied().collect();
+                let new_lbd = self.compute_lbd(&lits);
+                if new_lbd < self.db.lbd(cr) {
+                    self.db.set_lbd(cr, new_lbd);
+                }
             }
         }
 
@@ -967,16 +964,49 @@ impl CdclSolver {
         // Deletion predicate:
         //   tier-1 (lbd ≤ 2):  never deleted.
         //   tier-2 (lbd 3–6):  delete if activity below threshold (low recent use).
-        //                       The `used` bit is tracked but not yet used as the
-        //                       primary criterion here — kept for future mode-adaptive
-        //                       switching once best-phase tracking is in place.
         //   tier-3 (lbd > 6):  always deleted unless currently a reason clause.
         self.db.reduce_learned(|cr, lbd, activity, lit0, _used| {
             lbd > 2
                 && self.assignment.reason_of(lit0.var()) != cr.0
                 && (lbd > 6 || activity < 1e-4)
         });
-        // Stale watch entries for deleted clauses are purged lazily during BCP.
+
+        // Compact the arena to reclaim deleted words.  compact() returns (old, new)
+        // offset pairs for every live clause that moved.
+        //
+        // We must ALWAYS rebuild watches after compact: stale entries for deleted
+        // clauses point to now-removed arena offsets and would OOB on the next BCP
+        // lazy-deletion check, even when no live clause moved (remaps empty).
+        let remaps = self.db.compact();
+
+        if !remaps.is_empty() {
+            // Build a lookup map for O(1) remapping.
+            let remap_map: std::collections::HashMap<u32, u32> =
+                remaps.iter().copied().collect();
+
+            // Remap reason pointers for every assigned variable.
+            for var in 1..=(self.num_vars as Var) {
+                let r = self.assignment.reason_of(var);
+                if !ClauseRef(r).is_sentinel() {
+                    if let Some(&new_r) = remap_map.get(&r) {
+                        self.assignment.set_reason(var, new_r);
+                    }
+                }
+            }
+
+            // Remap ClauseRef raw values stored in the binary-clause table.
+            for entry_list in self.binaries.iter_mut() {
+                for (_, cr_raw) in entry_list.iter_mut() {
+                    if let Some(&new_raw) = remap_map.get(cr_raw) {
+                        *cr_raw = new_raw;
+                    }
+                }
+            }
+        }
+
+        // Always rebuild watch lists from the compacted arena.
+        self.db.rebuild_watches(&mut self.watches);
+
         self.learnt_limit = (self.learnt_limit as f64 * self.learnt_limit_inc) as usize;
     }
 
@@ -1130,7 +1160,7 @@ impl CdclSolver {
         // Run inprocessing every INPROCESS_INTERVAL conflicts (probe → vivify → subsume).
         // Tied to conflicts (not restart count) so EMA-frequent restarts don't
         // cause runaway overhead on hard instances.
-        const INPROCESS_INTERVAL: u64 = 2000;
+        const INPROCESS_INTERVAL: u64 = 5_000;
         if self.assumption_floor == 0
             && self.conflicts.saturating_sub(self.conflicts_at_last_probe)
                 >= INPROCESS_INTERVAL
@@ -1491,6 +1521,7 @@ impl CdclSolver {
             .collect();
 
         let mut total_sat: usize = sat_count.iter().filter(|&&s| s > 0).count();
+        let initial_score = total_sat;
         let mut best_score = total_sat;
         let mut best_phase = wa.clone();
 
@@ -1499,7 +1530,10 @@ impl CdclSolver {
             .wrapping_mul(0x9e3779b97f4a7c15)
             .wrapping_add((self.restarts as u64).wrapping_mul(0x6c62272e07bb0142));
 
-        for _ in 0..max_steps {
+        let mut steps_since_improvement = 0usize;
+        const WALK_EARLY_EXIT: usize = 500;
+
+        'walk: for _ in 0..max_steps {
             // Pick a random clause; retry once if it happens to be satisfied.
             rng = rng
                 .wrapping_mul(6_364_136_223_846_793_005)
@@ -1552,6 +1586,12 @@ impl CdclSolver {
                 if total_sat > best_score {
                     best_score = total_sat;
                     best_phase = wa.clone();
+                    steps_since_improvement = 0;
+                } else {
+                    steps_since_improvement += 1;
+                    if steps_since_improvement >= WALK_EARLY_EXIT {
+                        break 'walk;
+                    }
                 }
                 continue;
             }
@@ -1618,12 +1658,22 @@ impl CdclSolver {
             if total_sat > best_score {
                 best_score = total_sat;
                 best_phase = wa.clone();
+                steps_since_improvement = 0;
+            } else {
+                steps_since_improvement += 1;
+                if steps_since_improvement >= WALK_EARLY_EXIT {
+                    break 'walk;
+                }
             }
         }
 
-        // Commit the best polarity found back to the solver.
-        for v in 1..=n {
-            self.polarity[v] = best_phase[v];
+        // Only overwrite polarity when the walk actually found a better assignment.
+        // For UNSAT instances the walk makes no progress; writing back a random-search
+        // polarity would corrupt the CDCL phase table with meaningless noise.
+        if best_score > initial_score {
+            for v in 1..=n {
+                self.polarity[v] = best_phase[v];
+            }
         }
     }
 
