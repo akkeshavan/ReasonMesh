@@ -1,6 +1,7 @@
 use clap::{Parser, Subcommand};
 use rm_akx::literal::Literal;
 use rm_akx::{BusMetrics, KnowledgeBatch, Scope};
+use rm_gpu;
 use rm_bench::{run_manifest, Manifest};
 use rm_bus::inproc::InprocBus;
 use rm_bus::{BusConfig, BusError, KnowledgeBus, PollBudget, PublishHandle};
@@ -527,6 +528,7 @@ fn run_solve(
     file: &std::path::Path,
     max_conflicts: Option<u64>,
     proof_out: Option<&std::path::Path>,
+    use_gpu: bool,
 ) -> (i32, Vec<Event>) {
     let mut events: Vec<Event> = Vec::new();
 
@@ -551,6 +553,11 @@ fn run_solve(
     };
 
     let mut solver = build_dimacs_solver(&cnf, proof_out.is_some());
+    if use_gpu {
+        if let Some(gpu) = rm_gpu::try_metal_accelerator() {
+            solver.set_gpu(gpu);
+        }
+    }
     let budget = max_conflicts.unwrap_or(u64::MAX);
     let result = solver.solve(&[], budget);
     let proof_log = solver.take_proof_log();
@@ -787,10 +794,8 @@ fn main() {
                 workers,
                 seed
             );
-            let _ = no_gpu;
-
             let command_line = std::env::args().collect::<Vec<_>>().join(" ");
-            let (code, events) = run_solve(&file, max_conflicts, proof_out.as_deref());
+            let (code, events) = run_solve(&file, max_conflicts, proof_out.as_deref(), !no_gpu);
             if let Some(trace_path) = trace {
                 match write_trace(&trace_path, seed, command_line, events) {
                     Ok(()) => log::info!("trace written to {}", trace_path.display()),

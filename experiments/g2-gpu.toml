@@ -1,0 +1,100 @@
+# GPU benchmark: ReasonMesh 4-worker + Metal GPU WalkSAT vs. CaDiCaL 1t
+# Same problem set as g2-vs-z3.toml; adds gpu = true to measure the impact
+# of 10 000-trajectory parallel WalkSAT phase guidance on SAT instances.
+schema_version = 1
+name = "g2-gpu"
+description = "G2-GPU: ReasonMesh 4w + Metal WalkSAT vs. CaDiCaL 1t on PHP + random-3-SAT"
+
+[solver]
+workers = 4
+seed = 1
+deterministic = false
+clause_sharing = true
+export_min_utility = 0.143
+import_min_utility = 0.143
+max_conflicts_per_problem = 5000000
+timeout_secs = 60
+gpu = true
+
+[output]
+dir = "results/g2/gpu"
+trace = false
+
+[[baselines]]
+name = "cadical-1t"
+binary = "cadical"
+
+# --- PHP pigeonhole (all UNSAT) ---
+
+[[problems]]
+name = "php-7-6"
+file = "../benchmarks/g1/php-7-6.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "php-8-7"
+file = "../benchmarks/g1/php-8-7.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "php-9-8"
+file = "../benchmarks/g1/php-9-8.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "php-10-9"
+file = "../benchmarks/g1/php-10-9.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "php-11-10"
+file = "../benchmarks/g1/php-11-10.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "php-12-11"
+file = "../benchmarks/g1/php-12-11.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "php-13-12"
+file = "../benchmarks/g1/php-13-12.cnf"
+expect = "unsat"
+
+# --- Random 3-SAT near phase transition (n=150..246) ---
+
+[[problems]]
+name = "r3sat-150-r425"
+file = "../benchmarks/g2/r3sat-150-r425.cnf"
+
+[[problems]]
+name = "r3sat-180-r425"
+file = "../benchmarks/g2/r3sat-180-r425.cnf"
+
+[[problems]]
+name = "r3sat-210-r425"
+file = "../benchmarks/g2/r3sat-210-r425.cnf"
+
+[[problems]]
+name = "r3sat-238-1"
+file = "../benchmarks/g2/r3sat-238-1.cnf"
+
+[[problems]]
+name = "r3sat-238-2"
+file = "../benchmarks/g2/r3sat-238-2.cnf"
+
+[[problems]]
+name = "r3sat-240-r425"
+file = "../benchmarks/g2/r3sat-240-r425.cnf"
+
+[[problems]]
+name = "r3sat-242-1"
+file = "../benchmarks/g2/r3sat-242-1.cnf"
+
+[[problems]]
+name = "r3sat-242-2"
+file = "../benchmarks/g2/r3sat-242-2.cnf"
+
+[[problems]]
+name = "r3sat-246-1"
+file = "../benchmarks/g2/r3sat-246-1.cnf"

@@ -1186,6 +1186,7 @@ dependencies = [
  "rm-akx",
  "rm-bench",
  "rm-bus",
+ "rm-gpu",
  "rm-proof",
  "rm-sat",
  "rm-smt",
@@ -1317,6 +1318,7 @@ version = "0.1.0"
 dependencies = [
  "log",
  "rm-akx",
+ "rm-gpu",
  "rm-proof",
  "rm-sat",
  "rm-telemetry",

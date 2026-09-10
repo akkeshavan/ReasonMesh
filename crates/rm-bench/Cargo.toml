@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 rm-akx    = { workspace = true }
+rm-gpu    = { workspace = true, features = ["metal"] }
 rm-sat    = { workspace = true }
 rm-proof  = { workspace = true }
 rm-telemetry = { workspace = true }

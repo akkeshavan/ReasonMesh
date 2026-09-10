@@ -82,6 +82,11 @@ pub struct SolverConfig {
     pub max_conflicts_per_problem: Option<u64>,
     /// Per-problem wall-clock budget in seconds.
     pub timeout_secs: u64,
+    /// Enable GPU-accelerated WalkSAT phase guidance (Metal on Apple Silicon).
+    /// When true, each solver gets a MetalAccelerator; falls back silently to
+    /// CPU walk if Metal is unavailable.
+    #[serde(default)]
+    pub gpu: bool,
 }
 
 impl Default for SolverConfig {
@@ -99,6 +104,7 @@ impl Default for SolverConfig {
             import_min_utility: 0.143,
             max_conflicts_per_problem: Some(100_000),
             timeout_secs: 300,
+            gpu: false,
         }
     }
 }

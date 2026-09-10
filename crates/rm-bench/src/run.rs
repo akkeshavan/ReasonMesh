@@ -13,6 +13,7 @@ use crate::result::{BaselineResult, KnowledgeMetrics, ManifestRun, ProblemResult
 use rm_akx::literal::Literal;
 use rm_akx::{ExportPolicy, ImportPolicy, WorkBudget};
 use rm_proof::model::check_dimacs_model;
+use rm_gpu;
 use rm_sat::{parse_dimacs, CdclSolver, DimacsCnf, SolveResult};
 use rm_telemetry::{EventKind, Outcome, RunMeta, TraceError, TraceWriter};
 use rm_worker::{Problem as WorkerProblem, WorkerConfig, WorkerOutcome, WorkerPool, WorkerStats};
@@ -202,11 +203,16 @@ fn solve_problem(manifest: &Manifest, problem: &Problem) -> Result<ProblemResult
     run_single_solver(manifest, problem, &cnf, start)
 }
 
-fn build_cdcl_solver(cnf: &DimacsCnf) -> CdclSolver {
+fn build_cdcl_solver(cnf: &DimacsCnf, use_gpu: bool) -> CdclSolver {
     let mut solver = CdclSolver::new(cnf.num_vars);
     for clause in &cnf.clauses {
         let lits: Vec<Literal> = clause.iter().map(|&l| dimacs_lit(l)).collect();
         solver.add_clause(&lits);
+    }
+    if use_gpu {
+        if let Some(gpu) = rm_gpu::try_metal_accelerator() {
+            solver.set_gpu(gpu);
+        }
     }
     solver
 }
@@ -217,7 +223,7 @@ fn run_single_solver(
     cnf: &DimacsCnf,
     start: Instant,
 ) -> Result<ProblemResult, RunError> {
-    let mut solver = build_cdcl_solver(cnf);
+    let mut solver = build_cdcl_solver(cnf, manifest.solver.gpu);
     let budget = manifest
         .solver
         .max_conflicts_per_problem

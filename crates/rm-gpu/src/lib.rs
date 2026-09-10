@@ -9,6 +9,29 @@ pub mod metal_backend;
 #[cfg(feature = "metal")]
 pub use metal_backend::MetalAccelerator;
 
+/// Try to create a Metal GPU accelerator. Returns `None` when Metal is
+/// unavailable or the feature is not compiled in; the caller should fall back
+/// to the existing CPU walk.
+pub fn try_metal_accelerator() -> Option<Box<dyn GpuAccelerator>> {
+    #[cfg(feature = "metal")]
+    {
+        match MetalAccelerator::new() {
+            Ok(m) => {
+                eprintln!("gpu: Metal device \"{}\" ready", m.device_name());
+                Some(Box::new(m))
+            }
+            Err(e) => {
+                eprintln!("gpu: Metal unavailable ({e}), using CPU walk");
+                None
+            }
+        }
+    }
+    #[cfg(not(feature = "metal"))]
+    {
+        None
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Shared clause representation
 // ---------------------------------------------------------------------------

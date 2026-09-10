@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 rm-akx    = { workspace = true }
+rm-gpu    = { workspace = true, features = ["metal"] }
 rm-sat    = { workspace = true }
 rm-smt    = { workspace = true }
 rm-bus    = { workspace = true }
