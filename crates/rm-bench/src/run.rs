@@ -195,7 +195,13 @@ fn collect_baselines(manifest: &Manifest, problem: &Problem) -> Vec<BaselineResu
     manifest
         .baselines
         .iter()
-        .map(|b| run_baseline(b, &problem.file, timeout))
+        .map(|b| {
+            if b.workers > 1 {
+                run_baseline_portfolio(b, &problem.file, timeout)
+            } else {
+                run_baseline(b, &problem.file, timeout)
+            }
+        })
         .collect()
 }
 
@@ -467,6 +473,7 @@ fn run_baseline(b: &BaselineConfig, cnf_path: &Path, timeout: Duration) -> Basel
                 outcome: rm_telemetry::Outcome::Unknown,
                 wall: Duration::ZERO,
                 timed_out: false,
+                workers: 1,
             }
         }
     };
@@ -497,6 +504,98 @@ fn run_baseline(b: &BaselineConfig, cnf_path: &Path, timeout: Duration) -> Basel
         outcome,
         wall,
         timed_out,
+        workers: 1,
+    }
+}
+
+/// Race `b.workers` instances of the baseline solver simultaneously.
+/// Each instance gets `{seed_flag} {worker_index}` appended to its args
+/// (when `seed_flag` is set) so instances explore independently.
+/// The first to produce SAT/UNSAT wins; all others are killed immediately.
+/// Wall time is measured from the common start to the winner's completion.
+fn run_baseline_portfolio(b: &BaselineConfig, cnf_path: &Path, timeout: Duration) -> BaselineResult {
+    use std::sync::mpsc;
+
+    let n = b.workers as usize;
+    let start = Instant::now();
+    let (tx, rx) = mpsc::channel::<(rm_telemetry::Outcome, Duration)>();
+
+    let mut children: Vec<std::process::Child> = Vec::with_capacity(n);
+
+    for i in 0..n {
+        let mut cmd = std::process::Command::new(&b.binary);
+        cmd.arg(cnf_path).args(&b.args);
+        if !b.seed_flag.is_empty() {
+            cmd.arg(&b.seed_flag).arg(i.to_string());
+        }
+        match cmd.stdout(Stdio::piped()).stderr(Stdio::null()).spawn() {
+            Ok(mut child) => {
+                let stdout = child.stdout.take();
+                let tx2 = tx.clone();
+                let start2 = start;
+                std::thread::spawn(move || {
+                    let mut buf = String::new();
+                    if let Some(out) = stdout {
+                        let _ = std::io::BufReader::new(out).read_to_string(&mut buf);
+                    }
+                    // send even for Unknown so the main thread knows this worker finished
+                    let _ = tx2.send((parse_dimacs_verdict(&buf), start2.elapsed()));
+                });
+                children.push(child);
+            }
+            Err(_) => {} // failed to spawn: effectively one fewer worker
+        }
+    }
+    drop(tx); // rx will Err once all monitoring threads have sent
+
+    let n_spawned = children.len();
+    if n_spawned == 0 {
+        return BaselineResult {
+            name: b.name.clone(),
+            outcome: rm_telemetry::Outcome::Unknown,
+            wall: Duration::ZERO,
+            timed_out: false,
+            workers: b.workers,
+        };
+    }
+
+    // Receive results in arrival order; accept the first non-Unknown verdict.
+    let mut final_outcome = rm_telemetry::Outcome::Unknown;
+    let mut final_wall = start.elapsed();
+    let mut timed_out = true;
+
+    for _ in 0..n_spawned {
+        let remaining = timeout.saturating_sub(start.elapsed());
+        if remaining.is_zero() {
+            break;
+        }
+        match rx.recv_timeout(remaining) {
+            Ok((outcome, wall)) => {
+                if outcome != rm_telemetry::Outcome::Unknown
+                    && final_outcome == rm_telemetry::Outcome::Unknown
+                {
+                    final_outcome = outcome;
+                    final_wall = wall;
+                    timed_out = false;
+                    break; // got a real verdict — no need to wait for the rest
+                }
+            }
+            Err(_) => break, // timeout or all workers done
+        }
+    }
+
+    // Kill every child that is still running.
+    for mut child in children {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+
+    BaselineResult {
+        name: b.name.clone(),
+        outcome: final_outcome,
+        wall: if timed_out { start.elapsed() } else { final_wall },
+        timed_out,
+        workers: b.workers,
     }
 }
 
@@ -628,6 +727,7 @@ mod tests {
                 import_min_utility: 0.0,
                 max_conflicts_per_problem: Some(100_000),
                 timeout_secs: 30,
+                gpu: false,
             },
             output: OutputConfig {
                 dir: dir.0.join("out"),
@@ -657,6 +757,7 @@ mod tests {
                 import_min_utility: 0.0,
                 max_conflicts_per_problem: Some(100_000),
                 timeout_secs: 30,
+                gpu: false,
             },
             output: OutputConfig {
                 dir: dir.0.join("out"),
@@ -893,6 +994,8 @@ mod tests {
             name: "no-such-solver".into(),
             binary: "/no/such/binary".into(),
             args: vec![],
+            workers: 1,
+            seed_flag: String::new(),
         };
         let result = run_baseline(&b, Path::new("/tmp/x.cnf"), Duration::from_secs(1));
         assert_eq!(result.outcome, rm_telemetry::Outcome::Unknown);
@@ -928,6 +1031,8 @@ mod tests {
             name: "z3".into(),
             binary: "z3".into(),
             args: vec![],
+            workers: 1,
+            seed_flag: String::new(),
         };
 
         let r = run_baseline(&b, &sat_path, Duration::from_secs(10));
@@ -964,6 +1069,8 @@ mod tests {
             name: "sleep".into(),
             binary: "sleep".into(),
             args: vec![],
+            workers: 1,
+            seed_flag: String::new(),
         };
         // run_baseline prepends the path as the first arg, so the command
         // becomes `sleep 10` — a 10-second sleep that our 200ms timeout kills.

@@ -30,6 +30,14 @@ trace = false
 name = "cadical-1t"
 binary = "cadical"
 
+# 4-thread CaDiCaL portfolio: fair apples-to-apples comparison against RM 4w.
+# Each instance gets a distinct seed so workers explore independently.
+[[baselines]]
+name = "cadical-4t"
+binary = "cadical"
+workers = 4
+seed_flag = "--seed"
+
 [[baselines]]
 name = "z3-1t"
 binary = "z3"

@@ -130,19 +130,34 @@ impl Default for OutputConfig {
 
 /// An external solver run alongside ReasonMesh for comparison.
 ///
-/// The runner invokes `{binary} {cnf_file} {args...}` with the same
-/// per-problem timeout as the manifest's `solver.timeout_secs`. Output is
-/// parsed for DIMACS competition-format verdicts (`s SATISFIABLE` /
-/// `s UNSATISFIABLE`). Missing binary → verdict recorded as Unknown.
+/// Single-worker (default): `{binary} {cnf_file} {args...}` — one process,
+/// wait for verdict.
+///
+/// Portfolio (`workers > 1`): `workers` processes launched simultaneously,
+/// each with an independent seed (`{seed_flag} {worker_index}` appended when
+/// `seed_flag` is set). The first to produce a SAT/UNSAT verdict wins; all
+/// others are killed. Wall time is the winner's elapsed time — this is the
+/// fair apples-to-apples comparison against a ReasonMesh N-worker portfolio.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BaselineConfig {
-    /// Short label used in results (e.g. `"z3-1t"`).
+    /// Short label used in results (e.g. `"cadical-4t"`).
     pub name: String,
     /// Executable name or absolute path (resolved via PATH).
     pub binary: String,
-    /// Arguments appended after the CNF file path.
+    /// Arguments appended after the CNF file path (all workers share these).
     #[serde(default)]
     pub args: Vec<String>,
+    /// Number of parallel instances to race. Default 1 = single process.
+    #[serde(default = "default_workers")]
+    pub workers: u32,
+    /// CLI flag for the random seed, e.g. `"--seed"` for CaDiCaL.
+    /// Worker `i` gets `{seed_flag} {i}` appended. Empty = no seed arg.
+    #[serde(default)]
+    pub seed_flag: String,
+}
+
+fn default_workers() -> u32 {
+    1
 }
 
 /// A complete benchmark run description.

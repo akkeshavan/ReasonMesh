@@ -37,6 +37,13 @@ pub struct BaselineResult {
     pub outcome: Outcome,
     pub wall: Duration,
     pub timed_out: bool,
+    /// Number of parallel instances raced (1 for single-worker baselines).
+    #[serde(default = "crate::result::default_one")]
+    pub workers: u32,
+}
+
+pub(crate) fn default_one() -> u32 {
+    1
 }
 
 /// Result of solving a single problem.
