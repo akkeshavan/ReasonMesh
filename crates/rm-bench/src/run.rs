@@ -104,11 +104,23 @@ pub fn run_manifest(manifest: &Manifest) -> Result<ManifestRun, RunError> {
         })?;
     }
 
+    // Create one GPU service for the whole run so Metal is initialised once
+    // and the MSL kernel is compiled exactly once. Each problem's pool gets
+    // a cheap GpuClient clone pointing at the same service thread.
+    let gpu: Option<(rm_gpu::GpuService, rm_gpu::GpuClient)> = if manifest.solver.gpu {
+        rm_gpu::try_metal_accelerator()
+            .map(|backend| rm_gpu::GpuService::start(backend))
+    } else {
+        None
+    };
+    let gpu_client: Option<rm_gpu::GpuClient> = gpu.as_ref().map(|(_, c)| c.clone());
+
     let run_start = Instant::now();
     let mut problems = Vec::with_capacity(manifest.problems.len());
     for problem in &manifest.problems {
-        problems.push(solve_problem(manifest, problem)?);
+        problems.push(solve_problem(manifest, problem, gpu_client.clone())?);
     }
+    drop(gpu); // join service thread cleanly after all problems are done
     let run_wall = run_start.elapsed();
 
     let summary = RunSummary::compute(
@@ -187,7 +199,11 @@ fn collect_baselines(manifest: &Manifest, problem: &Problem) -> Vec<BaselineResu
         .collect()
 }
 
-fn solve_problem(manifest: &Manifest, problem: &Problem) -> Result<ProblemResult, RunError> {
+fn solve_problem(
+    manifest: &Manifest,
+    problem: &Problem,
+    gpu: Option<rm_gpu::GpuClient>,
+) -> Result<ProblemResult, RunError> {
     let start = Instant::now();
     let input = std::fs::read_to_string(&problem.file).map_err(|source| RunError::Read {
         problem: problem.name.clone(),
@@ -198,21 +214,16 @@ fn solve_problem(manifest: &Manifest, problem: &Problem) -> Result<ProblemResult
         source,
     })?;
     if manifest.solver.workers > 1 {
-        return solve_problem_pool(manifest, problem, &cnf, start);
+        return solve_problem_pool(manifest, problem, &cnf, start, gpu);
     }
-    run_single_solver(manifest, problem, &cnf, start)
+    run_single_solver(manifest, problem, &cnf, start, gpu)
 }
 
-fn build_cdcl_solver(cnf: &DimacsCnf, use_gpu: bool) -> CdclSolver {
+fn build_cdcl_solver(cnf: &DimacsCnf, _use_gpu: bool) -> CdclSolver {
     let mut solver = CdclSolver::new(cnf.num_vars);
     for clause in &cnf.clauses {
         let lits: Vec<Literal> = clause.iter().map(|&l| dimacs_lit(l)).collect();
         solver.add_clause(&lits);
-    }
-    if use_gpu {
-        if let Some(gpu) = rm_gpu::try_metal_accelerator() {
-            solver.set_gpu(gpu);
-        }
     }
     solver
 }
@@ -222,8 +233,12 @@ fn run_single_solver(
     problem: &Problem,
     cnf: &DimacsCnf,
     start: Instant,
+    gpu: Option<rm_gpu::GpuClient>,
 ) -> Result<ProblemResult, RunError> {
-    let mut solver = build_cdcl_solver(cnf, manifest.solver.gpu);
+    let mut solver = build_cdcl_solver(cnf, false);
+    if let Some(client) = gpu {
+        solver.set_gpu(Box::new(client));
+    }
     let budget = manifest
         .solver
         .max_conflicts_per_problem
@@ -351,6 +366,7 @@ fn solve_problem_pool(
     problem: &Problem,
     cnf: &DimacsCnf,
     start: Instant,
+    gpu: Option<rm_gpu::GpuClient>,
 ) -> Result<ProblemResult, RunError> {
     let clauses: Vec<Vec<Literal>> = cnf
         .clauses
@@ -370,7 +386,10 @@ fn solve_problem_pool(
         conflict_budget: manifest.solver.max_conflicts_per_problem,
         ..WorkerConfig::default()
     };
-    let pool = WorkerPool::new(worker_problem, config);
+    let mut pool = WorkerPool::new(worker_problem, config);
+    if let Some(client) = gpu {
+        pool.set_gpu_client(client);
+    }
     let outcomes = pool.run(&[], Some(timeout));
 
     let (outcome, model_raw, counters) = collect_pool_outcome(&outcomes, cnf, &problem.name)?;

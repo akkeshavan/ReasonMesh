@@ -1534,6 +1534,7 @@ dependencies = [
  "log",
  "rm-akx",
  "rm-bus",
+ "rm-gpu",
  "rm-sat",
  "serde",
  "thiserror",

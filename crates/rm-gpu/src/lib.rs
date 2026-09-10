@@ -9,6 +9,9 @@ pub mod metal_backend;
 #[cfg(feature = "metal")]
 pub use metal_backend::MetalAccelerator;
 
+pub mod service;
+pub use service::{GpuClient, GpuService};
+
 /// Try to create a Metal GPU accelerator. Returns `None` when Metal is
 /// unavailable or the feature is not compiled in; the caller should fall back
 /// to the existing CPU walk.
@@ -38,6 +41,7 @@ pub fn try_metal_accelerator() -> Option<Box<dyn GpuAccelerator>> {
 
 /// A clause in DIMACS-signed form: positive integer = positive literal,
 /// negative integer = negative literal (1-indexed variables).
+#[derive(Clone)]
 pub struct GpuClause {
     pub lits: Vec<i32>,
 }

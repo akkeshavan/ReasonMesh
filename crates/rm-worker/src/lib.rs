@@ -21,6 +21,7 @@ use rm_akx::{
     ReasonerEvent, ReasonerId, Scope, WorkBudget, WorkUnit, WorkerId,
 };
 use rm_bus::{inproc::InprocBus, BusConfig, BusError, KnowledgeBus, PollBudget};
+use rm_gpu::GpuClient;
 use rm_sat::{CdclReasoner, CdclSolver};
 
 /// Configuration for a [`WorkerPool`].
@@ -136,6 +137,9 @@ pub struct WorkerPool {
     config: WorkerConfig,
     shutdown: Arc<AtomicBool>,
     results: Mutex<Vec<WorkerOutcome>>,
+    /// Optional shared GPU service client. When set, each spawned worker
+    /// receives a clone and uses it for parallel WalkSAT phase guidance.
+    gpu_client: Option<GpuClient>,
 }
 
 /// DIMACS-style problem given to a pool: variables 1..=num_vars, `clauses` a
@@ -197,7 +201,14 @@ impl WorkerPool {
             config,
             shutdown: Arc::new(AtomicBool::new(false)),
             results: Mutex::new(Vec::new()),
+            gpu_client: None,
         }
+    }
+
+    /// Attach a shared GPU service client. Each worker spawned by `run()` gets
+    /// a clone, so all workers share one Metal/CUDA device without contention.
+    pub fn set_gpu_client(&mut self, client: GpuClient) {
+        self.gpu_client = Some(client);
     }
 
     /// The shared bus (for inspection and bridge wiring).
@@ -228,6 +239,7 @@ impl WorkerPool {
             let bus: Arc<dyn KnowledgeBus> = Arc::clone(&self.bus);
             let shutdown = Arc::clone(&self.shutdown);
             let cfg = self.config.clone();
+            let gpu = self.gpu_client.clone();
             let problem = Problem {
                 num_vars: problem.num_vars,
                 clauses: problem.clauses.clone(),
@@ -244,6 +256,7 @@ impl WorkerPool {
                             bus,
                             shutdown,
                             deadline,
+                            gpu,
                         )
                     })
                     .expect("spawn worker thread"),
@@ -329,8 +342,12 @@ fn run_worker(
     bus: Arc<dyn KnowledgeBus>,
     shutdown: Arc<AtomicBool>,
     deadline: Option<Duration>,
+    gpu: Option<GpuClient>,
 ) -> WorkerOutcome {
-    let solver = problem.solver();
+    let mut solver = problem.solver();
+    if let Some(client) = gpu {
+        solver.set_gpu(Box::new(client));
+    }
     let seed = splitmix64(cfg.seed ^ ((worker.0 as u64).wrapping_shl(32)));
     let work = make_work_unit_with(assumptions.clone(), seed);
     let mut reasoner = CdclReasoner::with_import_policy(
