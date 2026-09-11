@@ -1179,7 +1179,7 @@ impl CdclSolver {
         // (probe → vivify → subsume → strengthen).
         // Tied to conflicts (not restart count) so EMA-frequent restarts don't
         // cause runaway overhead on hard instances.
-        const INPROCESS_INTERVAL: u64 = 2_000;
+        const INPROCESS_INTERVAL: u64 = 5_000;
         if self.assumption_floor == 0
             && self.conflicts.saturating_sub(self.conflicts_at_last_probe)
                 >= INPROCESS_INTERVAL
@@ -1222,15 +1222,15 @@ impl CdclSolver {
     /// lowest LBD and highest leverage.
     fn inprocess_vivify(&mut self) {
         debug_assert_eq!(self.assignment.current_level(), 0);
-        const MAX_VIVIFY: usize = 5000;
+        const MAX_VIVIFY: usize = 3000;
 
-        // Collect LEARNT candidates (size ≥ 3, LBD ≤ 8) sorted by LBD ascending.
+        // Collect LEARNT candidates (size ≥ 3, LBD ≤ 12) sorted by LBD ascending.
         // Only learnt clauses are vivified: vivifying problem clauses via level-1
         // propagation chains that go through learned clauses is unsound when those
         // learned clauses are later deleted by reduction.
         let mut candidates: Vec<(ClauseRef, u32)> = Vec::new();
         self.db.for_each_clause(3, |cr, lbd, learnt, _| {
-            if learnt && lbd <= 16 {
+            if learnt && lbd <= 12 {
                 candidates.push((cr, lbd));
             }
         });
@@ -1384,7 +1384,7 @@ impl CdclSolver {
     /// MAX_CHECKS candidate pairs per call to bound wall-clock cost.
     fn inprocess_subsume(&mut self) {
         debug_assert_eq!(self.assignment.current_level(), 0);
-        const MAX_CHECKS: usize = 50_000;
+        const MAX_CHECKS: usize = 20_000;
 
         let lit_cap = (self.num_vars * 2 + 2) as usize;
 
@@ -1492,7 +1492,7 @@ impl CdclSolver {
     /// Each call is capped at MAX_STRENGTHENS operations to bound wall-clock cost.
     fn inprocess_strengthen(&mut self) {
         debug_assert_eq!(self.assignment.current_level(), 0);
-        const MAX_STRENGTHENS: usize = 8_000;
+        const MAX_STRENGTHENS: usize = 4_000;
 
         let nv = self.num_vars as usize;
         let lit_cap = (2 * nv + 4).min(self.binaries.len());
@@ -1923,8 +1923,8 @@ impl CdclSolver {
     /// variables. Stops early when no new unit is discovered (fixpoint).
     fn inprocess_probe(&mut self) {
         debug_assert_eq!(self.assignment.current_level(), 0);
-        const MAX_PROBES_PER_ROUND: u32 = 1200;
-        const MAX_ROUNDS: u32 = 5;
+        const MAX_PROBES_PER_ROUND: u32 = 600;
+        const MAX_ROUNDS: u32 = 4;
 
         // Probe high-activity variables first: they are most likely to be backbone
         // and yield the most unit propagations when forced.
