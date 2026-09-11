@@ -59,13 +59,18 @@ pub struct Problem {
     pub expect: Option<Expected>,
 }
 
-/// Solving strategy: portfolio of parallel CDCL workers, or cube-and-conquer.
+/// Solving strategy for a benchmark run.
+///
+/// - `portfolio`: parallel CDCL workers sharing learned clauses (default).
+/// - `cubeconquer`: lookahead-based cube-and-conquer splitting.
+/// - `auto`: analyse the instance at load time and select among the above.
 #[derive(Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SolverStrategy {
     #[default]
     Portfolio,
     CubeConquer,
+    Auto,
 }
 
 /// Cube-and-conquer parameters. Only used when `strategy = "cubeconquer"`.

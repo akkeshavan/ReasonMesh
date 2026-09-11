@@ -10,6 +10,7 @@
 
 use crate::cnc;
 use crate::manifest::{BaselineConfig, CubeAndConquerConfig, Expected, Manifest, Problem, SolverStrategy};
+use rm_sat::{analyse_cnf, detect_xor_clauses, DetectedClass, GjeMatrix};
 use crate::result::{BaselineResult, KnowledgeMetrics, ManifestRun, ProblemResult, RunSummary};
 use rm_akx::literal::Literal;
 use rm_akx::{ExportPolicy, ImportPolicy, WorkBudget};
@@ -220,17 +221,44 @@ fn solve_problem(
         problem: problem.name.clone(),
         source,
     })?;
-    if manifest.solver.strategy == SolverStrategy::CubeConquer {
-        let cnc_config = manifest
-            .cube_and_conquer
-            .clone()
-            .unwrap_or_default();
+
+    let effective_strategy = if manifest.solver.strategy == SolverStrategy::Auto {
+        let profile = analyse_cnf(&cnf);
+        eprintln!("info: [{}] {}", problem.name, profile);
+        pick_strategy_from_class(profile.detected_class, manifest.solver.workers)
+    } else {
+        manifest.solver.strategy.clone()
+    };
+
+    if effective_strategy == SolverStrategy::CubeConquer {
+        let cnc_config = manifest.cube_and_conquer.clone().unwrap_or_default();
         return solve_problem_cnc(manifest, problem, &cnf, start, &cnc_config);
     }
     if manifest.solver.workers > 1 {
         return solve_problem_pool(manifest, problem, &cnf, start, gpu);
     }
     run_single_solver(manifest, problem, &cnf, start, gpu)
+}
+
+/// Map a detected instance class to the best available strategy.
+/// XOR preprocessing always runs (it's cheap); this only controls search strategy.
+fn pick_strategy_from_class(class: DetectedClass, workers: u32) -> SolverStrategy {
+    match class {
+        // Cardinality and symmetry-heavy instances benefit from cube-and-conquer:
+        // splitting reduces the regularity that makes CDCL exponential.
+        DetectedClass::CardinalityHeavy | DetectedClass::SymmetryHeavy => {
+            if workers > 1 {
+                SolverStrategy::CubeConquer
+            } else {
+                SolverStrategy::Portfolio
+            }
+        }
+        // XOR-heavy: GJE preprocessing does the heavy lifting; portfolio search
+        // on the residual problem is usually sufficient.
+        DetectedClass::XorHeavy => SolverStrategy::Portfolio,
+        // All other classes: portfolio CDCL.
+        _ => SolverStrategy::Portfolio,
+    }
 }
 
 fn solve_problem_cnc(
@@ -278,7 +306,36 @@ fn build_cdcl_solver(cnf: &DimacsCnf, _use_gpu: bool) -> CdclSolver {
         let lits: Vec<Literal> = clause.iter().map(|&l| dimacs_lit(l)).collect();
         solver.add_clause(&lits);
     }
+    // XOR preprocessing: detect XOR constraints, run GJE, inject forced units.
+    preprocess_xor(cnf, &mut solver);
     solver
+}
+
+/// Run GJE over any XOR constraints in the CNF and add forced literals as
+/// unit clauses. Returns early if GJE proves UNSAT (sets the empty clause).
+fn preprocess_xor(cnf: &DimacsCnf, solver: &mut CdclSolver) {
+    let (xor_clauses, _) = detect_xor_clauses(cnf);
+    if xor_clauses.is_empty() {
+        return;
+    }
+    let n_xor = xor_clauses.len();
+    let mut matrix = GjeMatrix::new(&xor_clauses, cnf.num_vars);
+    let result = matrix.eliminate();
+    if result.unsat {
+        log::debug!("xor-preprocess: {n_xor} XOR constraints → UNSAT");
+        solver.add_clause(&[]);
+        return;
+    }
+    let n_forced = result.forced.len();
+    for (var, val) in result.forced {
+        let lit = if val {
+            Literal::positive(var)
+        } else {
+            Literal::negative(var)
+        };
+        solver.add_clause(&[lit]);
+    }
+    log::debug!("xor-preprocess: {n_xor} XOR constraints → {n_forced} forced literals");
 }
 
 fn run_single_solver(

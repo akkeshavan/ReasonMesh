@@ -1,6 +1,7 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use rm_akx::literal::Literal;
 use rm_akx::{BusMetrics, KnowledgeBatch, Scope};
+use rm_sat::{analyse_cnf, detect_xor_clauses, DetectedClass, GjeMatrix};
 use rm_gpu;
 use rm_bench::{run_manifest, Manifest};
 use rm_bus::inproc::InprocBus;
@@ -80,6 +81,19 @@ impl KnowledgeBus for BroadcastBus {
     }
 }
 
+/// Algorithm selection for the `solve` subcommand.
+#[derive(Clone, Debug, PartialEq, Eq, ValueEnum)]
+enum StrategyArg {
+    /// Detect the instance class and pick the best available strategy automatically.
+    Auto,
+    /// Single-threaded CDCL (default single-worker behaviour).
+    Cdcl,
+    /// Portfolio of N parallel CDCL workers sharing learned clauses.
+    Portfolio,
+    /// Cube-and-conquer with lookahead splitting across N workers.
+    Cnc,
+}
+
 /// Exit codes follow the SAT competition convention:
 /// 10 = SAT, 20 = UNSAT, 0 = UNKNOWN/TIMEOUT, 3 = internal error (invalid model).
 const EXIT_SAT: i32 = 10;
@@ -115,6 +129,19 @@ enum Command {
         /// Stop after this many conflicts (default: unlimited).
         #[arg(long)]
         max_conflicts: Option<u64>,
+        /// Wall-clock timeout in seconds (used by portfolio and cnc strategies).
+        #[arg(long, default_value = "300")]
+        timeout_secs: u64,
+        /// Algorithm strategy.
+        ///
+        /// `auto` analyses the instance structure and selects among cdcl, portfolio,
+        /// and cnc automatically. `cdcl` forces single-threaded CDCL. `portfolio`
+        /// runs N parallel workers (set --workers). `cnc` runs cube-and-conquer.
+        #[arg(long, default_value = "auto")]
+        strategy: StrategyArg,
+        /// Print the instance structural profile and detected class, then exit without solving.
+        #[arg(long)]
+        classify_only: bool,
         /// Write a replay trace (`.rmtrace`) of this run to the given path.
         #[arg(long)]
         trace: Option<PathBuf>,
@@ -431,7 +458,8 @@ fn replay_trace(path: &std::path::Path) -> Result<(), TraceError> {
     Ok(())
 }
 
-/// Build a `CdclSolver` loaded with all clauses from `cnf`.
+/// Build a `CdclSolver` loaded with all clauses from `cnf`, then run XOR
+/// preprocessing (detect XOR constraints, GJE, inject forced units).
 fn build_dimacs_solver(cnf: &DimacsCnf, with_proof: bool) -> CdclSolver {
     let mut solver = CdclSolver::new(cnf.num_vars);
     if with_proof {
@@ -450,7 +478,29 @@ fn build_dimacs_solver(cnf: &DimacsCnf, with_proof: bool) -> CdclSolver {
             .collect();
         solver.add_clause(&lits);
     }
+    cli_preprocess_xor(cnf, &mut solver);
     solver
+}
+
+fn cli_preprocess_xor(cnf: &DimacsCnf, solver: &mut CdclSolver) {
+    let (xors, _) = detect_xor_clauses(cnf);
+    if xors.is_empty() {
+        return;
+    }
+    let mut mat = GjeMatrix::new(&xors, cnf.num_vars);
+    let result = mat.eliminate();
+    if result.unsat {
+        solver.add_clause(&[]);
+        return;
+    }
+    for (var, val) in result.forced {
+        let lit = if val {
+            Literal::positive(var)
+        } else {
+            Literal::negative(var)
+        };
+        solver.add_clause(&[lit]);
+    }
 }
 
 /// Validate a SAT model against the original clauses (using code that shares
@@ -520,6 +570,169 @@ fn record_solve_events(solver: &CdclSolver, outcome: Outcome, events: &mut Vec<E
         },
     );
     push(events, EventKind::RunFinished { outcome });
+}
+
+/// Top-level solve dispatcher: load the CNF, optionally classify it, then
+/// dispatch to the appropriate strategy (cdcl, portfolio, or cnc).
+#[allow(clippy::too_many_arguments)]
+fn run_solve_with_strategy(
+    file: &std::path::Path,
+    workers: u32,
+    seed: u64,
+    max_conflicts: Option<u64>,
+    timeout_secs: u64,
+    strategy: StrategyArg,
+    proof_out: Option<&std::path::Path>,
+    use_gpu: bool,
+) -> (i32, Vec<Event>) {
+    // SMT-LIB files bypass all of this and go straight to the SMT path.
+    if file.extension().is_some_and(|e| e == "smt2" || e == "smt") {
+        let input = match std::fs::read_to_string(file) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("error: cannot read {}: {e}", file.display());
+                return (EXIT_INTERNAL_ERROR, vec![]);
+            }
+        };
+        return run_smt_solve(&input, max_conflicts, vec![]);
+    }
+
+    let input = match std::fs::read_to_string(file) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("error: cannot read {}: {e}", file.display());
+            return (EXIT_INTERNAL_ERROR, vec![]);
+        }
+    };
+    let cnf = match parse_dimacs(&input) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("error: invalid DIMACS in {}: {e}", file.display());
+            return (EXIT_INTERNAL_ERROR, vec![]);
+        }
+    };
+
+    // Resolve effective strategy: auto → classify + pick.
+    let effective = match strategy {
+        StrategyArg::Auto => {
+            let profile = analyse_cnf(&cnf);
+            eprintln!("info: {}", profile);
+            match profile.detected_class {
+                DetectedClass::CardinalityHeavy | DetectedClass::SymmetryHeavy
+                    if workers > 1 =>
+                {
+                    eprintln!("info: selecting cnc for {:?}", profile.detected_class);
+                    StrategyArg::Cnc
+                }
+                _ if workers > 1 => {
+                    eprintln!("info: selecting portfolio ({workers} workers)");
+                    StrategyArg::Portfolio
+                }
+                _ => {
+                    eprintln!("info: selecting cdcl (single worker)");
+                    StrategyArg::Cdcl
+                }
+            }
+        }
+        other => other,
+    };
+
+    match effective {
+        StrategyArg::Portfolio if workers > 1 => {
+            run_solve_portfolio(&cnf, workers, seed, timeout_secs, use_gpu)
+        }
+        StrategyArg::Cnc if workers > 1 => {
+            run_solve_cnc(&cnf, workers, timeout_secs)
+        }
+        _ => {
+            // cdcl, or portfolio/cnc with workers==1 (fall back to single solver)
+            run_solve(file, max_conflicts, proof_out, use_gpu)
+        }
+    }
+}
+
+/// Portfolio solve: N parallel CDCL workers sharing learned clauses.
+fn run_solve_portfolio(
+    cnf: &DimacsCnf,
+    workers: u32,
+    seed: u64,
+    timeout_secs: u64,
+    _use_gpu: bool,
+) -> (i32, Vec<Event>) {
+    use rm_akx::{ExportPolicy, ImportPolicy, WorkBudget};
+    use rm_worker::{Problem as WorkerProblem, WorkerConfig, WorkerOutcome, WorkerPool};
+
+    let clauses: Vec<Vec<Literal>> = cnf
+        .clauses
+        .iter()
+        .map(|c| {
+            c.iter()
+                .map(|&l| {
+                    if l > 0 {
+                        Literal::positive(l as u32)
+                    } else {
+                        Literal::negative((-l) as u32)
+                    }
+                })
+                .collect()
+        })
+        .collect();
+    let problem = WorkerProblem::new(cnf.num_vars, clauses);
+    let timeout = std::time::Duration::from_secs(timeout_secs);
+    let config = WorkerConfig {
+        num_workers: workers as usize,
+        seed,
+        export_policy: ExportPolicy {
+            min_utility: 0.25,
+            ..ExportPolicy::default()
+        },
+        import_policy: ImportPolicy {
+            min_utility: 0.143,
+            ..ImportPolicy::default()
+        },
+        step_budget: WorkBudget::default(),
+        ..WorkerConfig::default()
+    };
+    let pool = WorkerPool::new(problem, config);
+    let outcomes = pool.run(&[], Some(timeout));
+
+    let has_sat = outcomes.iter().any(|o| matches!(o, WorkerOutcome::Sat { .. }));
+    let has_unsat = outcomes.iter().any(|o| matches!(o, WorkerOutcome::Unsat { .. }));
+    if has_sat {
+        println!("s SATISFIABLE");
+        (EXIT_SAT, vec![])
+    } else if has_unsat {
+        println!("s UNSATISFIABLE");
+        (EXIT_UNSAT, vec![])
+    } else {
+        println!("s UNKNOWN");
+        (EXIT_UNKNOWN, vec![])
+    }
+}
+
+/// Cube-and-conquer solve: lookahead splitting across N workers.
+fn run_solve_cnc(cnf: &DimacsCnf, workers: u32, timeout_secs: u64) -> (i32, Vec<Event>) {
+    use rm_bench::cnc::run_cube_and_conquer;
+    use rm_bench::manifest::CubeAndConquerConfig;
+    use rm_telemetry::Outcome;
+
+    let config = CubeAndConquerConfig::default();
+    let timeout = std::time::Duration::from_secs(timeout_secs);
+    let (outcome, _conflicts) = run_cube_and_conquer(cnf, &config, workers as usize, timeout);
+    match outcome {
+        Outcome::Sat => {
+            println!("s SATISFIABLE");
+            (EXIT_SAT, vec![])
+        }
+        Outcome::Unsat => {
+            println!("s UNSATISFIABLE");
+            (EXIT_UNSAT, vec![])
+        }
+        Outcome::Unknown => {
+            println!("s UNKNOWN");
+            (EXIT_UNKNOWN, vec![])
+        }
+    }
 }
 
 /// Solve a DIMACS instance, returning the exit code and the events recorded
@@ -784,18 +997,48 @@ fn main() {
             deterministic,
             no_gpu,
             max_conflicts,
+            timeout_secs,
+            strategy,
+            classify_only,
             trace,
             proof_out,
         } => {
             let workers = if deterministic { 1 } else { workers };
             log::info!(
-                "solve: {} workers={} seed={}",
+                "solve: {} workers={} seed={} strategy={:?}",
                 file.display(),
                 workers,
-                seed
+                seed,
+                strategy,
             );
+            if classify_only {
+                let input = match std::fs::read_to_string(&file) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        eprintln!("error: cannot read {}: {e}", file.display());
+                        std::process::exit(EXIT_INTERNAL_ERROR);
+                    }
+                };
+                if let Ok(cnf) = parse_dimacs(&input) {
+                    let profile = analyse_cnf(&cnf);
+                    println!("{}", profile);
+                } else {
+                    eprintln!("error: invalid DIMACS in {}", file.display());
+                    std::process::exit(EXIT_INTERNAL_ERROR);
+                }
+                std::process::exit(0);
+            }
             let command_line = std::env::args().collect::<Vec<_>>().join(" ");
-            let (code, events) = run_solve(&file, max_conflicts, proof_out.as_deref(), !no_gpu);
+            let (code, events) = run_solve_with_strategy(
+                &file,
+                workers,
+                seed,
+                max_conflicts,
+                timeout_secs,
+                strategy,
+                proof_out.as_deref(),
+                !no_gpu,
+            );
             if let Some(trace_path) = trace {
                 match write_trace(&trace_path, seed, command_line, events) {
                     Ok(()) => log::info!("trace written to {}", trace_path.display()),
