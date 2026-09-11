@@ -10,7 +10,7 @@
 
 use crate::cnc;
 use crate::manifest::{BaselineConfig, CubeAndConquerConfig, Expected, Manifest, Problem, SolverStrategy};
-use rm_sat::{amo_preprocess, analyse_cnf, detect_xor_clauses, DetectedClass, GjeMatrix};
+use rm_sat::{amo_preprocess, analyse_cnf, big_preprocess, detect_xor_clauses, DetectedClass, GjeMatrix};
 use crate::result::{BaselineResult, KnowledgeMetrics, ManifestRun, ProblemResult, RunSummary};
 use rm_akx::literal::Literal;
 use rm_akx::{ExportPolicy, ImportPolicy, WorkBudget};
@@ -315,10 +315,26 @@ fn build_cdcl_solver(cnf: &DimacsCnf, _use_gpu: bool) -> CdclSolver {
         return solver;
     }
 
+    // Phase 4: BIG/SCC — circular UNSAT detection for CircuitLike instances.
+    // Detects contradictions arising from binary implication cycles that BCP
+    // at level 0 cannot find without a unit clause to seed the chain.
+    // Equivalency merging (n_merged > 0) requires model extension after solve;
+    // that optimisation is deferred — here we only short-circuit on UNSAT.
+    let big = big_preprocess(cnf);
+    if big.unsat {
+        log::debug!("big-preprocess: circular binary contradiction → UNSAT");
+        solver.add_clause(&[]);
+        return solver;
+    }
+    if big.n_merged > 0 {
+        log::debug!("big-preprocess: {} equivalent variable pairs detected", big.n_merged);
+    }
+
     for clause in &cnf.clauses {
         let lits: Vec<Literal> = clause.iter().map(|&l| dimacs_lit(l)).collect();
         solver.add_clause(&lits);
     }
+
     // XOR preprocessing: detect XOR constraints, run GJE, inject forced units.
     preprocess_xor(cnf, &mut solver);
     solver

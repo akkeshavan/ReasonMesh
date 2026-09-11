@@ -2,6 +2,7 @@
 
 pub mod amo;
 pub mod assignment;
+pub mod big;
 pub mod bve;
 pub mod cdcl;
 pub mod classify;
@@ -15,6 +16,7 @@ pub mod watched;
 pub mod xor;
 
 pub use amo::{amo_preprocess, AmoPreprocessResult};
+pub use big::{big_preprocess, substitute as big_substitute, BigPreprocessResult};
 pub use cdcl::{BcpStats, CdclSolver, SolveResult};
 pub use classify::{analyse as analyse_cnf, DetectedClass, InstanceProfile};
 pub use dimacs::{parse_dimacs, DimacsCnf, DimacsError};
