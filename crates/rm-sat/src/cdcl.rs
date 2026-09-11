@@ -53,13 +53,17 @@ pub enum SolveResult {
     Sat(Model),
     Unsat,
     Unknown,
+    /// Conflict budget exhausted before the deadline — the caller may resplit.
+    BudgetExceeded,
 }
 
 impl PartialEq for SolveResult {
     fn eq(&self, other: &Self) -> bool {
         matches!(
             (self, other),
-            (Self::Unsat, Self::Unsat) | (Self::Unknown, Self::Unknown)
+            (Self::Unsat, Self::Unsat)
+                | (Self::Unknown, Self::Unknown)
+                | (Self::BudgetExceeded, Self::BudgetExceeded)
         )
     }
 }
@@ -387,6 +391,76 @@ impl CdclSolver {
         self.solve_inner(assumptions, max_conflicts, deadline)
     }
 
+    // -----------------------------------------------------------------------
+    // Lookahead / cube-and-conquer helpers (public API used by lookahead.rs)
+    // -----------------------------------------------------------------------
+
+    /// Whether variable `var` is currently assigned (true or false).
+    #[inline]
+    pub fn is_var_assigned(&self, var: Var) -> bool {
+        self.assignment.is_assigned(var)
+    }
+
+    /// Propagate any pending level-0 unit assignments.  Returns `true` if a
+    /// contradiction was found (formula is UNSAT at root).  Must be called at
+    /// level 0 only.
+    pub fn propagate_units(&mut self) -> bool {
+        debug_assert_eq!(self.assignment.current_level(), 0);
+        self.propagate().is_some()
+    }
+
+    /// Probe `var = phase` via unit propagation and measure how many additional
+    /// literals are forced.  Returns `u32::MAX` when the probe leads to a
+    /// conflict (failed literal).  The solver state is fully restored after the
+    /// call.  Must be called at `base_level` (level 0 on a fresh solver).
+    pub fn probe_var(&mut self, var: Var, phase: bool) -> u32 {
+        debug_assert!(!self.assignment.is_assigned(var), "probe_var called on assigned var");
+        let lit = if phase {
+            Literal::positive(var)
+        } else {
+            Literal::negative(var)
+        };
+        let before = self.assignment.num_assigned();
+        self.assignment.new_decision_level();
+        self.assignment
+            .assign(lit, self.assignment.current_level(), ClauseRef::DECISION.0);
+        if self.propagate().is_some() {
+            self.backtrack_and_reschedule(self.base_level);
+            u32::MAX
+        } else {
+            let forced = (self.assignment.num_assigned() - before - 1) as u32;
+            self.backtrack_and_reschedule(self.base_level);
+            forced
+        }
+    }
+
+    /// Check whether the formula is consistent under `assumptions` via BCP only
+    /// (no branching).  Returns `true` if no contradiction is found.  The
+    /// solver state is fully restored after the call.
+    pub fn is_feasible_under_assumptions(&mut self, assumptions: &[Literal]) -> bool {
+        let saved_level = self.assignment.current_level();
+        for &lit in assumptions {
+            match self.assignment.literal_value(lit) {
+                Value::True => {}
+                Value::False => {
+                    self.backtrack_and_reschedule(saved_level);
+                    return false;
+                }
+                Value::Undef => {
+                    self.assignment.new_decision_level();
+                    self.assignment.assign(
+                        lit,
+                        self.assignment.current_level(),
+                        ClauseRef::DECISION.0,
+                    );
+                }
+            }
+        }
+        let ok = self.propagate().is_none();
+        self.backtrack_and_reschedule(saved_level);
+        ok
+    }
+
     fn solve_inner(
         &mut self,
         assumptions: &[Literal],
@@ -445,7 +519,7 @@ impl CdclSolver {
             }
 
             if self.conflicts - conflicts_at_entry > max_conflicts {
-                break SolveResult::Unknown;
+                break SolveResult::BudgetExceeded;
             }
             if deadline.is_some_and(|d| Instant::now() >= d) {
                 break SolveResult::Unknown;
@@ -1061,7 +1135,7 @@ impl CdclSolver {
     /// Reschedule all variables that will be unassigned by backtracking to
     /// `target_level`, then perform the backtrack.
     fn backtrack_and_reschedule(&mut self, target_level: u32) {
-        let to_reschedule: SmallVec<[Literal; 256]> = self
+        let to_reschedule: SmallVec<[Literal; 32]> = self
             .assignment
             .trail_from_level(target_level)
             .iter()
@@ -2320,7 +2394,7 @@ mod tests {
                                 eprintln!("UNSAT but brute-force says SAT: {clauses:?}");
                             }
                         }
-                        SolveResult::Unknown => {
+                        SolveResult::Unknown | SolveResult::BudgetExceeded => {
                             mismatches += 1;
                             eprintln!("UNKNOWN for small formula: {clauses:?}");
                         }
@@ -2422,7 +2496,9 @@ mod tests {
                     true
                 }
                 SolveResult::Unsat => false,
-                SolveResult::Unknown => panic!("UNKNOWN for small formula"),
+                SolveResult::Unknown | SolveResult::BudgetExceeded => {
+                    panic!("UNKNOWN for small formula")
+                }
             };
             assert_eq!(
                 bf, cdcl,
@@ -2477,10 +2553,10 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    fn zero_budget_returns_unknown() {
+    fn zero_budget_returns_budget_exceeded() {
         let (nv, clauses) = pigeonhole(3, 2);
         let mut s = dimacs_to_solver(nv, &clauses);
-        assert_eq!(s.solve(&[], 0), SolveResult::Unknown);
+        assert_eq!(s.solve(&[], 0), SolveResult::BudgetExceeded);
     }
 
     #[test]
@@ -2502,7 +2578,9 @@ mod tests {
                     panic!("reported UNSAT but pigeonhole(5,5) is satisfiable");
                 }
             }
-            SolveResult::Unknown => panic!("expected a decision for pigeonhole(5,5)"),
+            SolveResult::Unknown | SolveResult::BudgetExceeded => {
+                panic!("expected a decision for pigeonhole(5,5)")
+            }
         }
     }
 
@@ -2568,7 +2646,7 @@ mod tests {
             .checked_add(std::time::Duration::from_millis(30))
             .unwrap();
         match s.solve_with_deadline(&[], u64::MAX, Some(deadline)) {
-            SolveResult::Unknown => {}
+            SolveResult::Unknown | SolveResult::BudgetExceeded => {}
             SolveResult::Unsat => {}
             SolveResult::Sat(_) => panic!("PHP(10,9) is UNSAT"),
         }
