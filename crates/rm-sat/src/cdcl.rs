@@ -81,9 +81,9 @@ impl PartialOrd for VsidsEntry {
 }
 impl Ord for VsidsEntry {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // Activities are always finite; total_cmp avoids the NaN branch of partial_cmp.
         self.activity
-            .partial_cmp(&other.activity)
-            .unwrap_or(std::cmp::Ordering::Equal)
+            .total_cmp(&other.activity)
             .then_with(|| other.var.cmp(&self.var))
     }
 }
@@ -591,10 +591,12 @@ impl CdclSolver {
             self.propagations += 1;
 
             // Binary clause fast path.
-            let n_bin = self.binaries[p.raw() as usize].len();
+            let p_raw = p.raw() as usize;
+            let n_bin = self.binaries[p_raw].len();
             self.bcp_binary_checks += n_bin as u64;
             for bi in 0..n_bin {
-                let (impl_lit, reason_raw) = self.binaries[p.raw() as usize][bi];
+                // SAFETY: bi < n_bin = self.binaries[p_raw].len()
+                let (impl_lit, reason_raw) = unsafe { *self.binaries[p_raw].get_unchecked(bi) };
                 match self.assignment.literal_value(impl_lit) {
                     Value::True => {}
                     Value::Undef => {
@@ -707,7 +709,7 @@ impl CdclSolver {
     // -----------------------------------------------------------------------
 
     /// Analyse `conflict_cr` and return (learnt_clause, backjump_level).
-    fn analyze(&mut self, conflict_cr: ClauseRef) -> (SmallVec<[Literal; 8]>, u32) {
+    fn analyze(&mut self, conflict_cr: ClauseRef) -> (SmallVec<[Literal; 16]>, u32) {
         let current_level = self.assignment.current_level();
 
         self.analyze_stamp = self.analyze_stamp.wrapping_add(1);
@@ -717,7 +719,7 @@ impl CdclSolver {
         }
         let stamp = self.analyze_stamp;
 
-        let mut learnt: SmallVec<[Literal; 8]> = SmallVec::new();
+        let mut learnt: SmallVec<[Literal; 16]> = SmallVec::new();
         let mut counter = 0usize;
 
         self.process_reason_into(
@@ -754,7 +756,7 @@ impl CdclSolver {
         trail: &[Literal],
         current_level: u32,
         stamp: u32,
-        learnt: &mut SmallVec<[Literal; 8]>,
+        learnt: &mut SmallVec<[Literal; 16]>,
         counter: &mut usize,
     ) -> Literal {
         let mut trail_pos = trail.len();
@@ -798,8 +800,8 @@ impl CdclSolver {
     fn build_learned_clause(
         &self,
         uip: Literal,
-        mut learnt: SmallVec<[Literal; 8]>,
-    ) -> (SmallVec<[Literal; 8]>, u32) {
+        mut learnt: SmallVec<[Literal; 16]>,
+    ) -> (SmallVec<[Literal; 16]>, u32) {
         let asserting = uip.negate();
         let backjump_level = if learnt.is_empty() {
             0
@@ -814,7 +816,7 @@ impl CdclSolver {
             max_lvl
         };
 
-        let mut clause: SmallVec<[Literal; 8]> = SmallVec::new();
+        let mut clause: SmallVec<[Literal; 16]> = SmallVec::new();
         clause.push(asserting);
         clause.extend_from_slice(&learnt);
         (clause, backjump_level)
@@ -825,7 +827,7 @@ impl CdclSolver {
         cr: ClauseRef,
         current_level: u32,
         stamp: u32,
-        learnt: &mut SmallVec<[Literal; 8]>,
+        learnt: &mut SmallVec<[Literal; 16]>,
         counter: &mut usize,
         resolving_var: Option<Var>,
     ) {
@@ -836,7 +838,7 @@ impl CdclSolver {
             // Lower the stored LBD if the clause's effective LBD has dropped
             // (some levels have since collapsed), promoting tier-3 → tier-2.
             if self.db.lbd(cr) > 2 {
-                let lits: SmallVec<[Literal; 8]> = self.db.lits(cr).iter().copied().collect();
+                let lits: SmallVec<[Literal; 16]> = self.db.lits(cr).iter().copied().collect();
                 let new_lbd = self.compute_lbd(&lits);
                 if new_lbd < self.db.lbd(cr) {
                     self.db.set_lbd(cr, new_lbd);
@@ -844,9 +846,10 @@ impl CdclSolver {
             }
         }
 
-        let n = self.db.clause_len(cr);
-        for i in 0..n {
-            let lit = self.db.lit_at(cr, i);
+        // Collect the literals into a local SmallVec to release the &self.db borrow
+        // before calling bump_var_activity (which needs &mut self).
+        let lits: SmallVec<[Literal; 16]> = self.db.lits(cr).iter().copied().collect();
+        for &lit in &lits {
             let var = lit.var();
             if Some(var) == resolving_var || self.seen_stamp[var as usize] == stamp {
                 continue;
@@ -873,7 +876,7 @@ impl CdclSolver {
     /// the reason graph. A literal is redundant if every variable in its reason
     /// chain is either at level 0, already in the frontier (seen_stamp), or
     /// itself redundant. A cumulative work counter caps the total effort.
-    fn minimize_learned_clause(&mut self, learnt: &mut SmallVec<[Literal; 8]>, stamp: u32) {
+    fn minimize_learned_clause(&mut self, learnt: &mut SmallVec<[Literal; 16]>, stamp: u32) {
         if learnt.len() <= 1 {
             return;
         }
@@ -993,16 +996,15 @@ impl CdclSolver {
         let remaps = self.db.compact();
 
         if !remaps.is_empty() {
-            // Build a lookup map for O(1) remapping.
-            let remap_map: std::collections::HashMap<u32, u32> =
-                remaps.iter().copied().collect();
+            // compact() produces remaps sorted ascending by old offset — binary search
+            // is allocation-free and faster than a HashMap for typical remap set sizes.
 
             // Remap reason pointers for every assigned variable.
             for var in 1..=(self.num_vars as Var) {
                 let r = self.assignment.reason_of(var);
                 if !ClauseRef(r).is_sentinel() {
-                    if let Some(&new_r) = remap_map.get(&r) {
-                        self.assignment.set_reason(var, new_r);
+                    if let Ok(pos) = remaps.binary_search_by_key(&r, |&(old, _)| old) {
+                        self.assignment.set_reason(var, remaps[pos].1);
                     }
                 }
             }
@@ -1010,8 +1012,8 @@ impl CdclSolver {
             // Remap ClauseRef raw values stored in the binary-clause table.
             for entry_list in self.binaries.iter_mut() {
                 for (_, cr_raw) in entry_list.iter_mut() {
-                    if let Some(&new_raw) = remap_map.get(cr_raw) {
-                        *cr_raw = new_raw;
+                    if let Ok(pos) = remaps.binary_search_by_key(cr_raw, |&(old, _)| old) {
+                        *cr_raw = remaps[pos].1;
                     }
                 }
             }
@@ -1059,7 +1061,7 @@ impl CdclSolver {
     /// Reschedule all variables that will be unassigned by backtracking to
     /// `target_level`, then perform the backtrack.
     fn backtrack_and_reschedule(&mut self, target_level: u32) {
-        let to_reschedule: SmallVec<[Literal; 32]> = self
+        let to_reschedule: SmallVec<[Literal; 256]> = self
             .assignment
             .trail_from_level(target_level)
             .iter()
@@ -1514,12 +1516,15 @@ impl CdclSolver {
 
         'outer: for p_lit_raw in 0..lit_cap {
             let p_lit = Literal::from_raw(p_lit_raw as u32);
-            let bin_snapshot: Vec<(Literal, u32)> = self.binaries[p_lit_raw].clone();
-            for (q, _) in bin_snapshot {
+            // Iterate by index so we don't clone the binary list.
+            let n_bin = self.binaries[p_lit_raw].len();
+            for bi in 0..n_bin {
+                let (q, _) = self.binaries[p_lit_raw][bi];
                 let q_raw = q.raw() as usize;
                 if q_raw >= lit_cap {
                     continue;
                 }
+                let q_neg = q.negate();
                 for &cr in &occ[p_lit_raw] {
                     if to_shrink.len() >= MAX_STRENGTHENS {
                         break 'outer;
@@ -1527,23 +1532,19 @@ impl CdclSolver {
                     if self.db.is_deleted(cr) {
                         continue;
                     }
-                    let n = self.db.clause_len(cr);
-                    // occ guarantees p_lit ∈ C; need q also in C.
-                    let has_q = (0..n).any(|i| self.db.lit_at(cr, i) == q);
-                    if !has_q {
-                        continue;
+                    // Collect lits once; release &self.db before touching &self.assignment.
+                    let lits: SmallVec<[Literal; 16]> =
+                        self.db.lits(cr).iter().copied().collect();
+                    // Single pass: check has_q, tautology, and reason in one scan.
+                    let mut has_q = false;
+                    let mut has_neg_q = false;
+                    let mut is_reason = false;
+                    for &l in &lits {
+                        if l == q { has_q = true; }
+                        if l == q_neg { has_neg_q = true; }
+                        if self.assignment.reason_of(l.var()) == cr.0 { is_reason = true; }
                     }
-                    // Skip if resolvent would be a tautology.
-                    let has_neg_q = (0..n).any(|i| self.db.lit_at(cr, i) == q.negate());
-                    if has_neg_q {
-                        continue;
-                    }
-                    // Skip reason clauses: removing a literal could invalidate the reason.
-                    let is_reason = (0..n).any(|i| {
-                        let v = self.db.lit_at(cr, i).var();
-                        self.assignment.reason_of(v) == cr.0
-                    });
-                    if is_reason {
+                    if !has_q || has_neg_q || is_reason {
                         continue;
                     }
                     to_shrink.push((cr, p_lit));

@@ -68,7 +68,9 @@ impl ClauseArena {
 
     #[inline]
     fn raw_header(&self, cr: ClauseRef) -> u32 {
-        self.data[cr.0 as usize]
+        // SAFETY: ClauseRef is only produced by add(), which stores the offset
+        // before pushing; compact() remaps all stored refs to new positions.
+        unsafe { *self.data.get_unchecked(cr.0 as usize) }
     }
 
     #[inline]
@@ -126,19 +128,27 @@ impl ClauseArena {
     #[inline]
     pub fn lit_at(&self, cr: ClauseRef, idx: usize) -> Literal {
         debug_assert!(idx < self.clause_len(cr));
-        Literal::from_raw(self.data[cr.0 as usize + 1 + idx])
+        // SAFETY: idx < clause_len(cr) (asserted above); cr is always a valid arena offset.
+        Literal::from_raw(unsafe { *self.data.get_unchecked(cr.0 as usize + 1 + idx) })
     }
 
     #[inline]
     pub fn set_lit_at(&mut self, cr: ClauseRef, idx: usize, lit: Literal) {
         debug_assert!(idx < self.clause_len(cr));
-        self.data[cr.0 as usize + 1 + idx] = lit.raw();
+        // SAFETY: idx < clause_len(cr) (asserted above); cr is always a valid arena offset.
+        unsafe { *self.data.get_unchecked_mut(cr.0 as usize + 1 + idx) = lit.raw() };
     }
 
     #[inline]
     pub fn swap_lits(&mut self, cr: ClauseRef, i: usize, j: usize) {
+        debug_assert!(i < self.clause_len(cr));
+        debug_assert!(j < self.clause_len(cr));
         let base = cr.0 as usize + 1;
-        self.data.swap(base + i, base + j);
+        // SAFETY: i,j < clause_len(cr) (asserted above).
+        unsafe {
+            let ptr = self.data.as_mut_ptr().add(base);
+            std::ptr::swap(ptr.add(i), ptr.add(j));
+        }
     }
 
     /// Return all literals as a slice backed directly by the arena — zero copy.
