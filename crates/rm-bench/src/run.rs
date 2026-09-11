@@ -10,7 +10,7 @@
 
 use crate::cnc;
 use crate::manifest::{BaselineConfig, CubeAndConquerConfig, Expected, Manifest, Problem, SolverStrategy};
-use rm_sat::{analyse_cnf, detect_xor_clauses, DetectedClass, GjeMatrix};
+use rm_sat::{amo_preprocess, analyse_cnf, detect_xor_clauses, DetectedClass, GjeMatrix};
 use crate::result::{BaselineResult, KnowledgeMetrics, ManifestRun, ProblemResult, RunSummary};
 use rm_akx::literal::Literal;
 use rm_akx::{ExportPolicy, ImportPolicy, WorkBudget};
@@ -302,6 +302,19 @@ fn solve_problem_cnc(
 
 fn build_cdcl_solver(cnf: &DimacsCnf, _use_gpu: bool) -> CdclSolver {
     let mut solver = CdclSolver::new(cnf.num_vars);
+
+    // Phase 3: PB counting check — detects PHP-style UNSAT in O(n+m).
+    let amo = amo_preprocess(cnf);
+    if amo.counting_unsat {
+        log::debug!(
+            "amo-preprocess: counting contradiction → UNSAT ({} alo, {} amo groups)",
+            amo.alo_groups.len(),
+            amo.amo_groups.len()
+        );
+        solver.add_clause(&[]);
+        return solver;
+    }
+
     for clause in &cnf.clauses {
         let lits: Vec<Literal> = clause.iter().map(|&l| dimacs_lit(l)).collect();
         solver.add_clause(&lits);

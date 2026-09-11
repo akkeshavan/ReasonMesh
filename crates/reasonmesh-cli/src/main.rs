@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use rm_akx::literal::Literal;
 use rm_akx::{BusMetrics, KnowledgeBatch, Scope};
-use rm_sat::{analyse_cnf, detect_xor_clauses, DetectedClass, GjeMatrix};
+use rm_sat::{amo_preprocess, analyse_cnf, detect_xor_clauses, DetectedClass, GjeMatrix};
 use rm_gpu;
 use rm_bench::{run_manifest, Manifest};
 use rm_bus::inproc::InprocBus;
@@ -465,6 +465,14 @@ fn build_dimacs_solver(cnf: &DimacsCnf, with_proof: bool) -> CdclSolver {
     if with_proof {
         solver.enable_proof_logging();
     }
+
+    // Phase 3: PB counting check — detects PHP-style UNSAT in O(n+m).
+    let amo = amo_preprocess(cnf);
+    if amo.counting_unsat {
+        solver.add_clause(&[]);
+        return solver;
+    }
+
     for clause in &cnf.clauses {
         let lits: Vec<Literal> = clause
             .iter()

@@ -1,5 +1,6 @@
 //! Production CDCL SAT core — Milestone M1.
 
+pub mod amo;
 pub mod assignment;
 pub mod bve;
 pub mod cdcl;
@@ -13,6 +14,7 @@ pub mod vmtf;
 pub mod watched;
 pub mod xor;
 
+pub use amo::{amo_preprocess, AmoPreprocessResult};
 pub use cdcl::{BcpStats, CdclSolver, SolveResult};
 pub use classify::{analyse as analyse_cnf, DetectedClass, InstanceProfile};
 pub use dimacs::{parse_dimacs, DimacsCnf, DimacsError};
