@@ -745,7 +745,7 @@ impl CdclT {
         for _ in 0..MAX_CDCLT_ITERS {
             match self.sat.solve(&[], 50_000) {
                 SolveResult::Unsat => return NoResult::Unsat,
-                SolveResult::Unknown => return NoResult::Unknown,
+                SolveResult::Unknown | SolveResult::BudgetExceeded => return NoResult::Unknown,
                 SolveResult::Sat(ref model) => {
                     if let Some(conflict) = self.theory_check(model) {
                         if conflict.is_empty() {

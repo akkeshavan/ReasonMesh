@@ -8,7 +8,8 @@
 //! true` is the clause-sharing portfolio (baseline 3), `false` an isolated
 //! portfolio (baseline 2) — the G1-gate control (§18).
 
-use crate::manifest::{BaselineConfig, Expected, Manifest, Problem};
+use crate::cnc;
+use crate::manifest::{BaselineConfig, CubeAndConquerConfig, Expected, Manifest, Problem, SolverStrategy};
 use crate::result::{BaselineResult, KnowledgeMetrics, ManifestRun, ProblemResult, RunSummary};
 use rm_akx::literal::Literal;
 use rm_akx::{ExportPolicy, ImportPolicy, WorkBudget};
@@ -219,10 +220,56 @@ fn solve_problem(
         problem: problem.name.clone(),
         source,
     })?;
+    if manifest.solver.strategy == SolverStrategy::CubeConquer {
+        let cnc_config = manifest
+            .cube_and_conquer
+            .clone()
+            .unwrap_or_default();
+        return solve_problem_cnc(manifest, problem, &cnf, start, &cnc_config);
+    }
     if manifest.solver.workers > 1 {
         return solve_problem_pool(manifest, problem, &cnf, start, gpu);
     }
     run_single_solver(manifest, problem, &cnf, start, gpu)
+}
+
+fn solve_problem_cnc(
+    manifest: &Manifest,
+    problem: &Problem,
+    cnf: &DimacsCnf,
+    start: Instant,
+    cnc_config: &CubeAndConquerConfig,
+) -> Result<ProblemResult, RunError> {
+    let timeout = Duration::from_secs(manifest.solver.timeout_secs);
+    let n_workers = manifest.solver.workers.max(1) as usize;
+
+    let (outcome, conflicts) = cnc::run_cube_and_conquer(cnf, cnc_config, n_workers, timeout);
+
+    let wall = start.elapsed();
+    let timed_out = wall >= timeout && outcome == Outcome::Unknown;
+    let counters = RunCounters {
+        conflicts,
+        decisions: 0,
+        propagations: 0,
+        restarts: 0,
+    };
+    let baselines = collect_baselines(manifest, problem);
+
+    Ok(ProblemResult {
+        name: problem.name.clone(),
+        outcome,
+        expected: problem.expect,
+        matches_expected: expected_matches(problem.expect, outcome),
+        wall,
+        timed_out,
+        conflicts: counters.conflicts,
+        decisions: 0,
+        propagations: 0,
+        restarts: 0,
+        knowledge: None,
+        baselines,
+        trace: None,
+    })
 }
 
 fn build_cdcl_solver(cnf: &DimacsCnf, _use_gpu: bool) -> CdclSolver {
@@ -262,7 +309,7 @@ fn run_single_solver(
             (Outcome::Sat, Some(raw))
         }
         SolveResult::Unsat => (Outcome::Unsat, None),
-        SolveResult::Unknown => (Outcome::Unknown, None),
+        SolveResult::Unknown | SolveResult::BudgetExceeded => (Outcome::Unknown, None),
     };
 
     let wall = start.elapsed();
@@ -689,7 +736,7 @@ fn write_problem_trace(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::manifest::{Manifest, OutputConfig, Problem, SolverConfig};
+    use crate::manifest::{Manifest, OutputConfig, Problem, SolverConfig, SolverStrategy};
     use std::fs;
 
     struct TempDir(std::path::PathBuf);
@@ -728,6 +775,7 @@ mod tests {
                 max_conflicts_per_problem: Some(100_000),
                 timeout_secs: 30,
                 gpu: false,
+                strategy: SolverStrategy::Portfolio,
             },
             output: OutputConfig {
                 dir: dir.0.join("out"),
@@ -735,6 +783,7 @@ mod tests {
             },
             baselines: vec![],
             problems,
+            cube_and_conquer: None,
         }
     }
 
@@ -758,6 +807,7 @@ mod tests {
                 max_conflicts_per_problem: Some(100_000),
                 timeout_secs: 30,
                 gpu: false,
+                strategy: SolverStrategy::Portfolio,
             },
             output: OutputConfig {
                 dir: dir.0.join("out"),
@@ -765,6 +815,7 @@ mod tests {
             },
             baselines: vec![],
             problems,
+            cube_and_conquer: None,
         }
     }
 

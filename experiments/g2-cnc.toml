@@ -1,0 +1,54 @@
+# C&C experiment: Cube-and-Conquer on hard PHP instances.
+# Uses lookahead-driven splitting + per-worker CDCL — targets PHP-11-10 and harder.
+schema_version = 1
+name = "g2-cnc"
+description = "G2: ReasonMesh cube-and-conquer on PHP pigeonhole instances"
+
+[solver]
+workers = 4
+seed = 1
+deterministic = false
+strategy = "cubeconquer"
+timeout_secs = 120
+
+[cube_and_conquer]
+initial_depth = 3
+initial_budget = 10000
+max_budget = 5000000
+
+[output]
+dir = "results/g2/cnc"
+trace = false
+
+[[baselines]]
+name = "cadical-1t"
+binary = "cadical"
+
+[[baselines]]
+name = "z3-1t"
+binary = "z3"
+
+[[problems]]
+name = "php-8-7"
+file = "../benchmarks/g1/php-8-7.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "php-9-8"
+file = "../benchmarks/g1/php-9-8.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "php-10-9"
+file = "../benchmarks/g1/php-10-9.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "php-11-10"
+file = "../benchmarks/g1/php-11-10.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "php-12-11"
+file = "../benchmarks/g1/php-12-11.cnf"
+expect = "unsat"

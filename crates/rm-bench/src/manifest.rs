@@ -59,6 +59,37 @@ pub struct Problem {
     pub expect: Option<Expected>,
 }
 
+/// Solving strategy: portfolio of parallel CDCL workers, or cube-and-conquer.
+#[derive(Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SolverStrategy {
+    #[default]
+    Portfolio,
+    CubeConquer,
+}
+
+/// Cube-and-conquer parameters. Only used when `strategy = "cubeconquer"`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CubeAndConquerConfig {
+    /// Lookahead depth for the initial cube set: 2 → at most 4 cubes.
+    pub initial_depth: u32,
+    /// Per-cube conflict budget before resplitting.
+    pub initial_budget: u64,
+    /// Maximum conflict budget (doubles on each resplit, capped here).
+    pub max_budget: u64,
+}
+
+impl Default for CubeAndConquerConfig {
+    fn default() -> Self {
+        CubeAndConquerConfig {
+            initial_depth: 2,
+            initial_budget: 5_000,
+            max_budget: 2_000_000,
+        }
+    }
+}
+
 /// Solver configuration shared across the run.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
@@ -87,6 +118,9 @@ pub struct SolverConfig {
     /// CPU walk if Metal is unavailable.
     #[serde(default)]
     pub gpu: bool,
+    /// Solving strategy: "portfolio" (default) or "cubeconquer".
+    #[serde(default)]
+    pub strategy: SolverStrategy,
 }
 
 impl Default for SolverConfig {
@@ -105,6 +139,7 @@ impl Default for SolverConfig {
             max_conflicts_per_problem: Some(100_000),
             timeout_secs: 300,
             gpu: false,
+            strategy: SolverStrategy::Portfolio,
         }
     }
 }
@@ -177,6 +212,9 @@ pub struct Manifest {
     pub baselines: Vec<BaselineConfig>,
     #[serde(default)]
     pub problems: Vec<Problem>,
+    /// Cube-and-conquer parameters.  Required when `solver.strategy = "cubeconquer"`.
+    #[serde(default)]
+    pub cube_and_conquer: Option<CubeAndConquerConfig>,
 }
 
 impl Manifest {

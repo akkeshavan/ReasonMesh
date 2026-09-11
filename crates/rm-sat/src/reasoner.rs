@@ -252,7 +252,7 @@ impl Reasoner for CdclReasoner {
                 model: Arc::new(self.to_partial_model(&model)),
             }),
             SolveResult::Unsat => Ok(ReasonerEvent::UnsatLocal { proof_ref: None }),
-            SolveResult::Unknown => {
+            SolveResult::BudgetExceeded | SolveResult::Unknown => {
                 let wall_budget_hit = started.elapsed().as_millis() as u64 >= budget.max_ms;
                 if wall_budget_hit {
                     Ok(ReasonerEvent::BudgetExhausted)

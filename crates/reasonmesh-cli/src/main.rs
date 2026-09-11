@@ -576,7 +576,7 @@ fn run_solve(
             }
             Outcome::Unsat
         }
-        SolveResult::Unknown => {
+        SolveResult::Unknown | SolveResult::BudgetExceeded => {
             println!("s UNKNOWN");
             Outcome::Unknown
         }

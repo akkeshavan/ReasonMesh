@@ -4,6 +4,7 @@
 //! executes it against the production solver and emits machine-readable
 //! results (JSON) with PAR-2/PAR-10 scoring and independent model validation.
 
+pub mod cnc;
 pub mod manifest;
 pub mod result;
 pub mod run;

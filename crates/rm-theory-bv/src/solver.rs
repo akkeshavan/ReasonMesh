@@ -99,7 +99,7 @@ impl BvSolver {
                 })
             }
             SolveResult::Unsat => Ok(BvResult::Unsat),
-            SolveResult::Unknown => Ok(BvResult::Unknown),
+            SolveResult::Unknown | SolveResult::BudgetExceeded => Ok(BvResult::Unknown),
         }
     }
 }

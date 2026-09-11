@@ -5,6 +5,7 @@ pub mod bve;
 pub mod cdcl;
 pub mod clause;
 pub mod dimacs;
+pub mod lookahead;
 pub mod model;
 pub mod reasoner;
 pub mod vmtf;
