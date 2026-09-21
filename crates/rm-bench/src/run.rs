@@ -10,6 +10,7 @@
 
 use crate::cnc;
 use crate::manifest::{BaselineConfig, CubeAndConquerConfig, Expected, Manifest, Problem, SolverStrategy};
+use rayon::prelude::*;
 use rm_sat::{amo_preprocess, analyse_cnf, big_preprocess, detect_xor_clauses, DetectedClass, GjeMatrix};
 use crate::result::{BaselineResult, KnowledgeMetrics, ManifestRun, ProblemResult, RunSummary};
 use rm_akx::literal::Literal;
@@ -118,10 +119,30 @@ pub fn run_manifest(manifest: &Manifest) -> Result<ManifestRun, RunError> {
     let gpu_client: Option<rm_gpu::GpuClient> = gpu.as_ref().map(|(_, c)| c.clone());
 
     let run_start = Instant::now();
-    let mut problems = Vec::with_capacity(manifest.problems.len());
-    for problem in &manifest.problems {
-        problems.push(solve_problem(manifest, problem, gpu_client.clone())?);
-    }
+    let par = manifest.solver.parallel_problems.max(1);
+    let problems: Result<Vec<_>, _> = if par <= 1 {
+        manifest
+            .problems
+            .iter()
+            .map(|p| solve_problem(manifest, p, gpu_client.clone()))
+            .collect()
+    } else {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(par)
+            .build()
+            .map_err(|_| RunError::OutputDir {
+                dir: "rayon".into(),
+                source: std::io::Error::other("failed to build rayon thread pool"),
+            })?
+            .install(|| {
+                manifest
+                    .problems
+                    .par_iter()
+                    .map(|p| solve_problem(manifest, p, gpu_client.clone()))
+                    .collect()
+            })
+    };
+    let problems = problems?;
     drop(gpu); // join service thread cleanly after all problems are done
     let run_wall = run_start.elapsed();
 
@@ -221,6 +242,47 @@ fn solve_problem(
         problem: problem.name.clone(),
         source,
     })?;
+
+    // AMO counting and BIG circular-UNSAT checks run unconditionally before
+    // strategy selection. Both are O(n+m). If either proves UNSAT here, we
+    // skip spinning up workers or a CnC tree entirely — pool and CnC paths
+    // don't go through build_cdcl_solver so they'd otherwise miss these.
+    let preprocess_unsat = {
+        let amo = amo_preprocess(&cnf);
+        if amo.counting_unsat {
+            log::debug!("[{}] amo-preprocess: counting UNSAT", problem.name);
+            true
+        } else {
+            let big = big_preprocess(&cnf);
+            if big.unsat {
+                log::debug!("[{}] big-preprocess: circular UNSAT", problem.name);
+                true
+            } else {
+                false
+            }
+        }
+    };
+    if preprocess_unsat {
+        let wall = start.elapsed(); // capture before baselines run
+        let counters = RunCounters::default();
+        let trace = maybe_write_trace(manifest, problem, Outcome::Unsat, counters, &None)?;
+        let baselines = collect_baselines(manifest, problem);
+        return Ok(ProblemResult {
+            name: problem.name.clone(),
+            outcome: Outcome::Unsat,
+            expected: problem.expect,
+            matches_expected: expected_matches(problem.expect, Outcome::Unsat),
+            wall,
+            timed_out: false,
+            conflicts: 0,
+            decisions: 0,
+            propagations: 0,
+            restarts: 0,
+            knowledge: None,
+            baselines,
+            trace,
+        });
+    }
 
     let effective_strategy = if manifest.solver.strategy == SolverStrategy::Auto {
         let profile = analyse_cnf(&cnf);
@@ -595,6 +657,7 @@ fn run_baseline(b: &BaselineConfig, cnf_path: &Path, timeout: Duration) -> Basel
     let mut child = match std::process::Command::new(&b.binary)
         .arg(cnf_path)
         .args(&b.args)
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
@@ -661,7 +724,7 @@ fn run_baseline_portfolio(b: &BaselineConfig, cnf_path: &Path, timeout: Duration
         if !b.seed_flag.is_empty() {
             cmd.arg(&b.seed_flag).arg(i.to_string());
         }
-        match cmd.stdout(Stdio::piped()).stderr(Stdio::null()).spawn() {
+        match cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn() {
             Ok(mut child) => {
                 let stdout = child.stdout.take();
                 let tx2 = tx.clone();
@@ -862,6 +925,7 @@ mod tests {
                 timeout_secs: 30,
                 gpu: false,
                 strategy: SolverStrategy::Portfolio,
+                parallel_problems: 1,
             },
             output: OutputConfig {
                 dir: dir.0.join("out"),
@@ -894,6 +958,7 @@ mod tests {
                 timeout_secs: 30,
                 gpu: false,
                 strategy: SolverStrategy::Portfolio,
+                parallel_problems: 1,
             },
             output: OutputConfig {
                 dir: dir.0.join("out"),

@@ -61,16 +61,16 @@ pub struct Problem {
 
 /// Solving strategy for a benchmark run.
 ///
-/// - `portfolio`: parallel CDCL workers sharing learned clauses (default).
+/// - `auto`: analyse the instance at load time and select the best strategy (default).
+/// - `portfolio`: parallel CDCL workers sharing learned clauses.
 /// - `cubeconquer`: lookahead-based cube-and-conquer splitting.
-/// - `auto`: analyse the instance at load time and select among the above.
 #[derive(Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SolverStrategy {
     #[default]
+    Auto,
     Portfolio,
     CubeConquer,
-    Auto,
 }
 
 /// Cube-and-conquer parameters. Only used when `strategy = "cubeconquer"`.
@@ -123,9 +123,15 @@ pub struct SolverConfig {
     /// CPU walk if Metal is unavailable.
     #[serde(default)]
     pub gpu: bool,
-    /// Solving strategy: "portfolio" (default) or "cubeconquer".
+    /// Solving strategy: "auto" (default), "portfolio", or "cubeconquer".
     #[serde(default)]
     pub strategy: SolverStrategy,
+    /// How many problems to solve in parallel. Each problem still uses
+    /// `workers` internal CDCL workers. Defaults to 1 (sequential).
+    /// Set to the number of physical cores divided by `workers` for
+    /// maximum throughput.
+    #[serde(default = "default_parallel_problems")]
+    pub parallel_problems: usize,
 }
 
 impl Default for SolverConfig {
@@ -144,7 +150,8 @@ impl Default for SolverConfig {
             max_conflicts_per_problem: Some(100_000),
             timeout_secs: 300,
             gpu: false,
-            strategy: SolverStrategy::Portfolio,
+            strategy: SolverStrategy::Auto,
+            parallel_problems: 1,
         }
     }
 }
@@ -197,6 +204,10 @@ pub struct BaselineConfig {
 }
 
 fn default_workers() -> u32 {
+    1
+}
+
+fn default_parallel_problems() -> usize {
     1
 }
 

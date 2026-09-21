@@ -273,6 +273,28 @@ mod tests {
     }
 
     #[test]
+    fn bvult_zero_zero_is_unsat() {
+        // (bvult x #b0000) with (= x #b0000) is UNSAT: 0 < 0 is false.
+        assert!(matches!(
+            solve(
+                "(declare-const x (_ BitVec 4))
+                 (assert (= x #b0000))
+                 (assert (bvult x #b0000))"
+            ),
+            BvResult::Unsat
+        ));
+    }
+
+    #[test]
+    fn bvult_any_zero_is_unsat() {
+        // (bvult x #b0000) alone is UNSAT: no unsigned int < 0.
+        assert!(matches!(
+            solve("(declare-const x (_ BitVec 4)) (assert (bvult x #b0000))"),
+            BvResult::Unsat
+        ));
+    }
+
+    #[test]
     fn distinct_variables() {
         let r = solve(
             "(declare-const a (_ BitVec 8))

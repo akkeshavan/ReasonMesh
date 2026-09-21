@@ -34,7 +34,7 @@ args = ["-dimacs"]
 [[baselines]]
 name = "cadical"
 binary = "cadical"
-args = []
+args = ["-q"]
 
 [[baselines]]
 name = "kissat"

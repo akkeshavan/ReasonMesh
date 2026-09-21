@@ -1,0 +1,38 @@
+schema_version = 1
+name = "g2-php12"
+description = "PHP-12-11: 8-worker C&C attempt"
+
+[solver]
+workers = 8
+seed = 1
+deterministic = false
+strategy = "cubeconquer"
+timeout_secs = 120
+
+[cube_and_conquer]
+initial_depth = 4
+initial_budget = 10000
+max_budget = 5000000
+
+[output]
+dir = "results/g2/php12"
+trace = false
+
+[[baselines]]
+name = "z3-1t"
+binary = "z3"
+
+[[problems]]
+name = "php-11-10"
+file = "../benchmarks/g1/php-11-10.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "php-12-11"
+file = "../benchmarks/g1/php-12-11.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "php-13-12"
+file = "../benchmarks/g1/php-13-12.cnf"
+expect = "unsat"

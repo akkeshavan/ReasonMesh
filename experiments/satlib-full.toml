@@ -1,0 +1,7064 @@
+schema_version = 1
+name = "satlib-full"
+description = "SATLIB: random 3-SAT (UF/UUF n=50-250, 100 each), graph coloring (flat50-200), AIM, parity, pigeon-hole. 1406 problems total."
+
+[solver]
+workers = 4
+seed = 1
+deterministic = false
+clause_sharing = true
+export_min_utility = 0.143
+import_min_utility = 0.143
+max_conflicts_per_problem = 5000000
+timeout_secs = 60
+parallel_problems = 2
+
+[output]
+dir = "results/satlib-full"
+trace = false
+
+[[baselines]]
+name = "cadical-1t"
+binary = "cadical"
+args = ["-q"]
+
+[[baselines]]
+name = "cadical-4t"
+binary = "cadical"
+args = ["-q"]
+workers = 4
+seed_flag = "--seed"
+
+[[baselines]]
+name = "z3-1t"
+binary = "z3"
+
+[[problems]]
+name = "uf50/uf50-01"
+file = "benchmarks/satlib/uf50/uf50-01.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0107"
+file = "benchmarks/satlib/uf50/uf50-0107.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0116"
+file = "benchmarks/satlib/uf50/uf50-0116.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0125"
+file = "benchmarks/satlib/uf50/uf50-0125.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0134"
+file = "benchmarks/satlib/uf50/uf50-0134.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0143"
+file = "benchmarks/satlib/uf50/uf50-0143.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0152"
+file = "benchmarks/satlib/uf50/uf50-0152.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0161"
+file = "benchmarks/satlib/uf50/uf50-0161.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0170"
+file = "benchmarks/satlib/uf50/uf50-0170.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-018"
+file = "benchmarks/satlib/uf50/uf50-018.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0189"
+file = "benchmarks/satlib/uf50/uf50-0189.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0198"
+file = "benchmarks/satlib/uf50/uf50-0198.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0206"
+file = "benchmarks/satlib/uf50/uf50-0206.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0215"
+file = "benchmarks/satlib/uf50/uf50-0215.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0224"
+file = "benchmarks/satlib/uf50/uf50-0224.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0233"
+file = "benchmarks/satlib/uf50/uf50-0233.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0242"
+file = "benchmarks/satlib/uf50/uf50-0242.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0251"
+file = "benchmarks/satlib/uf50/uf50-0251.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0260"
+file = "benchmarks/satlib/uf50/uf50-0260.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-027"
+file = "benchmarks/satlib/uf50/uf50-027.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0279"
+file = "benchmarks/satlib/uf50/uf50-0279.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0288"
+file = "benchmarks/satlib/uf50/uf50-0288.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0297"
+file = "benchmarks/satlib/uf50/uf50-0297.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0305"
+file = "benchmarks/satlib/uf50/uf50-0305.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0314"
+file = "benchmarks/satlib/uf50/uf50-0314.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0323"
+file = "benchmarks/satlib/uf50/uf50-0323.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0332"
+file = "benchmarks/satlib/uf50/uf50-0332.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0341"
+file = "benchmarks/satlib/uf50/uf50-0341.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0350"
+file = "benchmarks/satlib/uf50/uf50-0350.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-036"
+file = "benchmarks/satlib/uf50/uf50-036.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0369"
+file = "benchmarks/satlib/uf50/uf50-0369.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0378"
+file = "benchmarks/satlib/uf50/uf50-0378.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0387"
+file = "benchmarks/satlib/uf50/uf50-0387.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0396"
+file = "benchmarks/satlib/uf50/uf50-0396.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0404"
+file = "benchmarks/satlib/uf50/uf50-0404.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0413"
+file = "benchmarks/satlib/uf50/uf50-0413.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0422"
+file = "benchmarks/satlib/uf50/uf50-0422.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0431"
+file = "benchmarks/satlib/uf50/uf50-0431.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0440"
+file = "benchmarks/satlib/uf50/uf50-0440.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-045"
+file = "benchmarks/satlib/uf50/uf50-045.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0459"
+file = "benchmarks/satlib/uf50/uf50-0459.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0468"
+file = "benchmarks/satlib/uf50/uf50-0468.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0477"
+file = "benchmarks/satlib/uf50/uf50-0477.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0486"
+file = "benchmarks/satlib/uf50/uf50-0486.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0495"
+file = "benchmarks/satlib/uf50/uf50-0495.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0503"
+file = "benchmarks/satlib/uf50/uf50-0503.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0512"
+file = "benchmarks/satlib/uf50/uf50-0512.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0521"
+file = "benchmarks/satlib/uf50/uf50-0521.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0530"
+file = "benchmarks/satlib/uf50/uf50-0530.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-054"
+file = "benchmarks/satlib/uf50/uf50-054.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0549"
+file = "benchmarks/satlib/uf50/uf50-0549.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0558"
+file = "benchmarks/satlib/uf50/uf50-0558.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0567"
+file = "benchmarks/satlib/uf50/uf50-0567.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0576"
+file = "benchmarks/satlib/uf50/uf50-0576.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0585"
+file = "benchmarks/satlib/uf50/uf50-0585.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0594"
+file = "benchmarks/satlib/uf50/uf50-0594.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0602"
+file = "benchmarks/satlib/uf50/uf50-0602.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0611"
+file = "benchmarks/satlib/uf50/uf50-0611.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0620"
+file = "benchmarks/satlib/uf50/uf50-0620.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-063"
+file = "benchmarks/satlib/uf50/uf50-063.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0639"
+file = "benchmarks/satlib/uf50/uf50-0639.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0648"
+file = "benchmarks/satlib/uf50/uf50-0648.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0657"
+file = "benchmarks/satlib/uf50/uf50-0657.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0666"
+file = "benchmarks/satlib/uf50/uf50-0666.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0675"
+file = "benchmarks/satlib/uf50/uf50-0675.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0684"
+file = "benchmarks/satlib/uf50/uf50-0684.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0693"
+file = "benchmarks/satlib/uf50/uf50-0693.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0701"
+file = "benchmarks/satlib/uf50/uf50-0701.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0710"
+file = "benchmarks/satlib/uf50/uf50-0710.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-072"
+file = "benchmarks/satlib/uf50/uf50-072.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0729"
+file = "benchmarks/satlib/uf50/uf50-0729.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0738"
+file = "benchmarks/satlib/uf50/uf50-0738.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0747"
+file = "benchmarks/satlib/uf50/uf50-0747.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0756"
+file = "benchmarks/satlib/uf50/uf50-0756.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0765"
+file = "benchmarks/satlib/uf50/uf50-0765.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0774"
+file = "benchmarks/satlib/uf50/uf50-0774.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0783"
+file = "benchmarks/satlib/uf50/uf50-0783.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0792"
+file = "benchmarks/satlib/uf50/uf50-0792.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0800"
+file = "benchmarks/satlib/uf50/uf50-0800.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-081"
+file = "benchmarks/satlib/uf50/uf50-081.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0819"
+file = "benchmarks/satlib/uf50/uf50-0819.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0828"
+file = "benchmarks/satlib/uf50/uf50-0828.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0837"
+file = "benchmarks/satlib/uf50/uf50-0837.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0846"
+file = "benchmarks/satlib/uf50/uf50-0846.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0855"
+file = "benchmarks/satlib/uf50/uf50-0855.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0864"
+file = "benchmarks/satlib/uf50/uf50-0864.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0873"
+file = "benchmarks/satlib/uf50/uf50-0873.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0882"
+file = "benchmarks/satlib/uf50/uf50-0882.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0891"
+file = "benchmarks/satlib/uf50/uf50-0891.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-090"
+file = "benchmarks/satlib/uf50/uf50-090.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0909"
+file = "benchmarks/satlib/uf50/uf50-0909.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0918"
+file = "benchmarks/satlib/uf50/uf50-0918.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0927"
+file = "benchmarks/satlib/uf50/uf50-0927.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0936"
+file = "benchmarks/satlib/uf50/uf50-0936.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0945"
+file = "benchmarks/satlib/uf50/uf50-0945.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0954"
+file = "benchmarks/satlib/uf50/uf50-0954.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0963"
+file = "benchmarks/satlib/uf50/uf50-0963.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0972"
+file = "benchmarks/satlib/uf50/uf50-0972.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0981"
+file = "benchmarks/satlib/uf50/uf50-0981.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-0990"
+file = "benchmarks/satlib/uf50/uf50-0990.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uuf50/uuf50-01"
+file = "benchmarks/satlib/uuf50/uuf50-01.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0107"
+file = "benchmarks/satlib/uuf50/uuf50-0107.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0116"
+file = "benchmarks/satlib/uuf50/uuf50-0116.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0125"
+file = "benchmarks/satlib/uuf50/uuf50-0125.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0134"
+file = "benchmarks/satlib/uuf50/uuf50-0134.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0143"
+file = "benchmarks/satlib/uuf50/uuf50-0143.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0152"
+file = "benchmarks/satlib/uuf50/uuf50-0152.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0161"
+file = "benchmarks/satlib/uuf50/uuf50-0161.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0170"
+file = "benchmarks/satlib/uuf50/uuf50-0170.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-018"
+file = "benchmarks/satlib/uuf50/uuf50-018.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0189"
+file = "benchmarks/satlib/uuf50/uuf50-0189.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0198"
+file = "benchmarks/satlib/uuf50/uuf50-0198.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0206"
+file = "benchmarks/satlib/uuf50/uuf50-0206.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0215"
+file = "benchmarks/satlib/uuf50/uuf50-0215.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0224"
+file = "benchmarks/satlib/uuf50/uuf50-0224.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0233"
+file = "benchmarks/satlib/uuf50/uuf50-0233.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0242"
+file = "benchmarks/satlib/uuf50/uuf50-0242.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0251"
+file = "benchmarks/satlib/uuf50/uuf50-0251.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0260"
+file = "benchmarks/satlib/uuf50/uuf50-0260.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-027"
+file = "benchmarks/satlib/uuf50/uuf50-027.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0279"
+file = "benchmarks/satlib/uuf50/uuf50-0279.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0288"
+file = "benchmarks/satlib/uuf50/uuf50-0288.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0297"
+file = "benchmarks/satlib/uuf50/uuf50-0297.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0305"
+file = "benchmarks/satlib/uuf50/uuf50-0305.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0314"
+file = "benchmarks/satlib/uuf50/uuf50-0314.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0323"
+file = "benchmarks/satlib/uuf50/uuf50-0323.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0332"
+file = "benchmarks/satlib/uuf50/uuf50-0332.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0341"
+file = "benchmarks/satlib/uuf50/uuf50-0341.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0350"
+file = "benchmarks/satlib/uuf50/uuf50-0350.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-036"
+file = "benchmarks/satlib/uuf50/uuf50-036.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0369"
+file = "benchmarks/satlib/uuf50/uuf50-0369.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0378"
+file = "benchmarks/satlib/uuf50/uuf50-0378.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0387"
+file = "benchmarks/satlib/uuf50/uuf50-0387.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0396"
+file = "benchmarks/satlib/uuf50/uuf50-0396.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0404"
+file = "benchmarks/satlib/uuf50/uuf50-0404.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0413"
+file = "benchmarks/satlib/uuf50/uuf50-0413.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0422"
+file = "benchmarks/satlib/uuf50/uuf50-0422.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0431"
+file = "benchmarks/satlib/uuf50/uuf50-0431.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0440"
+file = "benchmarks/satlib/uuf50/uuf50-0440.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-045"
+file = "benchmarks/satlib/uuf50/uuf50-045.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0459"
+file = "benchmarks/satlib/uuf50/uuf50-0459.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0468"
+file = "benchmarks/satlib/uuf50/uuf50-0468.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0477"
+file = "benchmarks/satlib/uuf50/uuf50-0477.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0486"
+file = "benchmarks/satlib/uuf50/uuf50-0486.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0495"
+file = "benchmarks/satlib/uuf50/uuf50-0495.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0503"
+file = "benchmarks/satlib/uuf50/uuf50-0503.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0512"
+file = "benchmarks/satlib/uuf50/uuf50-0512.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0521"
+file = "benchmarks/satlib/uuf50/uuf50-0521.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0530"
+file = "benchmarks/satlib/uuf50/uuf50-0530.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-054"
+file = "benchmarks/satlib/uuf50/uuf50-054.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0549"
+file = "benchmarks/satlib/uuf50/uuf50-0549.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0558"
+file = "benchmarks/satlib/uuf50/uuf50-0558.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0567"
+file = "benchmarks/satlib/uuf50/uuf50-0567.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0576"
+file = "benchmarks/satlib/uuf50/uuf50-0576.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0585"
+file = "benchmarks/satlib/uuf50/uuf50-0585.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0594"
+file = "benchmarks/satlib/uuf50/uuf50-0594.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0602"
+file = "benchmarks/satlib/uuf50/uuf50-0602.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0611"
+file = "benchmarks/satlib/uuf50/uuf50-0611.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0620"
+file = "benchmarks/satlib/uuf50/uuf50-0620.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-063"
+file = "benchmarks/satlib/uuf50/uuf50-063.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0639"
+file = "benchmarks/satlib/uuf50/uuf50-0639.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0648"
+file = "benchmarks/satlib/uuf50/uuf50-0648.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0657"
+file = "benchmarks/satlib/uuf50/uuf50-0657.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0666"
+file = "benchmarks/satlib/uuf50/uuf50-0666.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0675"
+file = "benchmarks/satlib/uuf50/uuf50-0675.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0684"
+file = "benchmarks/satlib/uuf50/uuf50-0684.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0693"
+file = "benchmarks/satlib/uuf50/uuf50-0693.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0701"
+file = "benchmarks/satlib/uuf50/uuf50-0701.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0710"
+file = "benchmarks/satlib/uuf50/uuf50-0710.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-072"
+file = "benchmarks/satlib/uuf50/uuf50-072.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0729"
+file = "benchmarks/satlib/uuf50/uuf50-0729.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0738"
+file = "benchmarks/satlib/uuf50/uuf50-0738.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0747"
+file = "benchmarks/satlib/uuf50/uuf50-0747.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0756"
+file = "benchmarks/satlib/uuf50/uuf50-0756.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0765"
+file = "benchmarks/satlib/uuf50/uuf50-0765.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0774"
+file = "benchmarks/satlib/uuf50/uuf50-0774.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0783"
+file = "benchmarks/satlib/uuf50/uuf50-0783.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0792"
+file = "benchmarks/satlib/uuf50/uuf50-0792.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0800"
+file = "benchmarks/satlib/uuf50/uuf50-0800.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-081"
+file = "benchmarks/satlib/uuf50/uuf50-081.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0819"
+file = "benchmarks/satlib/uuf50/uuf50-0819.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0828"
+file = "benchmarks/satlib/uuf50/uuf50-0828.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0837"
+file = "benchmarks/satlib/uuf50/uuf50-0837.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0846"
+file = "benchmarks/satlib/uuf50/uuf50-0846.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0855"
+file = "benchmarks/satlib/uuf50/uuf50-0855.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0864"
+file = "benchmarks/satlib/uuf50/uuf50-0864.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0873"
+file = "benchmarks/satlib/uuf50/uuf50-0873.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0882"
+file = "benchmarks/satlib/uuf50/uuf50-0882.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0891"
+file = "benchmarks/satlib/uuf50/uuf50-0891.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-090"
+file = "benchmarks/satlib/uuf50/uuf50-090.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0909"
+file = "benchmarks/satlib/uuf50/uuf50-0909.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0918"
+file = "benchmarks/satlib/uuf50/uuf50-0918.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0927"
+file = "benchmarks/satlib/uuf50/uuf50-0927.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0936"
+file = "benchmarks/satlib/uuf50/uuf50-0936.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0945"
+file = "benchmarks/satlib/uuf50/uuf50-0945.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0954"
+file = "benchmarks/satlib/uuf50/uuf50-0954.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0963"
+file = "benchmarks/satlib/uuf50/uuf50-0963.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0972"
+file = "benchmarks/satlib/uuf50/uuf50-0972.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0981"
+file = "benchmarks/satlib/uuf50/uuf50-0981.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-0990"
+file = "benchmarks/satlib/uuf50/uuf50-0990.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uf100/uf100-01"
+file = "benchmarks/satlib/uf100/uf100-01.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0107"
+file = "benchmarks/satlib/uf100/uf100-0107.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0116"
+file = "benchmarks/satlib/uf100/uf100-0116.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0125"
+file = "benchmarks/satlib/uf100/uf100-0125.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0134"
+file = "benchmarks/satlib/uf100/uf100-0134.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0143"
+file = "benchmarks/satlib/uf100/uf100-0143.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0152"
+file = "benchmarks/satlib/uf100/uf100-0152.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0161"
+file = "benchmarks/satlib/uf100/uf100-0161.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0170"
+file = "benchmarks/satlib/uf100/uf100-0170.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-018"
+file = "benchmarks/satlib/uf100/uf100-018.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0189"
+file = "benchmarks/satlib/uf100/uf100-0189.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0198"
+file = "benchmarks/satlib/uf100/uf100-0198.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0206"
+file = "benchmarks/satlib/uf100/uf100-0206.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0215"
+file = "benchmarks/satlib/uf100/uf100-0215.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0224"
+file = "benchmarks/satlib/uf100/uf100-0224.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0233"
+file = "benchmarks/satlib/uf100/uf100-0233.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0242"
+file = "benchmarks/satlib/uf100/uf100-0242.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0251"
+file = "benchmarks/satlib/uf100/uf100-0251.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0260"
+file = "benchmarks/satlib/uf100/uf100-0260.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-027"
+file = "benchmarks/satlib/uf100/uf100-027.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0279"
+file = "benchmarks/satlib/uf100/uf100-0279.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0288"
+file = "benchmarks/satlib/uf100/uf100-0288.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0297"
+file = "benchmarks/satlib/uf100/uf100-0297.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0305"
+file = "benchmarks/satlib/uf100/uf100-0305.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0314"
+file = "benchmarks/satlib/uf100/uf100-0314.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0323"
+file = "benchmarks/satlib/uf100/uf100-0323.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0332"
+file = "benchmarks/satlib/uf100/uf100-0332.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0341"
+file = "benchmarks/satlib/uf100/uf100-0341.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0350"
+file = "benchmarks/satlib/uf100/uf100-0350.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-036"
+file = "benchmarks/satlib/uf100/uf100-036.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0369"
+file = "benchmarks/satlib/uf100/uf100-0369.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0378"
+file = "benchmarks/satlib/uf100/uf100-0378.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0387"
+file = "benchmarks/satlib/uf100/uf100-0387.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0396"
+file = "benchmarks/satlib/uf100/uf100-0396.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0404"
+file = "benchmarks/satlib/uf100/uf100-0404.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0413"
+file = "benchmarks/satlib/uf100/uf100-0413.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0422"
+file = "benchmarks/satlib/uf100/uf100-0422.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0431"
+file = "benchmarks/satlib/uf100/uf100-0431.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0440"
+file = "benchmarks/satlib/uf100/uf100-0440.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-045"
+file = "benchmarks/satlib/uf100/uf100-045.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0459"
+file = "benchmarks/satlib/uf100/uf100-0459.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0468"
+file = "benchmarks/satlib/uf100/uf100-0468.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0477"
+file = "benchmarks/satlib/uf100/uf100-0477.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0486"
+file = "benchmarks/satlib/uf100/uf100-0486.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0495"
+file = "benchmarks/satlib/uf100/uf100-0495.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0503"
+file = "benchmarks/satlib/uf100/uf100-0503.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0512"
+file = "benchmarks/satlib/uf100/uf100-0512.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0521"
+file = "benchmarks/satlib/uf100/uf100-0521.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0530"
+file = "benchmarks/satlib/uf100/uf100-0530.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-054"
+file = "benchmarks/satlib/uf100/uf100-054.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0549"
+file = "benchmarks/satlib/uf100/uf100-0549.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0558"
+file = "benchmarks/satlib/uf100/uf100-0558.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0567"
+file = "benchmarks/satlib/uf100/uf100-0567.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0576"
+file = "benchmarks/satlib/uf100/uf100-0576.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0585"
+file = "benchmarks/satlib/uf100/uf100-0585.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0594"
+file = "benchmarks/satlib/uf100/uf100-0594.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0602"
+file = "benchmarks/satlib/uf100/uf100-0602.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0611"
+file = "benchmarks/satlib/uf100/uf100-0611.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0620"
+file = "benchmarks/satlib/uf100/uf100-0620.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-063"
+file = "benchmarks/satlib/uf100/uf100-063.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0639"
+file = "benchmarks/satlib/uf100/uf100-0639.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0648"
+file = "benchmarks/satlib/uf100/uf100-0648.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0657"
+file = "benchmarks/satlib/uf100/uf100-0657.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0666"
+file = "benchmarks/satlib/uf100/uf100-0666.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0675"
+file = "benchmarks/satlib/uf100/uf100-0675.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0684"
+file = "benchmarks/satlib/uf100/uf100-0684.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0693"
+file = "benchmarks/satlib/uf100/uf100-0693.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0701"
+file = "benchmarks/satlib/uf100/uf100-0701.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0710"
+file = "benchmarks/satlib/uf100/uf100-0710.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-072"
+file = "benchmarks/satlib/uf100/uf100-072.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0729"
+file = "benchmarks/satlib/uf100/uf100-0729.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0738"
+file = "benchmarks/satlib/uf100/uf100-0738.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0747"
+file = "benchmarks/satlib/uf100/uf100-0747.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0756"
+file = "benchmarks/satlib/uf100/uf100-0756.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0765"
+file = "benchmarks/satlib/uf100/uf100-0765.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0774"
+file = "benchmarks/satlib/uf100/uf100-0774.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0783"
+file = "benchmarks/satlib/uf100/uf100-0783.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0792"
+file = "benchmarks/satlib/uf100/uf100-0792.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0800"
+file = "benchmarks/satlib/uf100/uf100-0800.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-081"
+file = "benchmarks/satlib/uf100/uf100-081.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0819"
+file = "benchmarks/satlib/uf100/uf100-0819.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0828"
+file = "benchmarks/satlib/uf100/uf100-0828.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0837"
+file = "benchmarks/satlib/uf100/uf100-0837.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0846"
+file = "benchmarks/satlib/uf100/uf100-0846.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0855"
+file = "benchmarks/satlib/uf100/uf100-0855.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0864"
+file = "benchmarks/satlib/uf100/uf100-0864.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0873"
+file = "benchmarks/satlib/uf100/uf100-0873.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0882"
+file = "benchmarks/satlib/uf100/uf100-0882.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0891"
+file = "benchmarks/satlib/uf100/uf100-0891.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-090"
+file = "benchmarks/satlib/uf100/uf100-090.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0909"
+file = "benchmarks/satlib/uf100/uf100-0909.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0918"
+file = "benchmarks/satlib/uf100/uf100-0918.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0927"
+file = "benchmarks/satlib/uf100/uf100-0927.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0936"
+file = "benchmarks/satlib/uf100/uf100-0936.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0945"
+file = "benchmarks/satlib/uf100/uf100-0945.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0954"
+file = "benchmarks/satlib/uf100/uf100-0954.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0963"
+file = "benchmarks/satlib/uf100/uf100-0963.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0972"
+file = "benchmarks/satlib/uf100/uf100-0972.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0981"
+file = "benchmarks/satlib/uf100/uf100-0981.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf100/uf100-0990"
+file = "benchmarks/satlib/uf100/uf100-0990.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uuf100/uuf100-01"
+file = "benchmarks/satlib/uuf100/uuf100-01.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0107"
+file = "benchmarks/satlib/uuf100/uuf100-0107.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0116"
+file = "benchmarks/satlib/uuf100/uuf100-0116.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0125"
+file = "benchmarks/satlib/uuf100/uuf100-0125.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0134"
+file = "benchmarks/satlib/uuf100/uuf100-0134.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0143"
+file = "benchmarks/satlib/uuf100/uuf100-0143.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0152"
+file = "benchmarks/satlib/uuf100/uuf100-0152.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0161"
+file = "benchmarks/satlib/uuf100/uuf100-0161.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0170"
+file = "benchmarks/satlib/uuf100/uuf100-0170.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-018"
+file = "benchmarks/satlib/uuf100/uuf100-018.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0189"
+file = "benchmarks/satlib/uuf100/uuf100-0189.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0198"
+file = "benchmarks/satlib/uuf100/uuf100-0198.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0206"
+file = "benchmarks/satlib/uuf100/uuf100-0206.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0215"
+file = "benchmarks/satlib/uuf100/uuf100-0215.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0224"
+file = "benchmarks/satlib/uuf100/uuf100-0224.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0233"
+file = "benchmarks/satlib/uuf100/uuf100-0233.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0242"
+file = "benchmarks/satlib/uuf100/uuf100-0242.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0251"
+file = "benchmarks/satlib/uuf100/uuf100-0251.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0260"
+file = "benchmarks/satlib/uuf100/uuf100-0260.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-027"
+file = "benchmarks/satlib/uuf100/uuf100-027.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0279"
+file = "benchmarks/satlib/uuf100/uuf100-0279.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0288"
+file = "benchmarks/satlib/uuf100/uuf100-0288.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0297"
+file = "benchmarks/satlib/uuf100/uuf100-0297.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0305"
+file = "benchmarks/satlib/uuf100/uuf100-0305.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0314"
+file = "benchmarks/satlib/uuf100/uuf100-0314.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0323"
+file = "benchmarks/satlib/uuf100/uuf100-0323.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0332"
+file = "benchmarks/satlib/uuf100/uuf100-0332.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0341"
+file = "benchmarks/satlib/uuf100/uuf100-0341.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0350"
+file = "benchmarks/satlib/uuf100/uuf100-0350.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-036"
+file = "benchmarks/satlib/uuf100/uuf100-036.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0369"
+file = "benchmarks/satlib/uuf100/uuf100-0369.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0378"
+file = "benchmarks/satlib/uuf100/uuf100-0378.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0387"
+file = "benchmarks/satlib/uuf100/uuf100-0387.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0396"
+file = "benchmarks/satlib/uuf100/uuf100-0396.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0404"
+file = "benchmarks/satlib/uuf100/uuf100-0404.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0413"
+file = "benchmarks/satlib/uuf100/uuf100-0413.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0422"
+file = "benchmarks/satlib/uuf100/uuf100-0422.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0431"
+file = "benchmarks/satlib/uuf100/uuf100-0431.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0440"
+file = "benchmarks/satlib/uuf100/uuf100-0440.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-045"
+file = "benchmarks/satlib/uuf100/uuf100-045.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0459"
+file = "benchmarks/satlib/uuf100/uuf100-0459.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0468"
+file = "benchmarks/satlib/uuf100/uuf100-0468.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0477"
+file = "benchmarks/satlib/uuf100/uuf100-0477.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0486"
+file = "benchmarks/satlib/uuf100/uuf100-0486.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0495"
+file = "benchmarks/satlib/uuf100/uuf100-0495.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0503"
+file = "benchmarks/satlib/uuf100/uuf100-0503.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0512"
+file = "benchmarks/satlib/uuf100/uuf100-0512.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0521"
+file = "benchmarks/satlib/uuf100/uuf100-0521.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0530"
+file = "benchmarks/satlib/uuf100/uuf100-0530.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-054"
+file = "benchmarks/satlib/uuf100/uuf100-054.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0549"
+file = "benchmarks/satlib/uuf100/uuf100-0549.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0558"
+file = "benchmarks/satlib/uuf100/uuf100-0558.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0567"
+file = "benchmarks/satlib/uuf100/uuf100-0567.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0576"
+file = "benchmarks/satlib/uuf100/uuf100-0576.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0585"
+file = "benchmarks/satlib/uuf100/uuf100-0585.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0594"
+file = "benchmarks/satlib/uuf100/uuf100-0594.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0602"
+file = "benchmarks/satlib/uuf100/uuf100-0602.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0611"
+file = "benchmarks/satlib/uuf100/uuf100-0611.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0620"
+file = "benchmarks/satlib/uuf100/uuf100-0620.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-063"
+file = "benchmarks/satlib/uuf100/uuf100-063.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0639"
+file = "benchmarks/satlib/uuf100/uuf100-0639.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0648"
+file = "benchmarks/satlib/uuf100/uuf100-0648.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0657"
+file = "benchmarks/satlib/uuf100/uuf100-0657.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0666"
+file = "benchmarks/satlib/uuf100/uuf100-0666.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0675"
+file = "benchmarks/satlib/uuf100/uuf100-0675.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0684"
+file = "benchmarks/satlib/uuf100/uuf100-0684.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0693"
+file = "benchmarks/satlib/uuf100/uuf100-0693.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0701"
+file = "benchmarks/satlib/uuf100/uuf100-0701.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0710"
+file = "benchmarks/satlib/uuf100/uuf100-0710.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-072"
+file = "benchmarks/satlib/uuf100/uuf100-072.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0729"
+file = "benchmarks/satlib/uuf100/uuf100-0729.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0738"
+file = "benchmarks/satlib/uuf100/uuf100-0738.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0747"
+file = "benchmarks/satlib/uuf100/uuf100-0747.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0756"
+file = "benchmarks/satlib/uuf100/uuf100-0756.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0765"
+file = "benchmarks/satlib/uuf100/uuf100-0765.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0774"
+file = "benchmarks/satlib/uuf100/uuf100-0774.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0783"
+file = "benchmarks/satlib/uuf100/uuf100-0783.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0792"
+file = "benchmarks/satlib/uuf100/uuf100-0792.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0800"
+file = "benchmarks/satlib/uuf100/uuf100-0800.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-081"
+file = "benchmarks/satlib/uuf100/uuf100-081.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0819"
+file = "benchmarks/satlib/uuf100/uuf100-0819.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0828"
+file = "benchmarks/satlib/uuf100/uuf100-0828.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0837"
+file = "benchmarks/satlib/uuf100/uuf100-0837.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0846"
+file = "benchmarks/satlib/uuf100/uuf100-0846.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0855"
+file = "benchmarks/satlib/uuf100/uuf100-0855.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0864"
+file = "benchmarks/satlib/uuf100/uuf100-0864.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0873"
+file = "benchmarks/satlib/uuf100/uuf100-0873.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0882"
+file = "benchmarks/satlib/uuf100/uuf100-0882.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0891"
+file = "benchmarks/satlib/uuf100/uuf100-0891.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-090"
+file = "benchmarks/satlib/uuf100/uuf100-090.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0909"
+file = "benchmarks/satlib/uuf100/uuf100-0909.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0918"
+file = "benchmarks/satlib/uuf100/uuf100-0918.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0927"
+file = "benchmarks/satlib/uuf100/uuf100-0927.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0936"
+file = "benchmarks/satlib/uuf100/uuf100-0936.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0945"
+file = "benchmarks/satlib/uuf100/uuf100-0945.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0954"
+file = "benchmarks/satlib/uuf100/uuf100-0954.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0963"
+file = "benchmarks/satlib/uuf100/uuf100-0963.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0972"
+file = "benchmarks/satlib/uuf100/uuf100-0972.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0981"
+file = "benchmarks/satlib/uuf100/uuf100-0981.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf100/uuf100-0990"
+file = "benchmarks/satlib/uuf100/uuf100-0990.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uf150/uf150-01"
+file = "benchmarks/satlib/uf150/uf150-01.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-010"
+file = "benchmarks/satlib/uf150/uf150-010.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-0100"
+file = "benchmarks/satlib/uf150/uf150-0100.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-011"
+file = "benchmarks/satlib/uf150/uf150-011.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-012"
+file = "benchmarks/satlib/uf150/uf150-012.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-013"
+file = "benchmarks/satlib/uf150/uf150-013.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-014"
+file = "benchmarks/satlib/uf150/uf150-014.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-015"
+file = "benchmarks/satlib/uf150/uf150-015.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-016"
+file = "benchmarks/satlib/uf150/uf150-016.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-017"
+file = "benchmarks/satlib/uf150/uf150-017.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-018"
+file = "benchmarks/satlib/uf150/uf150-018.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-019"
+file = "benchmarks/satlib/uf150/uf150-019.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-02"
+file = "benchmarks/satlib/uf150/uf150-02.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-020"
+file = "benchmarks/satlib/uf150/uf150-020.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-021"
+file = "benchmarks/satlib/uf150/uf150-021.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-022"
+file = "benchmarks/satlib/uf150/uf150-022.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-023"
+file = "benchmarks/satlib/uf150/uf150-023.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-024"
+file = "benchmarks/satlib/uf150/uf150-024.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-025"
+file = "benchmarks/satlib/uf150/uf150-025.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-026"
+file = "benchmarks/satlib/uf150/uf150-026.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-027"
+file = "benchmarks/satlib/uf150/uf150-027.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-028"
+file = "benchmarks/satlib/uf150/uf150-028.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-029"
+file = "benchmarks/satlib/uf150/uf150-029.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-03"
+file = "benchmarks/satlib/uf150/uf150-03.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-030"
+file = "benchmarks/satlib/uf150/uf150-030.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-031"
+file = "benchmarks/satlib/uf150/uf150-031.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-032"
+file = "benchmarks/satlib/uf150/uf150-032.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-033"
+file = "benchmarks/satlib/uf150/uf150-033.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-034"
+file = "benchmarks/satlib/uf150/uf150-034.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-035"
+file = "benchmarks/satlib/uf150/uf150-035.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-036"
+file = "benchmarks/satlib/uf150/uf150-036.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-037"
+file = "benchmarks/satlib/uf150/uf150-037.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-038"
+file = "benchmarks/satlib/uf150/uf150-038.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-039"
+file = "benchmarks/satlib/uf150/uf150-039.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-04"
+file = "benchmarks/satlib/uf150/uf150-04.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-040"
+file = "benchmarks/satlib/uf150/uf150-040.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-041"
+file = "benchmarks/satlib/uf150/uf150-041.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-042"
+file = "benchmarks/satlib/uf150/uf150-042.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-043"
+file = "benchmarks/satlib/uf150/uf150-043.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-044"
+file = "benchmarks/satlib/uf150/uf150-044.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-045"
+file = "benchmarks/satlib/uf150/uf150-045.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-046"
+file = "benchmarks/satlib/uf150/uf150-046.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-047"
+file = "benchmarks/satlib/uf150/uf150-047.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-048"
+file = "benchmarks/satlib/uf150/uf150-048.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-049"
+file = "benchmarks/satlib/uf150/uf150-049.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-05"
+file = "benchmarks/satlib/uf150/uf150-05.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-050"
+file = "benchmarks/satlib/uf150/uf150-050.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-051"
+file = "benchmarks/satlib/uf150/uf150-051.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-052"
+file = "benchmarks/satlib/uf150/uf150-052.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-053"
+file = "benchmarks/satlib/uf150/uf150-053.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-054"
+file = "benchmarks/satlib/uf150/uf150-054.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-055"
+file = "benchmarks/satlib/uf150/uf150-055.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-056"
+file = "benchmarks/satlib/uf150/uf150-056.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-057"
+file = "benchmarks/satlib/uf150/uf150-057.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-058"
+file = "benchmarks/satlib/uf150/uf150-058.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-059"
+file = "benchmarks/satlib/uf150/uf150-059.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-06"
+file = "benchmarks/satlib/uf150/uf150-06.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-060"
+file = "benchmarks/satlib/uf150/uf150-060.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-061"
+file = "benchmarks/satlib/uf150/uf150-061.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-062"
+file = "benchmarks/satlib/uf150/uf150-062.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-063"
+file = "benchmarks/satlib/uf150/uf150-063.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-064"
+file = "benchmarks/satlib/uf150/uf150-064.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-065"
+file = "benchmarks/satlib/uf150/uf150-065.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-066"
+file = "benchmarks/satlib/uf150/uf150-066.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-067"
+file = "benchmarks/satlib/uf150/uf150-067.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-068"
+file = "benchmarks/satlib/uf150/uf150-068.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-069"
+file = "benchmarks/satlib/uf150/uf150-069.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-07"
+file = "benchmarks/satlib/uf150/uf150-07.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-070"
+file = "benchmarks/satlib/uf150/uf150-070.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-071"
+file = "benchmarks/satlib/uf150/uf150-071.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-072"
+file = "benchmarks/satlib/uf150/uf150-072.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-073"
+file = "benchmarks/satlib/uf150/uf150-073.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-074"
+file = "benchmarks/satlib/uf150/uf150-074.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-075"
+file = "benchmarks/satlib/uf150/uf150-075.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-076"
+file = "benchmarks/satlib/uf150/uf150-076.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-077"
+file = "benchmarks/satlib/uf150/uf150-077.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-078"
+file = "benchmarks/satlib/uf150/uf150-078.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-079"
+file = "benchmarks/satlib/uf150/uf150-079.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-08"
+file = "benchmarks/satlib/uf150/uf150-08.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-080"
+file = "benchmarks/satlib/uf150/uf150-080.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-081"
+file = "benchmarks/satlib/uf150/uf150-081.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-082"
+file = "benchmarks/satlib/uf150/uf150-082.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-083"
+file = "benchmarks/satlib/uf150/uf150-083.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-084"
+file = "benchmarks/satlib/uf150/uf150-084.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-085"
+file = "benchmarks/satlib/uf150/uf150-085.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-086"
+file = "benchmarks/satlib/uf150/uf150-086.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-087"
+file = "benchmarks/satlib/uf150/uf150-087.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-088"
+file = "benchmarks/satlib/uf150/uf150-088.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-089"
+file = "benchmarks/satlib/uf150/uf150-089.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-09"
+file = "benchmarks/satlib/uf150/uf150-09.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-090"
+file = "benchmarks/satlib/uf150/uf150-090.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-091"
+file = "benchmarks/satlib/uf150/uf150-091.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-092"
+file = "benchmarks/satlib/uf150/uf150-092.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-093"
+file = "benchmarks/satlib/uf150/uf150-093.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-094"
+file = "benchmarks/satlib/uf150/uf150-094.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-095"
+file = "benchmarks/satlib/uf150/uf150-095.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-096"
+file = "benchmarks/satlib/uf150/uf150-096.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-097"
+file = "benchmarks/satlib/uf150/uf150-097.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-098"
+file = "benchmarks/satlib/uf150/uf150-098.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf150/uf150-099"
+file = "benchmarks/satlib/uf150/uf150-099.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uuf150/uuf150-01"
+file = "benchmarks/satlib/uuf150/uuf150-01.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-010"
+file = "benchmarks/satlib/uuf150/uuf150-010.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-0100"
+file = "benchmarks/satlib/uuf150/uuf150-0100.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-011"
+file = "benchmarks/satlib/uuf150/uuf150-011.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-012"
+file = "benchmarks/satlib/uuf150/uuf150-012.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-013"
+file = "benchmarks/satlib/uuf150/uuf150-013.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-014"
+file = "benchmarks/satlib/uuf150/uuf150-014.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-015"
+file = "benchmarks/satlib/uuf150/uuf150-015.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-016"
+file = "benchmarks/satlib/uuf150/uuf150-016.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-017"
+file = "benchmarks/satlib/uuf150/uuf150-017.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-018"
+file = "benchmarks/satlib/uuf150/uuf150-018.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-019"
+file = "benchmarks/satlib/uuf150/uuf150-019.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-02"
+file = "benchmarks/satlib/uuf150/uuf150-02.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-020"
+file = "benchmarks/satlib/uuf150/uuf150-020.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-021"
+file = "benchmarks/satlib/uuf150/uuf150-021.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-022"
+file = "benchmarks/satlib/uuf150/uuf150-022.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-023"
+file = "benchmarks/satlib/uuf150/uuf150-023.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-024"
+file = "benchmarks/satlib/uuf150/uuf150-024.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-025"
+file = "benchmarks/satlib/uuf150/uuf150-025.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-026"
+file = "benchmarks/satlib/uuf150/uuf150-026.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-027"
+file = "benchmarks/satlib/uuf150/uuf150-027.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-028"
+file = "benchmarks/satlib/uuf150/uuf150-028.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-029"
+file = "benchmarks/satlib/uuf150/uuf150-029.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-03"
+file = "benchmarks/satlib/uuf150/uuf150-03.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-030"
+file = "benchmarks/satlib/uuf150/uuf150-030.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-031"
+file = "benchmarks/satlib/uuf150/uuf150-031.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-032"
+file = "benchmarks/satlib/uuf150/uuf150-032.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-033"
+file = "benchmarks/satlib/uuf150/uuf150-033.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-034"
+file = "benchmarks/satlib/uuf150/uuf150-034.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-035"
+file = "benchmarks/satlib/uuf150/uuf150-035.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-036"
+file = "benchmarks/satlib/uuf150/uuf150-036.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-037"
+file = "benchmarks/satlib/uuf150/uuf150-037.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-038"
+file = "benchmarks/satlib/uuf150/uuf150-038.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-039"
+file = "benchmarks/satlib/uuf150/uuf150-039.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-04"
+file = "benchmarks/satlib/uuf150/uuf150-04.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-040"
+file = "benchmarks/satlib/uuf150/uuf150-040.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-041"
+file = "benchmarks/satlib/uuf150/uuf150-041.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-042"
+file = "benchmarks/satlib/uuf150/uuf150-042.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-043"
+file = "benchmarks/satlib/uuf150/uuf150-043.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-044"
+file = "benchmarks/satlib/uuf150/uuf150-044.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-045"
+file = "benchmarks/satlib/uuf150/uuf150-045.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-046"
+file = "benchmarks/satlib/uuf150/uuf150-046.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-047"
+file = "benchmarks/satlib/uuf150/uuf150-047.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-048"
+file = "benchmarks/satlib/uuf150/uuf150-048.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-049"
+file = "benchmarks/satlib/uuf150/uuf150-049.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-05"
+file = "benchmarks/satlib/uuf150/uuf150-05.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-050"
+file = "benchmarks/satlib/uuf150/uuf150-050.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-051"
+file = "benchmarks/satlib/uuf150/uuf150-051.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-052"
+file = "benchmarks/satlib/uuf150/uuf150-052.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-053"
+file = "benchmarks/satlib/uuf150/uuf150-053.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-054"
+file = "benchmarks/satlib/uuf150/uuf150-054.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-055"
+file = "benchmarks/satlib/uuf150/uuf150-055.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-056"
+file = "benchmarks/satlib/uuf150/uuf150-056.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-057"
+file = "benchmarks/satlib/uuf150/uuf150-057.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-058"
+file = "benchmarks/satlib/uuf150/uuf150-058.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-059"
+file = "benchmarks/satlib/uuf150/uuf150-059.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-06"
+file = "benchmarks/satlib/uuf150/uuf150-06.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-060"
+file = "benchmarks/satlib/uuf150/uuf150-060.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-061"
+file = "benchmarks/satlib/uuf150/uuf150-061.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-062"
+file = "benchmarks/satlib/uuf150/uuf150-062.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-063"
+file = "benchmarks/satlib/uuf150/uuf150-063.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-064"
+file = "benchmarks/satlib/uuf150/uuf150-064.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-065"
+file = "benchmarks/satlib/uuf150/uuf150-065.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-066"
+file = "benchmarks/satlib/uuf150/uuf150-066.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-067"
+file = "benchmarks/satlib/uuf150/uuf150-067.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-068"
+file = "benchmarks/satlib/uuf150/uuf150-068.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-069"
+file = "benchmarks/satlib/uuf150/uuf150-069.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-07"
+file = "benchmarks/satlib/uuf150/uuf150-07.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-070"
+file = "benchmarks/satlib/uuf150/uuf150-070.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-071"
+file = "benchmarks/satlib/uuf150/uuf150-071.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-072"
+file = "benchmarks/satlib/uuf150/uuf150-072.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-073"
+file = "benchmarks/satlib/uuf150/uuf150-073.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-074"
+file = "benchmarks/satlib/uuf150/uuf150-074.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-075"
+file = "benchmarks/satlib/uuf150/uuf150-075.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-076"
+file = "benchmarks/satlib/uuf150/uuf150-076.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-077"
+file = "benchmarks/satlib/uuf150/uuf150-077.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-078"
+file = "benchmarks/satlib/uuf150/uuf150-078.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-079"
+file = "benchmarks/satlib/uuf150/uuf150-079.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-08"
+file = "benchmarks/satlib/uuf150/uuf150-08.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-080"
+file = "benchmarks/satlib/uuf150/uuf150-080.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-081"
+file = "benchmarks/satlib/uuf150/uuf150-081.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-082"
+file = "benchmarks/satlib/uuf150/uuf150-082.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-083"
+file = "benchmarks/satlib/uuf150/uuf150-083.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-084"
+file = "benchmarks/satlib/uuf150/uuf150-084.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-085"
+file = "benchmarks/satlib/uuf150/uuf150-085.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-086"
+file = "benchmarks/satlib/uuf150/uuf150-086.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-087"
+file = "benchmarks/satlib/uuf150/uuf150-087.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-088"
+file = "benchmarks/satlib/uuf150/uuf150-088.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-089"
+file = "benchmarks/satlib/uuf150/uuf150-089.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-09"
+file = "benchmarks/satlib/uuf150/uuf150-09.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-090"
+file = "benchmarks/satlib/uuf150/uuf150-090.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-091"
+file = "benchmarks/satlib/uuf150/uuf150-091.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-092"
+file = "benchmarks/satlib/uuf150/uuf150-092.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-093"
+file = "benchmarks/satlib/uuf150/uuf150-093.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-094"
+file = "benchmarks/satlib/uuf150/uuf150-094.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-095"
+file = "benchmarks/satlib/uuf150/uuf150-095.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-096"
+file = "benchmarks/satlib/uuf150/uuf150-096.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-097"
+file = "benchmarks/satlib/uuf150/uuf150-097.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-098"
+file = "benchmarks/satlib/uuf150/uuf150-098.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf150/uuf150-099"
+file = "benchmarks/satlib/uuf150/uuf150-099.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-01"
+file = "benchmarks/satlib/uuf200/uuf200-01.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-010"
+file = "benchmarks/satlib/uuf200/uuf200-010.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-011"
+file = "benchmarks/satlib/uuf200/uuf200-011.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-012"
+file = "benchmarks/satlib/uuf200/uuf200-012.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-013"
+file = "benchmarks/satlib/uuf200/uuf200-013.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-014"
+file = "benchmarks/satlib/uuf200/uuf200-014.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-015"
+file = "benchmarks/satlib/uuf200/uuf200-015.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-016"
+file = "benchmarks/satlib/uuf200/uuf200-016.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-017"
+file = "benchmarks/satlib/uuf200/uuf200-017.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-018"
+file = "benchmarks/satlib/uuf200/uuf200-018.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-019"
+file = "benchmarks/satlib/uuf200/uuf200-019.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-02"
+file = "benchmarks/satlib/uuf200/uuf200-02.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-020"
+file = "benchmarks/satlib/uuf200/uuf200-020.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-021"
+file = "benchmarks/satlib/uuf200/uuf200-021.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-022"
+file = "benchmarks/satlib/uuf200/uuf200-022.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-023"
+file = "benchmarks/satlib/uuf200/uuf200-023.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-024"
+file = "benchmarks/satlib/uuf200/uuf200-024.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-025"
+file = "benchmarks/satlib/uuf200/uuf200-025.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-026"
+file = "benchmarks/satlib/uuf200/uuf200-026.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-027"
+file = "benchmarks/satlib/uuf200/uuf200-027.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-028"
+file = "benchmarks/satlib/uuf200/uuf200-028.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-029"
+file = "benchmarks/satlib/uuf200/uuf200-029.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-03"
+file = "benchmarks/satlib/uuf200/uuf200-03.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-030"
+file = "benchmarks/satlib/uuf200/uuf200-030.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-031"
+file = "benchmarks/satlib/uuf200/uuf200-031.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-032"
+file = "benchmarks/satlib/uuf200/uuf200-032.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-033"
+file = "benchmarks/satlib/uuf200/uuf200-033.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-034"
+file = "benchmarks/satlib/uuf200/uuf200-034.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-035"
+file = "benchmarks/satlib/uuf200/uuf200-035.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-036"
+file = "benchmarks/satlib/uuf200/uuf200-036.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-037"
+file = "benchmarks/satlib/uuf200/uuf200-037.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-038"
+file = "benchmarks/satlib/uuf200/uuf200-038.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-039"
+file = "benchmarks/satlib/uuf200/uuf200-039.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-04"
+file = "benchmarks/satlib/uuf200/uuf200-04.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-040"
+file = "benchmarks/satlib/uuf200/uuf200-040.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-041"
+file = "benchmarks/satlib/uuf200/uuf200-041.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-042"
+file = "benchmarks/satlib/uuf200/uuf200-042.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-043"
+file = "benchmarks/satlib/uuf200/uuf200-043.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-044"
+file = "benchmarks/satlib/uuf200/uuf200-044.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-045"
+file = "benchmarks/satlib/uuf200/uuf200-045.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-046"
+file = "benchmarks/satlib/uuf200/uuf200-046.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-047"
+file = "benchmarks/satlib/uuf200/uuf200-047.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-048"
+file = "benchmarks/satlib/uuf200/uuf200-048.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-049"
+file = "benchmarks/satlib/uuf200/uuf200-049.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-05"
+file = "benchmarks/satlib/uuf200/uuf200-05.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-050"
+file = "benchmarks/satlib/uuf200/uuf200-050.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-051"
+file = "benchmarks/satlib/uuf200/uuf200-051.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-052"
+file = "benchmarks/satlib/uuf200/uuf200-052.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-053"
+file = "benchmarks/satlib/uuf200/uuf200-053.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-054"
+file = "benchmarks/satlib/uuf200/uuf200-054.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-055"
+file = "benchmarks/satlib/uuf200/uuf200-055.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-056"
+file = "benchmarks/satlib/uuf200/uuf200-056.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-057"
+file = "benchmarks/satlib/uuf200/uuf200-057.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-058"
+file = "benchmarks/satlib/uuf200/uuf200-058.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-059"
+file = "benchmarks/satlib/uuf200/uuf200-059.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-06"
+file = "benchmarks/satlib/uuf200/uuf200-06.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-060"
+file = "benchmarks/satlib/uuf200/uuf200-060.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-061"
+file = "benchmarks/satlib/uuf200/uuf200-061.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-062"
+file = "benchmarks/satlib/uuf200/uuf200-062.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-063"
+file = "benchmarks/satlib/uuf200/uuf200-063.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-064"
+file = "benchmarks/satlib/uuf200/uuf200-064.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-065"
+file = "benchmarks/satlib/uuf200/uuf200-065.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-066"
+file = "benchmarks/satlib/uuf200/uuf200-066.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-067"
+file = "benchmarks/satlib/uuf200/uuf200-067.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-068"
+file = "benchmarks/satlib/uuf200/uuf200-068.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-069"
+file = "benchmarks/satlib/uuf200/uuf200-069.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-07"
+file = "benchmarks/satlib/uuf200/uuf200-07.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-070"
+file = "benchmarks/satlib/uuf200/uuf200-070.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-071"
+file = "benchmarks/satlib/uuf200/uuf200-071.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-072"
+file = "benchmarks/satlib/uuf200/uuf200-072.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-073"
+file = "benchmarks/satlib/uuf200/uuf200-073.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-074"
+file = "benchmarks/satlib/uuf200/uuf200-074.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-075"
+file = "benchmarks/satlib/uuf200/uuf200-075.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-076"
+file = "benchmarks/satlib/uuf200/uuf200-076.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-077"
+file = "benchmarks/satlib/uuf200/uuf200-077.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-078"
+file = "benchmarks/satlib/uuf200/uuf200-078.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-079"
+file = "benchmarks/satlib/uuf200/uuf200-079.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-08"
+file = "benchmarks/satlib/uuf200/uuf200-08.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-080"
+file = "benchmarks/satlib/uuf200/uuf200-080.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-081"
+file = "benchmarks/satlib/uuf200/uuf200-081.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-082"
+file = "benchmarks/satlib/uuf200/uuf200-082.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-083"
+file = "benchmarks/satlib/uuf200/uuf200-083.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-084"
+file = "benchmarks/satlib/uuf200/uuf200-084.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-085"
+file = "benchmarks/satlib/uuf200/uuf200-085.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-086"
+file = "benchmarks/satlib/uuf200/uuf200-086.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-087"
+file = "benchmarks/satlib/uuf200/uuf200-087.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-088"
+file = "benchmarks/satlib/uuf200/uuf200-088.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-089"
+file = "benchmarks/satlib/uuf200/uuf200-089.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-09"
+file = "benchmarks/satlib/uuf200/uuf200-09.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-090"
+file = "benchmarks/satlib/uuf200/uuf200-090.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-091"
+file = "benchmarks/satlib/uuf200/uuf200-091.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-092"
+file = "benchmarks/satlib/uuf200/uuf200-092.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-093"
+file = "benchmarks/satlib/uuf200/uuf200-093.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-094"
+file = "benchmarks/satlib/uuf200/uuf200-094.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-095"
+file = "benchmarks/satlib/uuf200/uuf200-095.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-096"
+file = "benchmarks/satlib/uuf200/uuf200-096.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-097"
+file = "benchmarks/satlib/uuf200/uuf200-097.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-098"
+file = "benchmarks/satlib/uuf200/uuf200-098.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf200/uuf200-099"
+file = "benchmarks/satlib/uuf200/uuf200-099.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uf250/uf250-01"
+file = "benchmarks/satlib/uf250/uf250-01.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-010"
+file = "benchmarks/satlib/uf250/uf250-010.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-0100"
+file = "benchmarks/satlib/uf250/uf250-0100.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-011"
+file = "benchmarks/satlib/uf250/uf250-011.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-012"
+file = "benchmarks/satlib/uf250/uf250-012.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-013"
+file = "benchmarks/satlib/uf250/uf250-013.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-014"
+file = "benchmarks/satlib/uf250/uf250-014.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-015"
+file = "benchmarks/satlib/uf250/uf250-015.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-016"
+file = "benchmarks/satlib/uf250/uf250-016.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-017"
+file = "benchmarks/satlib/uf250/uf250-017.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-018"
+file = "benchmarks/satlib/uf250/uf250-018.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-019"
+file = "benchmarks/satlib/uf250/uf250-019.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-02"
+file = "benchmarks/satlib/uf250/uf250-02.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-020"
+file = "benchmarks/satlib/uf250/uf250-020.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-021"
+file = "benchmarks/satlib/uf250/uf250-021.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-022"
+file = "benchmarks/satlib/uf250/uf250-022.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-023"
+file = "benchmarks/satlib/uf250/uf250-023.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-024"
+file = "benchmarks/satlib/uf250/uf250-024.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-025"
+file = "benchmarks/satlib/uf250/uf250-025.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-026"
+file = "benchmarks/satlib/uf250/uf250-026.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-027"
+file = "benchmarks/satlib/uf250/uf250-027.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-028"
+file = "benchmarks/satlib/uf250/uf250-028.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-029"
+file = "benchmarks/satlib/uf250/uf250-029.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-03"
+file = "benchmarks/satlib/uf250/uf250-03.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-030"
+file = "benchmarks/satlib/uf250/uf250-030.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-031"
+file = "benchmarks/satlib/uf250/uf250-031.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-032"
+file = "benchmarks/satlib/uf250/uf250-032.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-033"
+file = "benchmarks/satlib/uf250/uf250-033.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-034"
+file = "benchmarks/satlib/uf250/uf250-034.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-035"
+file = "benchmarks/satlib/uf250/uf250-035.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-036"
+file = "benchmarks/satlib/uf250/uf250-036.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-037"
+file = "benchmarks/satlib/uf250/uf250-037.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-038"
+file = "benchmarks/satlib/uf250/uf250-038.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-039"
+file = "benchmarks/satlib/uf250/uf250-039.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-04"
+file = "benchmarks/satlib/uf250/uf250-04.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-040"
+file = "benchmarks/satlib/uf250/uf250-040.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-041"
+file = "benchmarks/satlib/uf250/uf250-041.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-042"
+file = "benchmarks/satlib/uf250/uf250-042.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-043"
+file = "benchmarks/satlib/uf250/uf250-043.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-044"
+file = "benchmarks/satlib/uf250/uf250-044.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-045"
+file = "benchmarks/satlib/uf250/uf250-045.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-046"
+file = "benchmarks/satlib/uf250/uf250-046.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-047"
+file = "benchmarks/satlib/uf250/uf250-047.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-048"
+file = "benchmarks/satlib/uf250/uf250-048.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-049"
+file = "benchmarks/satlib/uf250/uf250-049.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-05"
+file = "benchmarks/satlib/uf250/uf250-05.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-050"
+file = "benchmarks/satlib/uf250/uf250-050.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-051"
+file = "benchmarks/satlib/uf250/uf250-051.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-052"
+file = "benchmarks/satlib/uf250/uf250-052.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-053"
+file = "benchmarks/satlib/uf250/uf250-053.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-054"
+file = "benchmarks/satlib/uf250/uf250-054.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-055"
+file = "benchmarks/satlib/uf250/uf250-055.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-056"
+file = "benchmarks/satlib/uf250/uf250-056.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-057"
+file = "benchmarks/satlib/uf250/uf250-057.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-058"
+file = "benchmarks/satlib/uf250/uf250-058.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-059"
+file = "benchmarks/satlib/uf250/uf250-059.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-06"
+file = "benchmarks/satlib/uf250/uf250-06.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-060"
+file = "benchmarks/satlib/uf250/uf250-060.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-061"
+file = "benchmarks/satlib/uf250/uf250-061.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-062"
+file = "benchmarks/satlib/uf250/uf250-062.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-063"
+file = "benchmarks/satlib/uf250/uf250-063.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-064"
+file = "benchmarks/satlib/uf250/uf250-064.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-065"
+file = "benchmarks/satlib/uf250/uf250-065.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-066"
+file = "benchmarks/satlib/uf250/uf250-066.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-067"
+file = "benchmarks/satlib/uf250/uf250-067.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-068"
+file = "benchmarks/satlib/uf250/uf250-068.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-069"
+file = "benchmarks/satlib/uf250/uf250-069.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-07"
+file = "benchmarks/satlib/uf250/uf250-07.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-070"
+file = "benchmarks/satlib/uf250/uf250-070.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-071"
+file = "benchmarks/satlib/uf250/uf250-071.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-072"
+file = "benchmarks/satlib/uf250/uf250-072.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-073"
+file = "benchmarks/satlib/uf250/uf250-073.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-074"
+file = "benchmarks/satlib/uf250/uf250-074.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-075"
+file = "benchmarks/satlib/uf250/uf250-075.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-076"
+file = "benchmarks/satlib/uf250/uf250-076.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-077"
+file = "benchmarks/satlib/uf250/uf250-077.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-078"
+file = "benchmarks/satlib/uf250/uf250-078.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-079"
+file = "benchmarks/satlib/uf250/uf250-079.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-08"
+file = "benchmarks/satlib/uf250/uf250-08.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-080"
+file = "benchmarks/satlib/uf250/uf250-080.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-081"
+file = "benchmarks/satlib/uf250/uf250-081.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-082"
+file = "benchmarks/satlib/uf250/uf250-082.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-083"
+file = "benchmarks/satlib/uf250/uf250-083.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-084"
+file = "benchmarks/satlib/uf250/uf250-084.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-085"
+file = "benchmarks/satlib/uf250/uf250-085.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-086"
+file = "benchmarks/satlib/uf250/uf250-086.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-087"
+file = "benchmarks/satlib/uf250/uf250-087.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-088"
+file = "benchmarks/satlib/uf250/uf250-088.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-089"
+file = "benchmarks/satlib/uf250/uf250-089.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-09"
+file = "benchmarks/satlib/uf250/uf250-09.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-090"
+file = "benchmarks/satlib/uf250/uf250-090.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-091"
+file = "benchmarks/satlib/uf250/uf250-091.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-092"
+file = "benchmarks/satlib/uf250/uf250-092.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-093"
+file = "benchmarks/satlib/uf250/uf250-093.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-094"
+file = "benchmarks/satlib/uf250/uf250-094.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-095"
+file = "benchmarks/satlib/uf250/uf250-095.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-096"
+file = "benchmarks/satlib/uf250/uf250-096.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-097"
+file = "benchmarks/satlib/uf250/uf250-097.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-098"
+file = "benchmarks/satlib/uf250/uf250-098.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf250/uf250-099"
+file = "benchmarks/satlib/uf250/uf250-099.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uuf250/uuf250-01"
+file = "benchmarks/satlib/uuf250/uuf250-01.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-010"
+file = "benchmarks/satlib/uuf250/uuf250-010.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-0100"
+file = "benchmarks/satlib/uuf250/uuf250-0100.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-011"
+file = "benchmarks/satlib/uuf250/uuf250-011.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-012"
+file = "benchmarks/satlib/uuf250/uuf250-012.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-013"
+file = "benchmarks/satlib/uuf250/uuf250-013.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-014"
+file = "benchmarks/satlib/uuf250/uuf250-014.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-015"
+file = "benchmarks/satlib/uuf250/uuf250-015.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-016"
+file = "benchmarks/satlib/uuf250/uuf250-016.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-017"
+file = "benchmarks/satlib/uuf250/uuf250-017.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-018"
+file = "benchmarks/satlib/uuf250/uuf250-018.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-019"
+file = "benchmarks/satlib/uuf250/uuf250-019.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-02"
+file = "benchmarks/satlib/uuf250/uuf250-02.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-020"
+file = "benchmarks/satlib/uuf250/uuf250-020.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-021"
+file = "benchmarks/satlib/uuf250/uuf250-021.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-022"
+file = "benchmarks/satlib/uuf250/uuf250-022.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-023"
+file = "benchmarks/satlib/uuf250/uuf250-023.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-024"
+file = "benchmarks/satlib/uuf250/uuf250-024.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-025"
+file = "benchmarks/satlib/uuf250/uuf250-025.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-026"
+file = "benchmarks/satlib/uuf250/uuf250-026.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-027"
+file = "benchmarks/satlib/uuf250/uuf250-027.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-028"
+file = "benchmarks/satlib/uuf250/uuf250-028.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-029"
+file = "benchmarks/satlib/uuf250/uuf250-029.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-03"
+file = "benchmarks/satlib/uuf250/uuf250-03.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-030"
+file = "benchmarks/satlib/uuf250/uuf250-030.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-031"
+file = "benchmarks/satlib/uuf250/uuf250-031.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-032"
+file = "benchmarks/satlib/uuf250/uuf250-032.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-033"
+file = "benchmarks/satlib/uuf250/uuf250-033.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-034"
+file = "benchmarks/satlib/uuf250/uuf250-034.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-035"
+file = "benchmarks/satlib/uuf250/uuf250-035.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-036"
+file = "benchmarks/satlib/uuf250/uuf250-036.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-037"
+file = "benchmarks/satlib/uuf250/uuf250-037.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-038"
+file = "benchmarks/satlib/uuf250/uuf250-038.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-039"
+file = "benchmarks/satlib/uuf250/uuf250-039.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-04"
+file = "benchmarks/satlib/uuf250/uuf250-04.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-040"
+file = "benchmarks/satlib/uuf250/uuf250-040.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-041"
+file = "benchmarks/satlib/uuf250/uuf250-041.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-042"
+file = "benchmarks/satlib/uuf250/uuf250-042.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-043"
+file = "benchmarks/satlib/uuf250/uuf250-043.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-044"
+file = "benchmarks/satlib/uuf250/uuf250-044.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-045"
+file = "benchmarks/satlib/uuf250/uuf250-045.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-046"
+file = "benchmarks/satlib/uuf250/uuf250-046.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-047"
+file = "benchmarks/satlib/uuf250/uuf250-047.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-048"
+file = "benchmarks/satlib/uuf250/uuf250-048.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-049"
+file = "benchmarks/satlib/uuf250/uuf250-049.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-05"
+file = "benchmarks/satlib/uuf250/uuf250-05.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-050"
+file = "benchmarks/satlib/uuf250/uuf250-050.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-051"
+file = "benchmarks/satlib/uuf250/uuf250-051.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-052"
+file = "benchmarks/satlib/uuf250/uuf250-052.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-053"
+file = "benchmarks/satlib/uuf250/uuf250-053.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-054"
+file = "benchmarks/satlib/uuf250/uuf250-054.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-055"
+file = "benchmarks/satlib/uuf250/uuf250-055.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-056"
+file = "benchmarks/satlib/uuf250/uuf250-056.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-057"
+file = "benchmarks/satlib/uuf250/uuf250-057.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-058"
+file = "benchmarks/satlib/uuf250/uuf250-058.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-059"
+file = "benchmarks/satlib/uuf250/uuf250-059.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-06"
+file = "benchmarks/satlib/uuf250/uuf250-06.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-060"
+file = "benchmarks/satlib/uuf250/uuf250-060.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-061"
+file = "benchmarks/satlib/uuf250/uuf250-061.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-062"
+file = "benchmarks/satlib/uuf250/uuf250-062.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-063"
+file = "benchmarks/satlib/uuf250/uuf250-063.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-064"
+file = "benchmarks/satlib/uuf250/uuf250-064.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-065"
+file = "benchmarks/satlib/uuf250/uuf250-065.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-066"
+file = "benchmarks/satlib/uuf250/uuf250-066.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-067"
+file = "benchmarks/satlib/uuf250/uuf250-067.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-068"
+file = "benchmarks/satlib/uuf250/uuf250-068.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-069"
+file = "benchmarks/satlib/uuf250/uuf250-069.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-07"
+file = "benchmarks/satlib/uuf250/uuf250-07.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-070"
+file = "benchmarks/satlib/uuf250/uuf250-070.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-071"
+file = "benchmarks/satlib/uuf250/uuf250-071.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-072"
+file = "benchmarks/satlib/uuf250/uuf250-072.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-073"
+file = "benchmarks/satlib/uuf250/uuf250-073.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-074"
+file = "benchmarks/satlib/uuf250/uuf250-074.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-075"
+file = "benchmarks/satlib/uuf250/uuf250-075.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-076"
+file = "benchmarks/satlib/uuf250/uuf250-076.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-077"
+file = "benchmarks/satlib/uuf250/uuf250-077.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-078"
+file = "benchmarks/satlib/uuf250/uuf250-078.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-079"
+file = "benchmarks/satlib/uuf250/uuf250-079.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-08"
+file = "benchmarks/satlib/uuf250/uuf250-08.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-080"
+file = "benchmarks/satlib/uuf250/uuf250-080.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-081"
+file = "benchmarks/satlib/uuf250/uuf250-081.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-082"
+file = "benchmarks/satlib/uuf250/uuf250-082.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-083"
+file = "benchmarks/satlib/uuf250/uuf250-083.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-084"
+file = "benchmarks/satlib/uuf250/uuf250-084.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-085"
+file = "benchmarks/satlib/uuf250/uuf250-085.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-086"
+file = "benchmarks/satlib/uuf250/uuf250-086.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-087"
+file = "benchmarks/satlib/uuf250/uuf250-087.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-088"
+file = "benchmarks/satlib/uuf250/uuf250-088.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-089"
+file = "benchmarks/satlib/uuf250/uuf250-089.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-09"
+file = "benchmarks/satlib/uuf250/uuf250-09.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-090"
+file = "benchmarks/satlib/uuf250/uuf250-090.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-091"
+file = "benchmarks/satlib/uuf250/uuf250-091.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-092"
+file = "benchmarks/satlib/uuf250/uuf250-092.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-093"
+file = "benchmarks/satlib/uuf250/uuf250-093.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-094"
+file = "benchmarks/satlib/uuf250/uuf250-094.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-095"
+file = "benchmarks/satlib/uuf250/uuf250-095.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-096"
+file = "benchmarks/satlib/uuf250/uuf250-096.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-097"
+file = "benchmarks/satlib/uuf250/uuf250-097.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-098"
+file = "benchmarks/satlib/uuf250/uuf250-098.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf250/uuf250-099"
+file = "benchmarks/satlib/uuf250/uuf250-099.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "flat50/flat50-1"
+file = "benchmarks/satlib/flat50/flat50-1.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-106"
+file = "benchmarks/satlib/flat50/flat50-106.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-114"
+file = "benchmarks/satlib/flat50/flat50-114.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-122"
+file = "benchmarks/satlib/flat50/flat50-122.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-130"
+file = "benchmarks/satlib/flat50/flat50-130.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-139"
+file = "benchmarks/satlib/flat50/flat50-139.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-147"
+file = "benchmarks/satlib/flat50/flat50-147.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-155"
+file = "benchmarks/satlib/flat50/flat50-155.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-163"
+file = "benchmarks/satlib/flat50/flat50-163.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-171"
+file = "benchmarks/satlib/flat50/flat50-171.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-18"
+file = "benchmarks/satlib/flat50/flat50-18.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-188"
+file = "benchmarks/satlib/flat50/flat50-188.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-196"
+file = "benchmarks/satlib/flat50/flat50-196.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-203"
+file = "benchmarks/satlib/flat50/flat50-203.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-211"
+file = "benchmarks/satlib/flat50/flat50-211.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-22"
+file = "benchmarks/satlib/flat50/flat50-22.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-228"
+file = "benchmarks/satlib/flat50/flat50-228.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-236"
+file = "benchmarks/satlib/flat50/flat50-236.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-244"
+file = "benchmarks/satlib/flat50/flat50-244.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-252"
+file = "benchmarks/satlib/flat50/flat50-252.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-260"
+file = "benchmarks/satlib/flat50/flat50-260.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-269"
+file = "benchmarks/satlib/flat50/flat50-269.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-277"
+file = "benchmarks/satlib/flat50/flat50-277.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-285"
+file = "benchmarks/satlib/flat50/flat50-285.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-293"
+file = "benchmarks/satlib/flat50/flat50-293.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-300"
+file = "benchmarks/satlib/flat50/flat50-300.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-309"
+file = "benchmarks/satlib/flat50/flat50-309.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-317"
+file = "benchmarks/satlib/flat50/flat50-317.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-325"
+file = "benchmarks/satlib/flat50/flat50-325.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-333"
+file = "benchmarks/satlib/flat50/flat50-333.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-341"
+file = "benchmarks/satlib/flat50/flat50-341.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-35"
+file = "benchmarks/satlib/flat50/flat50-35.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-358"
+file = "benchmarks/satlib/flat50/flat50-358.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-366"
+file = "benchmarks/satlib/flat50/flat50-366.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-374"
+file = "benchmarks/satlib/flat50/flat50-374.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-382"
+file = "benchmarks/satlib/flat50/flat50-382.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-390"
+file = "benchmarks/satlib/flat50/flat50-390.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-399"
+file = "benchmarks/satlib/flat50/flat50-399.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-406"
+file = "benchmarks/satlib/flat50/flat50-406.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-414"
+file = "benchmarks/satlib/flat50/flat50-414.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-422"
+file = "benchmarks/satlib/flat50/flat50-422.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-430"
+file = "benchmarks/satlib/flat50/flat50-430.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-439"
+file = "benchmarks/satlib/flat50/flat50-439.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-447"
+file = "benchmarks/satlib/flat50/flat50-447.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-455"
+file = "benchmarks/satlib/flat50/flat50-455.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-463"
+file = "benchmarks/satlib/flat50/flat50-463.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-471"
+file = "benchmarks/satlib/flat50/flat50-471.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-48"
+file = "benchmarks/satlib/flat50/flat50-48.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-488"
+file = "benchmarks/satlib/flat50/flat50-488.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-496"
+file = "benchmarks/satlib/flat50/flat50-496.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-503"
+file = "benchmarks/satlib/flat50/flat50-503.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-511"
+file = "benchmarks/satlib/flat50/flat50-511.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-52"
+file = "benchmarks/satlib/flat50/flat50-52.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-528"
+file = "benchmarks/satlib/flat50/flat50-528.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-536"
+file = "benchmarks/satlib/flat50/flat50-536.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-544"
+file = "benchmarks/satlib/flat50/flat50-544.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-552"
+file = "benchmarks/satlib/flat50/flat50-552.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-560"
+file = "benchmarks/satlib/flat50/flat50-560.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-569"
+file = "benchmarks/satlib/flat50/flat50-569.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-577"
+file = "benchmarks/satlib/flat50/flat50-577.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-585"
+file = "benchmarks/satlib/flat50/flat50-585.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-593"
+file = "benchmarks/satlib/flat50/flat50-593.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-600"
+file = "benchmarks/satlib/flat50/flat50-600.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-609"
+file = "benchmarks/satlib/flat50/flat50-609.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-617"
+file = "benchmarks/satlib/flat50/flat50-617.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-625"
+file = "benchmarks/satlib/flat50/flat50-625.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-633"
+file = "benchmarks/satlib/flat50/flat50-633.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-641"
+file = "benchmarks/satlib/flat50/flat50-641.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-65"
+file = "benchmarks/satlib/flat50/flat50-65.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-658"
+file = "benchmarks/satlib/flat50/flat50-658.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-666"
+file = "benchmarks/satlib/flat50/flat50-666.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-674"
+file = "benchmarks/satlib/flat50/flat50-674.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-682"
+file = "benchmarks/satlib/flat50/flat50-682.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-690"
+file = "benchmarks/satlib/flat50/flat50-690.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-699"
+file = "benchmarks/satlib/flat50/flat50-699.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-706"
+file = "benchmarks/satlib/flat50/flat50-706.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-714"
+file = "benchmarks/satlib/flat50/flat50-714.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-722"
+file = "benchmarks/satlib/flat50/flat50-722.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-731"
+file = "benchmarks/satlib/flat50/flat50-731.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-74"
+file = "benchmarks/satlib/flat50/flat50-74.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-748"
+file = "benchmarks/satlib/flat50/flat50-748.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-756"
+file = "benchmarks/satlib/flat50/flat50-756.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-764"
+file = "benchmarks/satlib/flat50/flat50-764.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-772"
+file = "benchmarks/satlib/flat50/flat50-772.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-780"
+file = "benchmarks/satlib/flat50/flat50-780.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-789"
+file = "benchmarks/satlib/flat50/flat50-789.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-797"
+file = "benchmarks/satlib/flat50/flat50-797.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-804"
+file = "benchmarks/satlib/flat50/flat50-804.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-812"
+file = "benchmarks/satlib/flat50/flat50-812.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-820"
+file = "benchmarks/satlib/flat50/flat50-820.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-829"
+file = "benchmarks/satlib/flat50/flat50-829.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-837"
+file = "benchmarks/satlib/flat50/flat50-837.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-845"
+file = "benchmarks/satlib/flat50/flat50-845.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-853"
+file = "benchmarks/satlib/flat50/flat50-853.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-861"
+file = "benchmarks/satlib/flat50/flat50-861.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-87"
+file = "benchmarks/satlib/flat50/flat50-87.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-878"
+file = "benchmarks/satlib/flat50/flat50-878.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-886"
+file = "benchmarks/satlib/flat50/flat50-886.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-894"
+file = "benchmarks/satlib/flat50/flat50-894.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat50/flat50-901"
+file = "benchmarks/satlib/flat50/flat50-901.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-1"
+file = "benchmarks/satlib/flat100/flat100-1.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-10"
+file = "benchmarks/satlib/flat100/flat100-10.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-100"
+file = "benchmarks/satlib/flat100/flat100-100.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-11"
+file = "benchmarks/satlib/flat100/flat100-11.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-12"
+file = "benchmarks/satlib/flat100/flat100-12.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-13"
+file = "benchmarks/satlib/flat100/flat100-13.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-14"
+file = "benchmarks/satlib/flat100/flat100-14.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-15"
+file = "benchmarks/satlib/flat100/flat100-15.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-16"
+file = "benchmarks/satlib/flat100/flat100-16.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-17"
+file = "benchmarks/satlib/flat100/flat100-17.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-18"
+file = "benchmarks/satlib/flat100/flat100-18.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-19"
+file = "benchmarks/satlib/flat100/flat100-19.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-2"
+file = "benchmarks/satlib/flat100/flat100-2.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-20"
+file = "benchmarks/satlib/flat100/flat100-20.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-21"
+file = "benchmarks/satlib/flat100/flat100-21.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-22"
+file = "benchmarks/satlib/flat100/flat100-22.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-23"
+file = "benchmarks/satlib/flat100/flat100-23.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-24"
+file = "benchmarks/satlib/flat100/flat100-24.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-25"
+file = "benchmarks/satlib/flat100/flat100-25.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-26"
+file = "benchmarks/satlib/flat100/flat100-26.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-27"
+file = "benchmarks/satlib/flat100/flat100-27.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-28"
+file = "benchmarks/satlib/flat100/flat100-28.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-29"
+file = "benchmarks/satlib/flat100/flat100-29.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-3"
+file = "benchmarks/satlib/flat100/flat100-3.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-30"
+file = "benchmarks/satlib/flat100/flat100-30.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-31"
+file = "benchmarks/satlib/flat100/flat100-31.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-32"
+file = "benchmarks/satlib/flat100/flat100-32.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-33"
+file = "benchmarks/satlib/flat100/flat100-33.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-34"
+file = "benchmarks/satlib/flat100/flat100-34.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-35"
+file = "benchmarks/satlib/flat100/flat100-35.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-36"
+file = "benchmarks/satlib/flat100/flat100-36.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-37"
+file = "benchmarks/satlib/flat100/flat100-37.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-38"
+file = "benchmarks/satlib/flat100/flat100-38.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-39"
+file = "benchmarks/satlib/flat100/flat100-39.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-4"
+file = "benchmarks/satlib/flat100/flat100-4.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-40"
+file = "benchmarks/satlib/flat100/flat100-40.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-41"
+file = "benchmarks/satlib/flat100/flat100-41.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-42"
+file = "benchmarks/satlib/flat100/flat100-42.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-43"
+file = "benchmarks/satlib/flat100/flat100-43.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-44"
+file = "benchmarks/satlib/flat100/flat100-44.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-45"
+file = "benchmarks/satlib/flat100/flat100-45.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-46"
+file = "benchmarks/satlib/flat100/flat100-46.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-47"
+file = "benchmarks/satlib/flat100/flat100-47.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-48"
+file = "benchmarks/satlib/flat100/flat100-48.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-49"
+file = "benchmarks/satlib/flat100/flat100-49.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-5"
+file = "benchmarks/satlib/flat100/flat100-5.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-50"
+file = "benchmarks/satlib/flat100/flat100-50.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-51"
+file = "benchmarks/satlib/flat100/flat100-51.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-52"
+file = "benchmarks/satlib/flat100/flat100-52.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-53"
+file = "benchmarks/satlib/flat100/flat100-53.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-54"
+file = "benchmarks/satlib/flat100/flat100-54.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-55"
+file = "benchmarks/satlib/flat100/flat100-55.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-56"
+file = "benchmarks/satlib/flat100/flat100-56.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-57"
+file = "benchmarks/satlib/flat100/flat100-57.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-58"
+file = "benchmarks/satlib/flat100/flat100-58.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-59"
+file = "benchmarks/satlib/flat100/flat100-59.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-6"
+file = "benchmarks/satlib/flat100/flat100-6.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-60"
+file = "benchmarks/satlib/flat100/flat100-60.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-61"
+file = "benchmarks/satlib/flat100/flat100-61.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-62"
+file = "benchmarks/satlib/flat100/flat100-62.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-63"
+file = "benchmarks/satlib/flat100/flat100-63.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-64"
+file = "benchmarks/satlib/flat100/flat100-64.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-65"
+file = "benchmarks/satlib/flat100/flat100-65.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-66"
+file = "benchmarks/satlib/flat100/flat100-66.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-67"
+file = "benchmarks/satlib/flat100/flat100-67.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-68"
+file = "benchmarks/satlib/flat100/flat100-68.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-69"
+file = "benchmarks/satlib/flat100/flat100-69.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-7"
+file = "benchmarks/satlib/flat100/flat100-7.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-70"
+file = "benchmarks/satlib/flat100/flat100-70.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-71"
+file = "benchmarks/satlib/flat100/flat100-71.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-72"
+file = "benchmarks/satlib/flat100/flat100-72.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-73"
+file = "benchmarks/satlib/flat100/flat100-73.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-74"
+file = "benchmarks/satlib/flat100/flat100-74.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-75"
+file = "benchmarks/satlib/flat100/flat100-75.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-76"
+file = "benchmarks/satlib/flat100/flat100-76.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-77"
+file = "benchmarks/satlib/flat100/flat100-77.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-78"
+file = "benchmarks/satlib/flat100/flat100-78.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-79"
+file = "benchmarks/satlib/flat100/flat100-79.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-8"
+file = "benchmarks/satlib/flat100/flat100-8.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-80"
+file = "benchmarks/satlib/flat100/flat100-80.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-81"
+file = "benchmarks/satlib/flat100/flat100-81.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-82"
+file = "benchmarks/satlib/flat100/flat100-82.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-83"
+file = "benchmarks/satlib/flat100/flat100-83.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-84"
+file = "benchmarks/satlib/flat100/flat100-84.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-85"
+file = "benchmarks/satlib/flat100/flat100-85.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-86"
+file = "benchmarks/satlib/flat100/flat100-86.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-87"
+file = "benchmarks/satlib/flat100/flat100-87.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-88"
+file = "benchmarks/satlib/flat100/flat100-88.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-89"
+file = "benchmarks/satlib/flat100/flat100-89.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-9"
+file = "benchmarks/satlib/flat100/flat100-9.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-90"
+file = "benchmarks/satlib/flat100/flat100-90.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-91"
+file = "benchmarks/satlib/flat100/flat100-91.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-92"
+file = "benchmarks/satlib/flat100/flat100-92.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-93"
+file = "benchmarks/satlib/flat100/flat100-93.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-94"
+file = "benchmarks/satlib/flat100/flat100-94.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-95"
+file = "benchmarks/satlib/flat100/flat100-95.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-96"
+file = "benchmarks/satlib/flat100/flat100-96.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-97"
+file = "benchmarks/satlib/flat100/flat100-97.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-98"
+file = "benchmarks/satlib/flat100/flat100-98.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat100/flat100-99"
+file = "benchmarks/satlib/flat100/flat100-99.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-1"
+file = "benchmarks/satlib/flat150/flat150-1.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-10"
+file = "benchmarks/satlib/flat150/flat150-10.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-100"
+file = "benchmarks/satlib/flat150/flat150-100.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-11"
+file = "benchmarks/satlib/flat150/flat150-11.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-12"
+file = "benchmarks/satlib/flat150/flat150-12.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-13"
+file = "benchmarks/satlib/flat150/flat150-13.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-14"
+file = "benchmarks/satlib/flat150/flat150-14.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-15"
+file = "benchmarks/satlib/flat150/flat150-15.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-16"
+file = "benchmarks/satlib/flat150/flat150-16.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-17"
+file = "benchmarks/satlib/flat150/flat150-17.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-18"
+file = "benchmarks/satlib/flat150/flat150-18.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-19"
+file = "benchmarks/satlib/flat150/flat150-19.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-2"
+file = "benchmarks/satlib/flat150/flat150-2.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-20"
+file = "benchmarks/satlib/flat150/flat150-20.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-21"
+file = "benchmarks/satlib/flat150/flat150-21.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-22"
+file = "benchmarks/satlib/flat150/flat150-22.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-23"
+file = "benchmarks/satlib/flat150/flat150-23.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-24"
+file = "benchmarks/satlib/flat150/flat150-24.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-25"
+file = "benchmarks/satlib/flat150/flat150-25.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-26"
+file = "benchmarks/satlib/flat150/flat150-26.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-27"
+file = "benchmarks/satlib/flat150/flat150-27.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-28"
+file = "benchmarks/satlib/flat150/flat150-28.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-29"
+file = "benchmarks/satlib/flat150/flat150-29.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-3"
+file = "benchmarks/satlib/flat150/flat150-3.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-30"
+file = "benchmarks/satlib/flat150/flat150-30.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-31"
+file = "benchmarks/satlib/flat150/flat150-31.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-32"
+file = "benchmarks/satlib/flat150/flat150-32.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-33"
+file = "benchmarks/satlib/flat150/flat150-33.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-34"
+file = "benchmarks/satlib/flat150/flat150-34.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-35"
+file = "benchmarks/satlib/flat150/flat150-35.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-36"
+file = "benchmarks/satlib/flat150/flat150-36.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-37"
+file = "benchmarks/satlib/flat150/flat150-37.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-38"
+file = "benchmarks/satlib/flat150/flat150-38.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-39"
+file = "benchmarks/satlib/flat150/flat150-39.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-4"
+file = "benchmarks/satlib/flat150/flat150-4.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-40"
+file = "benchmarks/satlib/flat150/flat150-40.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-41"
+file = "benchmarks/satlib/flat150/flat150-41.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-42"
+file = "benchmarks/satlib/flat150/flat150-42.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-43"
+file = "benchmarks/satlib/flat150/flat150-43.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-44"
+file = "benchmarks/satlib/flat150/flat150-44.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-45"
+file = "benchmarks/satlib/flat150/flat150-45.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-46"
+file = "benchmarks/satlib/flat150/flat150-46.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-47"
+file = "benchmarks/satlib/flat150/flat150-47.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-48"
+file = "benchmarks/satlib/flat150/flat150-48.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-49"
+file = "benchmarks/satlib/flat150/flat150-49.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-5"
+file = "benchmarks/satlib/flat150/flat150-5.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-50"
+file = "benchmarks/satlib/flat150/flat150-50.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-51"
+file = "benchmarks/satlib/flat150/flat150-51.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-52"
+file = "benchmarks/satlib/flat150/flat150-52.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-53"
+file = "benchmarks/satlib/flat150/flat150-53.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-54"
+file = "benchmarks/satlib/flat150/flat150-54.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-55"
+file = "benchmarks/satlib/flat150/flat150-55.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-56"
+file = "benchmarks/satlib/flat150/flat150-56.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-57"
+file = "benchmarks/satlib/flat150/flat150-57.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-58"
+file = "benchmarks/satlib/flat150/flat150-58.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-59"
+file = "benchmarks/satlib/flat150/flat150-59.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-6"
+file = "benchmarks/satlib/flat150/flat150-6.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-60"
+file = "benchmarks/satlib/flat150/flat150-60.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-61"
+file = "benchmarks/satlib/flat150/flat150-61.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-62"
+file = "benchmarks/satlib/flat150/flat150-62.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-63"
+file = "benchmarks/satlib/flat150/flat150-63.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-64"
+file = "benchmarks/satlib/flat150/flat150-64.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-65"
+file = "benchmarks/satlib/flat150/flat150-65.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-66"
+file = "benchmarks/satlib/flat150/flat150-66.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-67"
+file = "benchmarks/satlib/flat150/flat150-67.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-68"
+file = "benchmarks/satlib/flat150/flat150-68.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-69"
+file = "benchmarks/satlib/flat150/flat150-69.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-7"
+file = "benchmarks/satlib/flat150/flat150-7.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-70"
+file = "benchmarks/satlib/flat150/flat150-70.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-71"
+file = "benchmarks/satlib/flat150/flat150-71.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-72"
+file = "benchmarks/satlib/flat150/flat150-72.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-73"
+file = "benchmarks/satlib/flat150/flat150-73.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-74"
+file = "benchmarks/satlib/flat150/flat150-74.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-75"
+file = "benchmarks/satlib/flat150/flat150-75.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-76"
+file = "benchmarks/satlib/flat150/flat150-76.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-77"
+file = "benchmarks/satlib/flat150/flat150-77.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-78"
+file = "benchmarks/satlib/flat150/flat150-78.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-79"
+file = "benchmarks/satlib/flat150/flat150-79.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-8"
+file = "benchmarks/satlib/flat150/flat150-8.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-80"
+file = "benchmarks/satlib/flat150/flat150-80.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-81"
+file = "benchmarks/satlib/flat150/flat150-81.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-82"
+file = "benchmarks/satlib/flat150/flat150-82.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-83"
+file = "benchmarks/satlib/flat150/flat150-83.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-84"
+file = "benchmarks/satlib/flat150/flat150-84.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-85"
+file = "benchmarks/satlib/flat150/flat150-85.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-86"
+file = "benchmarks/satlib/flat150/flat150-86.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-87"
+file = "benchmarks/satlib/flat150/flat150-87.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-88"
+file = "benchmarks/satlib/flat150/flat150-88.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-89-c2"
+file = "benchmarks/satlib/flat150/flat150-89-c2.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-89"
+file = "benchmarks/satlib/flat150/flat150-89.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-9"
+file = "benchmarks/satlib/flat150/flat150-9.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-90"
+file = "benchmarks/satlib/flat150/flat150-90.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-91"
+file = "benchmarks/satlib/flat150/flat150-91.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-92"
+file = "benchmarks/satlib/flat150/flat150-92.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-93"
+file = "benchmarks/satlib/flat150/flat150-93.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-94"
+file = "benchmarks/satlib/flat150/flat150-94.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-95"
+file = "benchmarks/satlib/flat150/flat150-95.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-96"
+file = "benchmarks/satlib/flat150/flat150-96.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-97"
+file = "benchmarks/satlib/flat150/flat150-97.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat150/flat150-98"
+file = "benchmarks/satlib/flat150/flat150-98.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-1"
+file = "benchmarks/satlib/flat200/flat200-1.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-10"
+file = "benchmarks/satlib/flat200/flat200-10.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-100"
+file = "benchmarks/satlib/flat200/flat200-100.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-11"
+file = "benchmarks/satlib/flat200/flat200-11.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-12"
+file = "benchmarks/satlib/flat200/flat200-12.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-13"
+file = "benchmarks/satlib/flat200/flat200-13.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-14"
+file = "benchmarks/satlib/flat200/flat200-14.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-15"
+file = "benchmarks/satlib/flat200/flat200-15.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-16"
+file = "benchmarks/satlib/flat200/flat200-16.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-17"
+file = "benchmarks/satlib/flat200/flat200-17.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-18"
+file = "benchmarks/satlib/flat200/flat200-18.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-19"
+file = "benchmarks/satlib/flat200/flat200-19.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-2"
+file = "benchmarks/satlib/flat200/flat200-2.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-20"
+file = "benchmarks/satlib/flat200/flat200-20.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-21"
+file = "benchmarks/satlib/flat200/flat200-21.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-22"
+file = "benchmarks/satlib/flat200/flat200-22.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-23"
+file = "benchmarks/satlib/flat200/flat200-23.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-24"
+file = "benchmarks/satlib/flat200/flat200-24.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-25"
+file = "benchmarks/satlib/flat200/flat200-25.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-26"
+file = "benchmarks/satlib/flat200/flat200-26.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-27"
+file = "benchmarks/satlib/flat200/flat200-27.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-28"
+file = "benchmarks/satlib/flat200/flat200-28.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-29"
+file = "benchmarks/satlib/flat200/flat200-29.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-3"
+file = "benchmarks/satlib/flat200/flat200-3.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-30"
+file = "benchmarks/satlib/flat200/flat200-30.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-31"
+file = "benchmarks/satlib/flat200/flat200-31.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-32"
+file = "benchmarks/satlib/flat200/flat200-32.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-33"
+file = "benchmarks/satlib/flat200/flat200-33.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-34"
+file = "benchmarks/satlib/flat200/flat200-34.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-35"
+file = "benchmarks/satlib/flat200/flat200-35.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-36"
+file = "benchmarks/satlib/flat200/flat200-36.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-37"
+file = "benchmarks/satlib/flat200/flat200-37.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-38"
+file = "benchmarks/satlib/flat200/flat200-38.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-39"
+file = "benchmarks/satlib/flat200/flat200-39.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-4"
+file = "benchmarks/satlib/flat200/flat200-4.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-40"
+file = "benchmarks/satlib/flat200/flat200-40.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-41"
+file = "benchmarks/satlib/flat200/flat200-41.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-42"
+file = "benchmarks/satlib/flat200/flat200-42.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-43"
+file = "benchmarks/satlib/flat200/flat200-43.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-44"
+file = "benchmarks/satlib/flat200/flat200-44.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-45"
+file = "benchmarks/satlib/flat200/flat200-45.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-46"
+file = "benchmarks/satlib/flat200/flat200-46.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-47"
+file = "benchmarks/satlib/flat200/flat200-47.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-48"
+file = "benchmarks/satlib/flat200/flat200-48.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-49"
+file = "benchmarks/satlib/flat200/flat200-49.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-5"
+file = "benchmarks/satlib/flat200/flat200-5.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-50"
+file = "benchmarks/satlib/flat200/flat200-50.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-51"
+file = "benchmarks/satlib/flat200/flat200-51.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-52"
+file = "benchmarks/satlib/flat200/flat200-52.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-53"
+file = "benchmarks/satlib/flat200/flat200-53.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-54"
+file = "benchmarks/satlib/flat200/flat200-54.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-55"
+file = "benchmarks/satlib/flat200/flat200-55.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-56"
+file = "benchmarks/satlib/flat200/flat200-56.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-57"
+file = "benchmarks/satlib/flat200/flat200-57.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-58"
+file = "benchmarks/satlib/flat200/flat200-58.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-59"
+file = "benchmarks/satlib/flat200/flat200-59.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-6"
+file = "benchmarks/satlib/flat200/flat200-6.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-60"
+file = "benchmarks/satlib/flat200/flat200-60.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-61"
+file = "benchmarks/satlib/flat200/flat200-61.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-62"
+file = "benchmarks/satlib/flat200/flat200-62.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-63"
+file = "benchmarks/satlib/flat200/flat200-63.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-64"
+file = "benchmarks/satlib/flat200/flat200-64.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-65"
+file = "benchmarks/satlib/flat200/flat200-65.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-66"
+file = "benchmarks/satlib/flat200/flat200-66.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-67"
+file = "benchmarks/satlib/flat200/flat200-67.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-68"
+file = "benchmarks/satlib/flat200/flat200-68.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-69"
+file = "benchmarks/satlib/flat200/flat200-69.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-7"
+file = "benchmarks/satlib/flat200/flat200-7.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-70"
+file = "benchmarks/satlib/flat200/flat200-70.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-71"
+file = "benchmarks/satlib/flat200/flat200-71.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-72"
+file = "benchmarks/satlib/flat200/flat200-72.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-73"
+file = "benchmarks/satlib/flat200/flat200-73.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-74"
+file = "benchmarks/satlib/flat200/flat200-74.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-75"
+file = "benchmarks/satlib/flat200/flat200-75.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-76"
+file = "benchmarks/satlib/flat200/flat200-76.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-77"
+file = "benchmarks/satlib/flat200/flat200-77.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-78"
+file = "benchmarks/satlib/flat200/flat200-78.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-79"
+file = "benchmarks/satlib/flat200/flat200-79.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-8"
+file = "benchmarks/satlib/flat200/flat200-8.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-80"
+file = "benchmarks/satlib/flat200/flat200-80.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-81"
+file = "benchmarks/satlib/flat200/flat200-81.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-82"
+file = "benchmarks/satlib/flat200/flat200-82.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-83"
+file = "benchmarks/satlib/flat200/flat200-83.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-84"
+file = "benchmarks/satlib/flat200/flat200-84.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-85"
+file = "benchmarks/satlib/flat200/flat200-85.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-86"
+file = "benchmarks/satlib/flat200/flat200-86.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-87"
+file = "benchmarks/satlib/flat200/flat200-87.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-88"
+file = "benchmarks/satlib/flat200/flat200-88.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-89"
+file = "benchmarks/satlib/flat200/flat200-89.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-9"
+file = "benchmarks/satlib/flat200/flat200-9.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-90"
+file = "benchmarks/satlib/flat200/flat200-90.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-91"
+file = "benchmarks/satlib/flat200/flat200-91.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-92"
+file = "benchmarks/satlib/flat200/flat200-92.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-93"
+file = "benchmarks/satlib/flat200/flat200-93.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-94"
+file = "benchmarks/satlib/flat200/flat200-94.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-95"
+file = "benchmarks/satlib/flat200/flat200-95.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-96"
+file = "benchmarks/satlib/flat200/flat200-96.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-97"
+file = "benchmarks/satlib/flat200/flat200-97.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-98"
+file = "benchmarks/satlib/flat200/flat200-98.cnf"
+expect = "sat"
+
+[[problems]]
+name = "flat200/flat200-99"
+file = "benchmarks/satlib/flat200/flat200-99.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-100-1_6-no-1"
+file = "benchmarks/satlib/aim/aim-100-1_6-no-1.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "aim/aim-100-1_6-no-2"
+file = "benchmarks/satlib/aim/aim-100-1_6-no-2.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "aim/aim-100-1_6-no-3"
+file = "benchmarks/satlib/aim/aim-100-1_6-no-3.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "aim/aim-100-1_6-no-4"
+file = "benchmarks/satlib/aim/aim-100-1_6-no-4.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "aim/aim-100-1_6-yes1-1"
+file = "benchmarks/satlib/aim/aim-100-1_6-yes1-1.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-100-1_6-yes1-2"
+file = "benchmarks/satlib/aim/aim-100-1_6-yes1-2.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-100-1_6-yes1-3"
+file = "benchmarks/satlib/aim/aim-100-1_6-yes1-3.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-100-1_6-yes1-4"
+file = "benchmarks/satlib/aim/aim-100-1_6-yes1-4.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-100-2_0-no-1"
+file = "benchmarks/satlib/aim/aim-100-2_0-no-1.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "aim/aim-100-2_0-no-2"
+file = "benchmarks/satlib/aim/aim-100-2_0-no-2.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "aim/aim-100-2_0-no-3"
+file = "benchmarks/satlib/aim/aim-100-2_0-no-3.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "aim/aim-100-2_0-no-4"
+file = "benchmarks/satlib/aim/aim-100-2_0-no-4.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "aim/aim-100-2_0-yes1-1"
+file = "benchmarks/satlib/aim/aim-100-2_0-yes1-1.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-100-2_0-yes1-2"
+file = "benchmarks/satlib/aim/aim-100-2_0-yes1-2.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-100-2_0-yes1-3"
+file = "benchmarks/satlib/aim/aim-100-2_0-yes1-3.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-100-2_0-yes1-4"
+file = "benchmarks/satlib/aim/aim-100-2_0-yes1-4.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-100-3_4-yes1-1"
+file = "benchmarks/satlib/aim/aim-100-3_4-yes1-1.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-100-3_4-yes1-2"
+file = "benchmarks/satlib/aim/aim-100-3_4-yes1-2.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-100-3_4-yes1-3"
+file = "benchmarks/satlib/aim/aim-100-3_4-yes1-3.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-100-3_4-yes1-4"
+file = "benchmarks/satlib/aim/aim-100-3_4-yes1-4.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-100-6_0-yes1-1"
+file = "benchmarks/satlib/aim/aim-100-6_0-yes1-1.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-100-6_0-yes1-2"
+file = "benchmarks/satlib/aim/aim-100-6_0-yes1-2.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-100-6_0-yes1-3"
+file = "benchmarks/satlib/aim/aim-100-6_0-yes1-3.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-100-6_0-yes1-4"
+file = "benchmarks/satlib/aim/aim-100-6_0-yes1-4.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-200-1_6-no-1"
+file = "benchmarks/satlib/aim/aim-200-1_6-no-1.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "aim/aim-200-1_6-no-2"
+file = "benchmarks/satlib/aim/aim-200-1_6-no-2.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "aim/aim-200-1_6-no-3"
+file = "benchmarks/satlib/aim/aim-200-1_6-no-3.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "aim/aim-200-1_6-no-4"
+file = "benchmarks/satlib/aim/aim-200-1_6-no-4.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "aim/aim-200-1_6-yes1-1"
+file = "benchmarks/satlib/aim/aim-200-1_6-yes1-1.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-200-1_6-yes1-2"
+file = "benchmarks/satlib/aim/aim-200-1_6-yes1-2.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-200-1_6-yes1-3"
+file = "benchmarks/satlib/aim/aim-200-1_6-yes1-3.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-200-1_6-yes1-4"
+file = "benchmarks/satlib/aim/aim-200-1_6-yes1-4.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-200-2_0-no-1"
+file = "benchmarks/satlib/aim/aim-200-2_0-no-1.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "aim/aim-200-2_0-no-2"
+file = "benchmarks/satlib/aim/aim-200-2_0-no-2.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "aim/aim-200-2_0-no-3"
+file = "benchmarks/satlib/aim/aim-200-2_0-no-3.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "aim/aim-200-2_0-no-4"
+file = "benchmarks/satlib/aim/aim-200-2_0-no-4.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "aim/aim-200-2_0-yes1-1"
+file = "benchmarks/satlib/aim/aim-200-2_0-yes1-1.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-200-2_0-yes1-2"
+file = "benchmarks/satlib/aim/aim-200-2_0-yes1-2.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-200-2_0-yes1-3"
+file = "benchmarks/satlib/aim/aim-200-2_0-yes1-3.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-200-2_0-yes1-4"
+file = "benchmarks/satlib/aim/aim-200-2_0-yes1-4.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-200-3_4-yes1-1"
+file = "benchmarks/satlib/aim/aim-200-3_4-yes1-1.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-200-3_4-yes1-2"
+file = "benchmarks/satlib/aim/aim-200-3_4-yes1-2.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-200-3_4-yes1-3"
+file = "benchmarks/satlib/aim/aim-200-3_4-yes1-3.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-200-3_4-yes1-4"
+file = "benchmarks/satlib/aim/aim-200-3_4-yes1-4.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-200-6_0-yes1-1"
+file = "benchmarks/satlib/aim/aim-200-6_0-yes1-1.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-200-6_0-yes1-2"
+file = "benchmarks/satlib/aim/aim-200-6_0-yes1-2.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-200-6_0-yes1-3"
+file = "benchmarks/satlib/aim/aim-200-6_0-yes1-3.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-200-6_0-yes1-4"
+file = "benchmarks/satlib/aim/aim-200-6_0-yes1-4.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-50-1_6-no-1"
+file = "benchmarks/satlib/aim/aim-50-1_6-no-1.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "aim/aim-50-1_6-no-2"
+file = "benchmarks/satlib/aim/aim-50-1_6-no-2.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "aim/aim-50-1_6-no-3"
+file = "benchmarks/satlib/aim/aim-50-1_6-no-3.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "aim/aim-50-1_6-no-4"
+file = "benchmarks/satlib/aim/aim-50-1_6-no-4.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "aim/aim-50-1_6-yes1-1"
+file = "benchmarks/satlib/aim/aim-50-1_6-yes1-1.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-50-1_6-yes1-2"
+file = "benchmarks/satlib/aim/aim-50-1_6-yes1-2.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-50-1_6-yes1-3"
+file = "benchmarks/satlib/aim/aim-50-1_6-yes1-3.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-50-1_6-yes1-4"
+file = "benchmarks/satlib/aim/aim-50-1_6-yes1-4.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-50-2_0-no-1"
+file = "benchmarks/satlib/aim/aim-50-2_0-no-1.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "aim/aim-50-2_0-no-2"
+file = "benchmarks/satlib/aim/aim-50-2_0-no-2.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "aim/aim-50-2_0-no-3"
+file = "benchmarks/satlib/aim/aim-50-2_0-no-3.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "aim/aim-50-2_0-no-4"
+file = "benchmarks/satlib/aim/aim-50-2_0-no-4.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "aim/aim-50-2_0-yes1-1"
+file = "benchmarks/satlib/aim/aim-50-2_0-yes1-1.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-50-2_0-yes1-2"
+file = "benchmarks/satlib/aim/aim-50-2_0-yes1-2.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-50-2_0-yes1-3"
+file = "benchmarks/satlib/aim/aim-50-2_0-yes1-3.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-50-2_0-yes1-4"
+file = "benchmarks/satlib/aim/aim-50-2_0-yes1-4.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-50-3_4-yes1-1"
+file = "benchmarks/satlib/aim/aim-50-3_4-yes1-1.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-50-3_4-yes1-2"
+file = "benchmarks/satlib/aim/aim-50-3_4-yes1-2.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-50-3_4-yes1-3"
+file = "benchmarks/satlib/aim/aim-50-3_4-yes1-3.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-50-3_4-yes1-4"
+file = "benchmarks/satlib/aim/aim-50-3_4-yes1-4.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-50-6_0-yes1-1"
+file = "benchmarks/satlib/aim/aim-50-6_0-yes1-1.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-50-6_0-yes1-2"
+file = "benchmarks/satlib/aim/aim-50-6_0-yes1-2.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-50-6_0-yes1-3"
+file = "benchmarks/satlib/aim/aim-50-6_0-yes1-3.cnf"
+expect = "sat"
+
+[[problems]]
+name = "aim/aim-50-6_0-yes1-4"
+file = "benchmarks/satlib/aim/aim-50-6_0-yes1-4.cnf"
+expect = "sat"
+
+[[problems]]
+name = "parity/par16-1-c"
+file = "benchmarks/satlib/parity/par16-1-c.cnf"
+expect = "sat"
+
+[[problems]]
+name = "parity/par16-1"
+file = "benchmarks/satlib/parity/par16-1.cnf"
+expect = "sat"
+
+[[problems]]
+name = "parity/par16-2-c"
+file = "benchmarks/satlib/parity/par16-2-c.cnf"
+expect = "sat"
+
+[[problems]]
+name = "parity/par16-2"
+file = "benchmarks/satlib/parity/par16-2.cnf"
+expect = "sat"
+
+[[problems]]
+name = "parity/par16-3-c"
+file = "benchmarks/satlib/parity/par16-3-c.cnf"
+expect = "sat"
+
+[[problems]]
+name = "parity/par16-3"
+file = "benchmarks/satlib/parity/par16-3.cnf"
+expect = "sat"
+
+[[problems]]
+name = "parity/par16-4-c"
+file = "benchmarks/satlib/parity/par16-4-c.cnf"
+expect = "sat"
+
+[[problems]]
+name = "parity/par16-4"
+file = "benchmarks/satlib/parity/par16-4.cnf"
+expect = "sat"
+
+[[problems]]
+name = "parity/par16-5-c"
+file = "benchmarks/satlib/parity/par16-5-c.cnf"
+expect = "sat"
+
+[[problems]]
+name = "parity/par16-5"
+file = "benchmarks/satlib/parity/par16-5.cnf"
+expect = "sat"
+
+[[problems]]
+name = "parity/par32-1-c"
+file = "benchmarks/satlib/parity/par32-1-c.cnf"
+expect = "sat"
+
+[[problems]]
+name = "parity/par32-1"
+file = "benchmarks/satlib/parity/par32-1.cnf"
+expect = "sat"
+
+[[problems]]
+name = "parity/par32-2-c"
+file = "benchmarks/satlib/parity/par32-2-c.cnf"
+expect = "sat"
+
+[[problems]]
+name = "parity/par32-2"
+file = "benchmarks/satlib/parity/par32-2.cnf"
+expect = "sat"
+
+[[problems]]
+name = "parity/par32-3-c"
+file = "benchmarks/satlib/parity/par32-3-c.cnf"
+expect = "sat"
+
+[[problems]]
+name = "parity/par32-3"
+file = "benchmarks/satlib/parity/par32-3.cnf"
+expect = "sat"
+
+[[problems]]
+name = "parity/par32-4-c"
+file = "benchmarks/satlib/parity/par32-4-c.cnf"
+expect = "sat"
+
+[[problems]]
+name = "parity/par32-4"
+file = "benchmarks/satlib/parity/par32-4.cnf"
+expect = "sat"
+
+[[problems]]
+name = "parity/par32-5-c"
+file = "benchmarks/satlib/parity/par32-5-c.cnf"
+expect = "sat"
+
+[[problems]]
+name = "parity/par32-5"
+file = "benchmarks/satlib/parity/par32-5.cnf"
+expect = "sat"
+
+[[problems]]
+name = "parity/par8-1-c"
+file = "benchmarks/satlib/parity/par8-1-c.cnf"
+expect = "sat"
+
+[[problems]]
+name = "parity/par8-1"
+file = "benchmarks/satlib/parity/par8-1.cnf"
+expect = "sat"
+
+[[problems]]
+name = "parity/par8-2-c"
+file = "benchmarks/satlib/parity/par8-2-c.cnf"
+expect = "sat"
+
+[[problems]]
+name = "parity/par8-2"
+file = "benchmarks/satlib/parity/par8-2.cnf"
+expect = "sat"
+
+[[problems]]
+name = "parity/par8-3-c"
+file = "benchmarks/satlib/parity/par8-3-c.cnf"
+expect = "sat"
+
+[[problems]]
+name = "parity/par8-3"
+file = "benchmarks/satlib/parity/par8-3.cnf"
+expect = "sat"
+
+[[problems]]
+name = "parity/par8-4-c"
+file = "benchmarks/satlib/parity/par8-4-c.cnf"
+expect = "sat"
+
+[[problems]]
+name = "parity/par8-4"
+file = "benchmarks/satlib/parity/par8-4.cnf"
+expect = "sat"
+
+[[problems]]
+name = "parity/par8-5-c"
+file = "benchmarks/satlib/parity/par8-5-c.cnf"
+expect = "sat"
+
+[[problems]]
+name = "parity/par8-5"
+file = "benchmarks/satlib/parity/par8-5.cnf"
+expect = "sat"
+
+[[problems]]
+name = "phole/hole10"
+file = "benchmarks/satlib/phole/hole10.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "phole/hole6"
+file = "benchmarks/satlib/phole/hole6.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "phole/hole7"
+file = "benchmarks/satlib/phole/hole7.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "phole/hole8"
+file = "benchmarks/satlib/phole/hole8.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "phole/hole9"
+file = "benchmarks/satlib/phole/hole9.cnf"
+expect = "unsat"

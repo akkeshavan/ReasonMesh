@@ -39,15 +39,27 @@ pub struct DimacsCnf {
 }
 
 /// Parse a DIMACS CNF instance from its textual form.
+///
+/// Handles both single-line clauses (`1 -2 3 0`) and multi-line clauses
+/// where the terminating `0` appears on its own line. Also handles the
+/// traditional SATLIB end-of-file marker `%`.
 pub fn parse_dimacs(input: &str) -> Result<DimacsCnf, DimacsError> {
     let mut num_vars = None;
     let mut num_clauses = None;
     let mut clauses: Vec<Vec<i32>> = Vec::new();
+    // Accumulates literals for the clause currently being built.
+    // `None` = between clauses, `Some(lits)` = inside a clause.
+    let mut current: Option<Vec<i32>> = None;
 
     for raw in input.lines() {
         let line = raw.split(';').next().unwrap_or("").trim();
         if line.is_empty() || line.starts_with('c') {
             continue;
+        }
+        // Traditional DIMACS end-of-file marker: a line starting with '%'
+        // (followed by an optional '0' line) signals end of input.
+        if line.starts_with('%') {
+            break;
         }
         if let Some(rest) = line.strip_prefix('p') {
             let rest = rest.trim();
@@ -68,24 +80,25 @@ pub fn parse_dimacs(input: &str) -> Result<DimacsCnf, DimacsError> {
             continue;
         }
 
-        let mut clause = Vec::new();
+        let nv = num_vars.ok_or(DimacsError::MissingHeader)?;
         for tok in line.split_whitespace() {
             let lit: i32 = tok.parse().map_err(|_| DimacsError::MalformedHeader)?;
             if lit == 0 {
-                break;
+                // Terminator: commit whatever clause we were building
+                // (may be empty for the empty-clause encoding `0`).
+                clauses.push(current.take().unwrap_or_default());
+            } else {
+                let ref_var = lit.unsigned_abs();
+                if ref_var > nv {
+                    return Err(DimacsError::VarOutOfRange {
+                        num_vars: nv,
+                        lit,
+                        ref_var,
+                    });
+                }
+                current.get_or_insert_with(Vec::new).push(lit);
             }
-            let nv = num_vars.ok_or(DimacsError::MissingHeader)?;
-            let ref_var = lit.unsigned_abs();
-            if ref_var > nv {
-                return Err(DimacsError::VarOutOfRange {
-                    num_vars: nv,
-                    lit,
-                    ref_var,
-                });
-            }
-            clause.push(lit);
         }
-        clauses.push(clause);
     }
 
     let nv = num_vars.ok_or(DimacsError::MissingHeader)?;

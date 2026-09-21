@@ -23,6 +23,7 @@ trace = false
 [[baselines]]
 name = "cadical-1t"
 binary = "cadical"
+args = ["-q"]
 
 [[baselines]]
 name = "z3-1t"

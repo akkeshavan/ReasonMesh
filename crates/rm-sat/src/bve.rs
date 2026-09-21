@@ -73,16 +73,20 @@ pub fn run(
         let pos_raw = pos_lit.raw() as usize;
         let neg_raw = neg_lit.raw() as usize;
 
-        // Collect non-deleted positive and negative clause offsets.
+        // Collect non-deleted, non-tautological clause offsets.
+        // A tautological clause (containing both +v and -v) is always satisfied;
+        // including it in resolution produces resolvents that still contain the
+        // eliminated variable, breaking the BVE invariant. Exclude it from both
+        // sides (it stays in the arena since it never falsifies any assignment).
         let pos: Vec<ClauseRef> = occs[pos_raw]
             .iter()
             .copied()
-            .filter(|&cr| !db.is_deleted(cr))
+            .filter(|&cr| !db.is_deleted(cr) && !db.lits(cr).contains(&neg_lit))
             .collect();
         let neg: Vec<ClauseRef> = occs[neg_raw]
             .iter()
             .copied()
-            .filter(|&cr| !db.is_deleted(cr))
+            .filter(|&cr| !db.is_deleted(cr) && !db.lits(cr).contains(&pos_lit))
             .collect();
 
         // Skip variables that appear in only one polarity.  Pure-literal

@@ -23,6 +23,7 @@ trace = false
 [[baselines]]
 name = "cadical-1t"
 binary = "cadical"
+args = ["-q"]
 
 # --- PHP pigeonhole (all UNSAT) ---
 

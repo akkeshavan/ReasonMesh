@@ -1,0 +1,28 @@
+schema_version = 1
+name = "g2-php12-deep"
+description = "PHP-12-11: 8-worker C&C, depth 5, 300s"
+
+[solver]
+workers = 8
+seed = 1
+deterministic = false
+strategy = "cubeconquer"
+timeout_secs = 300
+
+[cube_and_conquer]
+initial_depth = 5
+initial_budget = 20000
+max_budget = 5000000
+
+[output]
+dir = "results/g2/php12-deep"
+trace = false
+
+[[baselines]]
+name = "z3-1t"
+binary = "z3"
+
+[[problems]]
+name = "php-12-11"
+file = "../benchmarks/g1/php-12-11.cnf"
+expect = "unsat"

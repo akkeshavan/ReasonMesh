@@ -18,6 +18,7 @@ trace = false
 [[baselines]]
 name = "cadical-1t"
 binary = "cadical"
+args = ["-q"]
 
 [[problems]]
 name = "php-10-9"
