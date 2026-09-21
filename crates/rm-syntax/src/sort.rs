@@ -1,5 +1,5 @@
-//! SMT-LIB 2.7 sort system: `Bool`, `(_ BitVec n)`, and user-declared
-//! function sorts for QF_BV.
+//! SMT-LIB 2.7 sort system: `Bool`, `Int`, `Real`, `(_ BitVec n)`, and
+//! user-declared sorts.
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -8,6 +8,10 @@ use std::fmt;
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum SortExpr {
     Bool,
+    /// Unbounded integer sort (QF_LIA / QF_IDL).
+    Int,
+    /// Real number sort (QF_LRA / QF_RDL).
+    Real,
     /// `(_ BitVec n)` — an `n`-bit bit-vector sort.
     BitVec(u32),
 }
@@ -17,6 +21,8 @@ impl SortExpr {
     pub fn parse(expr: &super::SExpr) -> Result<SortExpr, super::ParseError> {
         match expr {
             super::SExpr::Atom(super::Atom::Symbol(s)) if s == "Bool" => Ok(SortExpr::Bool),
+            super::SExpr::Atom(super::Atom::Symbol(s)) if s == "Int" => Ok(SortExpr::Int),
+            super::SExpr::Atom(super::Atom::Symbol(s)) if s == "Real" => Ok(SortExpr::Real),
             super::SExpr::List(items) if items.first().is_some_and(|i| i.symbol() == Some("_")) => {
                 // (_ BitVec n)
                 if items.get(1).is_some_and(|i| i.symbol() == Some("BitVec")) {
@@ -47,8 +53,12 @@ impl SortExpr {
     pub fn as_bitvec(&self) -> Option<u32> {
         match self {
             SortExpr::BitVec(n) => Some(*n),
-            SortExpr::Bool => None,
+            _ => None,
         }
+    }
+
+    pub fn is_arithmetic(&self) -> bool {
+        matches!(self, SortExpr::Int | SortExpr::Real)
     }
 }
 
@@ -56,6 +66,8 @@ impl fmt::Display for SortExpr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             SortExpr::Bool => write!(f, "Bool"),
+            SortExpr::Int => write!(f, "Int"),
+            SortExpr::Real => write!(f, "Real"),
             SortExpr::BitVec(n) => write!(f, "(_ BitVec {n})"),
         }
     }
@@ -82,14 +94,25 @@ mod tests {
     #[test]
     fn reject_malformed() {
         assert!(parse_sort("(_ BitVec)").is_err());
-        assert!(parse_sort("Int").is_err());
         assert!(parse_sort("(_ BitVec big)").is_err());
+        assert!(parse_sort("Nat").is_err());
+    }
+
+    #[test]
+    fn parse_int_real() {
+        assert_eq!(parse_sort("Int").unwrap(), SortExpr::Int);
+        assert_eq!(parse_sort("Real").unwrap(), SortExpr::Real);
+        assert!(SortExpr::Int.is_arithmetic());
+        assert!(SortExpr::Real.is_arithmetic());
+        assert!(!SortExpr::Bool.is_arithmetic());
     }
 
     #[test]
     fn display_roundtrip() {
         assert_eq!(SortExpr::BitVec(16).to_string(), "(_ BitVec 16)");
         assert_eq!(SortExpr::Bool.to_string(), "Bool");
+        assert_eq!(SortExpr::Int.to_string(), "Int");
+        assert_eq!(SortExpr::Real.to_string(), "Real");
         let _ = SExpr::Atom(Atom::Numeral(1)); // keep import used
     }
 }

@@ -1,6 +1,6 @@
 //! SMT-LIB 2.7 command and term parser (QF_BV fragment).
 
-use super::ast::{BvOp, Term, TermInner};
+use super::ast::{ArithCmpKind, ArithOpKind, BvOp, Term, TermInner};
 use super::s_expr::{Atom, SExpr};
 use super::sort::SortExpr;
 use super::ParseError;
@@ -494,6 +494,13 @@ fn parse_term(expr: &SExpr, symbols: &Symbols) -> Result<Term, ParseError> {
     if let SExpr::Atom(Atom::Symbol(s)) = expr {
         return Ok(parse_symbol_term(s.as_str(), symbols));
     }
+    // Integer numeric literals (bare decimals like 3, -2, 42).
+    if let SExpr::Atom(Atom::Numeral(n)) = expr {
+        return Ok(Term {
+            sort: SortExpr::Int,
+            inner: TermInner::IntLiteral(*n as i64),
+        });
+    }
 
     let items = match expr {
         SExpr::List(items) => items,
@@ -549,6 +556,8 @@ fn parse_term(expr: &SExpr, symbols: &Symbols) -> Result<Term, ParseError> {
         "xor" => parse_xor_term(items, symbols),
         "=" | "distinct" | "ite" => parse_bool_core(head, &items[1..], symbols),
         h if is_bv_op(h) => parse_bv_app(bv_op_from(h), &items[1..], symbols),
+        "+" | "-" | "*" => parse_arith_op(head, &items[1..], symbols),
+        "<=" | "<" | ">=" | ">" => parse_arith_cmp(head, &items[1..], symbols),
         h => {
             let args: Vec<Term> = items[1..]
                 .iter()
@@ -648,6 +657,55 @@ fn parse_bv_app(op: BvOp, args: &[SExpr], symbols: &Symbols) -> Result<Term, Par
             SortExpr::BitVec(result_width)
         },
         inner: TermInner::BvOp(op, terms),
+    })
+}
+
+/// Infer the sort of an arithmetic term. Returns Int if any argument is Int.
+fn arith_sort(terms: &[Term]) -> SortExpr {
+    if terms.iter().any(|t| t.sort == SortExpr::Real) {
+        SortExpr::Real
+    } else {
+        SortExpr::Int
+    }
+}
+
+fn parse_arith_op(head: &str, args: &[SExpr], symbols: &Symbols) -> Result<Term, ParseError> {
+    let terms: Vec<Term> = args
+        .iter()
+        .map(|a| parse_term(a, symbols))
+        .collect::<Result<_, _>>()?;
+    if terms.is_empty() {
+        return Err(unexpected(0, format!("{head} requires at least one argument")));
+    }
+    let sort = arith_sort(&terms);
+    let kind = match head {
+        "+" => ArithOpKind::Add,
+        "*" => ArithOpKind::Mul,
+        "-" => ArithOpKind::Sub,
+        _ => unreachable!(),
+    };
+    Ok(Term {
+        sort,
+        inner: TermInner::ArithOp(kind, terms),
+    })
+}
+
+fn parse_arith_cmp(head: &str, args: &[SExpr], symbols: &Symbols) -> Result<Term, ParseError> {
+    if args.len() != 2 {
+        return Err(unexpected(0, format!("{head} requires exactly 2 arguments")));
+    }
+    let lhs = parse_term(&args[0], symbols)?;
+    let rhs = parse_term(&args[1], symbols)?;
+    let kind = match head {
+        "<=" => ArithCmpKind::Le,
+        "<" => ArithCmpKind::Lt,
+        ">=" => ArithCmpKind::Ge,
+        ">" => ArithCmpKind::Gt,
+        _ => unreachable!(),
+    };
+    Ok(Term {
+        sort: SortExpr::Bool,
+        inner: TermInner::ArithCmp(kind, Box::new(lhs), Box::new(rhs)),
     })
 }
 
@@ -777,5 +835,39 @@ mod tests {
     fn exit_terminates() {
         let s = script("(exit)");
         assert_eq!(s.commands, vec![Command::Exit]);
+    }
+
+    #[test]
+    fn parse_arithmetic_terms() {
+        use crate::ast::{ArithCmpKind, ArithOpKind};
+        let s = script(
+            "(set-logic QF_LIA)\n\
+             (declare-fun x () Int)\n\
+             (declare-fun y () Int)\n\
+             (assert (<= (+ (* 2 x) y) 5))\n\
+             (assert (>= x 0))\n",
+        );
+        // (<= (+ (* 2 x) y) 5)
+        match &s.commands[3] {
+            Command::Assert(t) => match &t.inner {
+                TermInner::ArithCmp(ArithCmpKind::Le, lhs, rhs) => {
+                    assert!(
+                        matches!(&lhs.inner, TermInner::ArithOp(ArithOpKind::Add, _)),
+                        "expected Add, got {:?}",
+                        lhs
+                    );
+                    assert!(matches!(&rhs.inner, TermInner::IntLiteral(5)));
+                }
+                other => panic!("expected ArithCmp(Le), got {:?}", other),
+            },
+            _ => panic!(),
+        }
+        // (>= x 0)
+        match &s.commands[4] {
+            Command::Assert(t) => {
+                assert!(matches!(&t.inner, TermInner::ArithCmp(ArithCmpKind::Ge, _, _)));
+            }
+            _ => panic!(),
+        }
     }
 }

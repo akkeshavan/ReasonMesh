@@ -388,8 +388,36 @@ impl CdclSolver {
             }
             _ => {
                 let cr = self.db.add(lits, false, 0);
-                self.watches.watch(lits[0].negate(), cr, lits[1]);
-                self.watches.watch(lits[1].negate(), cr, lits[0]);
+                // Post-check: handle clauses added after the solver is partially assigned.
+                // (Analogous to the binary case above — theory lemmas arrive post-model.)
+                let false_count = lits
+                    .iter()
+                    .filter(|&&l| self.assignment.literal_value(l) == Value::False)
+                    .count();
+                let lvl = self.assignment.current_level();
+                if false_count == lits.len() {
+                    // All literals are False: immediate conflict.
+                    self.db.set_empty_clause();
+                    return;
+                } else if false_count == lits.len() - 1 {
+                    // All-but-one: unit propagation.
+                    if let Some(&unit) = lits
+                        .iter()
+                        .find(|&&l| self.assignment.literal_value(l) != Value::False)
+                    {
+                        if self.assignment.literal_value(unit) == Value::Undef {
+                            self.assignment.assign(unit, lvl, cr.0);
+                        }
+                    }
+                }
+                // Choose watches: prefer non-False literals so the watch invariant holds.
+                let mut non_false = lits
+                    .iter()
+                    .filter(|&&l| self.assignment.literal_value(l) != Value::False);
+                let w0 = non_false.next().copied().unwrap_or(lits[0]);
+                let w1 = non_false.next().copied().unwrap_or(lits[1]);
+                self.watches.watch(w0.negate(), cr, w1);
+                self.watches.watch(w1.negate(), cr, w0);
             }
         }
     }

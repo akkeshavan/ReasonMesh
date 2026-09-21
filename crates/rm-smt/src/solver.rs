@@ -3,6 +3,7 @@
 
 use crate::cdclt::{solve_qf_ufidl, NoResult};
 use crate::dl::{solve_qf_idl, DlStatus};
+use crate::lia::{solve_qf_lia, LiaStatus};
 use crate::uf::{solve_qf_uf, UfStatus};
 use rm_syntax::Script;
 use rm_theory_bv::{BvModel, BvResult, BvSolver};
@@ -194,6 +195,25 @@ impl SmtSolver {
                     }),
                 }
             }
+            Some("QF_LIA") | Some("QF_LRA") | Some("QF_UFLIA") | Some("QF_UFLRA") => {
+                match solve_qf_lia(&self.raw).map_err(SmtError::Internal)? {
+                    r if r.status == LiaStatus::Sat => Ok(SmtResult {
+                        status: SmtStatus::Sat,
+                        model: None,
+                        values: r.model.into_iter().map(|(n, v)| (n, v.to_string())).collect(),
+                    }),
+                    r if r.status == LiaStatus::Unsat => Ok(SmtResult {
+                        status: SmtStatus::Unsat,
+                        model: None,
+                        values: Vec::new(),
+                    }),
+                    _ => Ok(SmtResult {
+                        status: SmtStatus::Unknown,
+                        model: None,
+                        values: Vec::new(),
+                    }),
+                }
+            }
             Some(other) => Err(SmtError::UnsupportedLogic(other.to_owned())),
         }
     }
@@ -295,9 +315,43 @@ mod tests {
 
     #[test]
     fn unsupported_logic_rejected() {
-        let s =
-            SmtSolver::parse("(set-logic QF_LIA) (declare-const a Int) (assert (> a 0))").unwrap();
+        let s = SmtSolver::parse(
+            "(set-logic QF_NIA) (declare-const a Int) (assert (> (* a a) 0))",
+        )
+        .unwrap();
         assert!(matches!(s.solve(1000), Err(SmtError::UnsupportedLogic(_))));
+    }
+
+    #[test]
+    fn qf_lia_sat() {
+        let s = SmtSolver::parse(
+            "(set-logic QF_LIA)
+             (declare-fun x () Int)
+             (declare-fun y () Int)
+             (assert (<= (+ x y) 10))
+             (assert (>= x 3))
+             (assert (>= y 2))
+             (check-sat)",
+        )
+        .unwrap();
+        let r = s.solve(10_000).unwrap();
+        assert_eq!(r.status, SmtStatus::Sat);
+    }
+
+    #[test]
+    fn qf_lia_unsat() {
+        let s = SmtSolver::parse(
+            "(set-logic QF_LIA)
+             (declare-fun x () Int)
+             (declare-fun y () Int)
+             (assert (>= (+ x y) 10))
+             (assert (<= x 3))
+             (assert (<= y 3))
+             (check-sat)",
+        )
+        .unwrap();
+        let r = s.solve(10_000).unwrap();
+        assert_eq!(r.status, SmtStatus::Unsat);
     }
 
     #[test]

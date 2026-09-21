@@ -1,0 +1,696 @@
+//! QF_LIA / QF_LRA solver: CDCL(T) with Dutertre–de Moura Simplex as the
+//! theory oracle.
+//!
+//! # Pipeline
+//! 1. Parse the SMT-LIB script via `rm_syntax::Script` (Term-based AST).
+//! 2. Map each `(declare-fun x () Int/Real)` to a Simplex variable.
+//! 3. Walk each asserted Term, Tseitin-encode Boolean structure, and build
+//!    Simplex atoms for arithmetic comparisons.
+//! 4. Run the CDCL(T) loop: SAT assigns backbone atoms, theory_check asserts
+//!    those bounds into Simplex and calls `simplex.check()`.
+//! 5. On conflict, emit a theory lemma (negated conflict core) and continue.
+//!
+//! # Integer feasibility
+//! After Simplex reports SAT over the rationals we verify that every Int-sorted
+//! variable has an integer model value. If not, we emit a branch-and-bound
+//! disjunction: `x ≤ floor(v) ∨ x ≥ ceil(v)` as a SAT clause, and continue.
+
+use rm_akx::literal::Literal;
+use rm_sat::{CdclSolver, SolveResult};
+use rm_syntax::ast::{ArithCmpKind, ArithOpKind, Term, TermInner};
+use rm_syntax::{Script, SortExpr};
+use rm_theory_arith::{Rational, SimplexSolver};
+use rustc_hash::FxHashMap;
+
+// ---------------------------------------------------------------------------
+// Public result type
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum LiaStatus {
+    Sat,
+    Unsat,
+    Unknown,
+}
+
+pub struct LiaResult {
+    pub status: LiaStatus,
+    /// (variable_name, integer_value) on Sat.
+    pub model: Vec<(String, i64)>,
+}
+
+// ---------------------------------------------------------------------------
+// Linear form
+// ---------------------------------------------------------------------------
+
+/// A linear combination: Σ coeff[v] * v + constant.
+#[derive(Default, Clone)]
+struct LinearForm {
+    coeffs: FxHashMap<u32, i64>, // simplex_var_id → coefficient
+    constant: i64,
+}
+
+impl LinearForm {
+    fn add_scaled(&mut self, other: &LinearForm, scale: i64) {
+        for (&var, &c) in &other.coeffs {
+            *self.coeffs.entry(var).or_insert(0) += scale * c;
+        }
+        self.constant += scale * other.constant;
+    }
+
+    fn negate(&mut self) {
+        for c in self.coeffs.values_mut() {
+            *c = -*c;
+        }
+        self.constant = -self.constant;
+    }
+
+    fn is_constant(&self) -> bool {
+        self.coeffs.iter().all(|(_, &c)| c == 0)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Simplex atom
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Debug)]
+enum SimplexAtom {
+    /// atom ↔ simplex_var ≤ bound
+    Upper { var: u32, bound: i64 },
+    /// atom ↔ simplex_var ≥ bound
+    Lower { var: u32, bound: i64 },
+}
+
+// ---------------------------------------------------------------------------
+// CDCL(T) state for LIA
+// ---------------------------------------------------------------------------
+
+struct LiaCdclT {
+    next_sat_var: u32,
+    simplex: SimplexSolver,
+    /// Name → Simplex VarId for user-declared variables.
+    var_ids: FxHashMap<String, u32>,
+    /// Whether a Simplex var is originally Int-sorted (needs integer check).
+    is_int: Vec<bool>,
+    /// Next Simplex VarId to allocate (user vars + slacks share the space).
+    next_simplex_var: u32,
+    /// SAT var → Simplex atom.
+    atoms: FxHashMap<u32, SimplexAtom>,
+    /// Tseitin clauses buffered before SAT solver creation.
+    pending_clauses: Vec<Vec<Literal>>,
+    sat: Option<CdclSolver>,
+}
+
+impl LiaCdclT {
+    fn new(max_simplex_vars: u32) -> Self {
+        LiaCdclT {
+            next_sat_var: 1,
+            simplex: SimplexSolver::new(max_simplex_vars),
+            var_ids: FxHashMap::default(),
+            is_int: vec![true; max_simplex_vars as usize],
+            next_simplex_var: 0,
+            atoms: FxHashMap::default(),
+            pending_clauses: Vec::new(),
+            sat: None,
+        }
+    }
+
+    fn alloc_sat(&mut self) -> u32 {
+        let v = self.next_sat_var;
+        self.next_sat_var += 1;
+        v
+    }
+
+    fn alloc_simplex(&mut self) -> u32 {
+        let v = self.next_simplex_var;
+        self.next_simplex_var += 1;
+        v
+    }
+
+    fn add_clause(&mut self, lits: &[Literal]) {
+        self.pending_clauses.push(lits.to_vec());
+    }
+
+    fn finalize(&mut self) {
+        let num_vars = self.next_sat_var - 1;
+        let mut sat = CdclSolver::new(num_vars);
+        sat.skip_bve();
+        for clause in self.pending_clauses.drain(..) {
+            sat.add_clause(&clause);
+        }
+        self.sat = Some(sat);
+    }
+
+    // -----------------------------------------------------------------------
+    // Theory check
+    // -----------------------------------------------------------------------
+
+    fn theory_check(&mut self, model: &rm_sat::Model) -> Option<Vec<Literal>> {
+        self.simplex.backtrack_to(0);
+
+        let vars: Vec<u32> = self.atoms.keys().copied().collect();
+        for v in vars {
+            if v as usize > model.num_vars() as usize {
+                continue;
+            }
+            let val_bool = model.value_of(v);
+            let sat_raw = if val_bool {
+                Literal::positive(v).raw()
+            } else {
+                Literal::negative(v).raw()
+            };
+            let atom = self.atoms[&v].clone();
+            match atom {
+                SimplexAtom::Upper { var, bound } => {
+                    let res = if val_bool {
+                        // atom is true: assert upper bound
+                        self.simplex
+                            .assert_upper(var, Rational::from_int(bound), sat_raw)
+                    } else {
+                        // atom is false: assert lower bound (negation of ≤ is ≥ + 1 for integers)
+                        self.simplex
+                            .assert_lower(var, Rational::from_int(bound + 1), sat_raw)
+                    };
+                    if let Err(e) = res {
+                        return Some(mk_conflict_simplex(&e.lits));
+                    }
+                }
+                SimplexAtom::Lower { var, bound } => {
+                    let res = if val_bool {
+                        self.simplex
+                            .assert_lower(var, Rational::from_int(bound), sat_raw)
+                    } else {
+                        // negation of ≥ c is ≤ c - 1
+                        self.simplex
+                            .assert_upper(var, Rational::from_int(bound - 1), sat_raw)
+                    };
+                    if let Err(e) = res {
+                        return Some(mk_conflict_simplex(&e.lits));
+                    }
+                }
+            }
+        }
+
+        if let Err(e) = self.simplex.check() {
+            return Some(mk_conflict_simplex(&e.lits));
+        }
+
+        // Integer feasibility check: if any Int-sorted user variable has a
+        // fractional value, emit a branch-and-bound disjunction.
+        for (_, &simplex_var) in &self.var_ids {
+            if simplex_var as usize >= self.is_int.len() || !self.is_int[simplex_var as usize] {
+                continue;
+            }
+            let v = self.simplex.model_value(simplex_var);
+            if !v.is_integer() {
+                let floor_v = v.floor_int();
+                let ceil_v = v.ceil_int();
+                // Emit: floor_v_atom ∨ ceil_v_atom (branch-and-bound disjunction).
+                let sv = self.alloc_sat();
+                let sv2 = self.alloc_sat();
+                self.atoms
+                    .insert(sv, SimplexAtom::Upper { var: simplex_var, bound: floor_v });
+                self.atoms
+                    .insert(sv2, SimplexAtom::Lower { var: simplex_var, bound: ceil_v });
+                // Return as a clause (not a conflict — but SAT solver will pick a branch).
+                // We model it as a "blocking clause" the SAT solver must satisfy.
+                return Some(vec![Literal::positive(sv), Literal::positive(sv2)]);
+            }
+        }
+
+        None
+    }
+
+    fn solve(&mut self) -> LiaStatus {
+        self.finalize();
+        loop {
+            let sat_result = {
+                let sat = self.sat.as_mut().unwrap();
+                match sat.solve(&[], 500_000) {
+                    SolveResult::Unsat => return LiaStatus::Unsat,
+                    SolveResult::BudgetExceeded => None,
+                    SolveResult::Unknown => return LiaStatus::Unknown,
+                    SolveResult::Sat(ref m) => Some(m.clone()),
+                }
+            };
+            if let Some(model) = sat_result {
+                if let Some(clause) = self.theory_check(&model) {
+                    if clause.is_empty() {
+                        return LiaStatus::Unsat;
+                    }
+                    self.sat.as_mut().unwrap().add_clause(&clause);
+                } else {
+                    return LiaStatus::Sat;
+                }
+            }
+        }
+    }
+}
+
+fn mk_conflict_simplex(lits: &[u32]) -> Vec<Literal> {
+    lits.iter()
+        .map(|&raw| Literal::from_raw(raw).negate())
+        .collect()
+}
+
+// ---------------------------------------------------------------------------
+// Term encoding
+// ---------------------------------------------------------------------------
+
+/// Extract a linear form from a term, mapping variable names to Simplex var ids.
+fn extract_linear(term: &Term, var_ids: &FxHashMap<String, u32>) -> Option<LinearForm> {
+    match &term.inner {
+        TermInner::IntLiteral(n) => {
+            let mut f = LinearForm::default();
+            f.constant = *n;
+            Some(f)
+        }
+        TermInner::Variable(name) if term.sort.is_arithmetic() => {
+            let &v = var_ids.get(name)?;
+            let mut f = LinearForm::default();
+            f.coeffs.insert(v, 1);
+            Some(f)
+        }
+        TermInner::ArithOp(ArithOpKind::Add, args) => {
+            let mut acc = LinearForm::default();
+            for a in args {
+                let f = extract_linear(a, var_ids)?;
+                acc.add_scaled(&f, 1);
+            }
+            Some(acc)
+        }
+        TermInner::ArithOp(ArithOpKind::Sub, args) => match args.len() {
+            1 => {
+                let mut f = extract_linear(&args[0], var_ids)?;
+                f.negate();
+                Some(f)
+            }
+            2 => {
+                let f0 = extract_linear(&args[0], var_ids)?;
+                let f1 = extract_linear(&args[1], var_ids)?;
+                let mut acc = LinearForm::default();
+                acc.add_scaled(&f0, 1);
+                acc.add_scaled(&f1, -1);
+                Some(acc)
+            }
+            _ => None,
+        },
+        TermInner::ArithOp(ArithOpKind::Mul, args) => {
+            // One arg must be a constant, the other a linear form.
+            if args.len() != 2 {
+                return None;
+            }
+            let f0 = extract_linear(&args[0], var_ids)?;
+            let f1 = extract_linear(&args[1], var_ids)?;
+            if f0.is_constant() {
+                let scale = f0.constant;
+                let mut acc = LinearForm::default();
+                acc.add_scaled(&f1, scale);
+                Some(acc)
+            } else if f1.is_constant() {
+                let scale = f1.constant;
+                let mut acc = LinearForm::default();
+                acc.add_scaled(&f0, scale);
+                Some(acc)
+            } else {
+                None // non-linear
+            }
+        }
+        _ => None,
+    }
+}
+
+/// Introduce a slack variable for a linear form (lhs - rhs).
+/// Returns (slack_id, constant) where: slack = lhs_form - rhs_form - constant.
+/// The comparison `slack ≤ 0` corresponds to the original inequality.
+fn normalize_cmp(
+    lhs: &Term,
+    rhs: &Term,
+    var_ids: &FxHashMap<String, u32>,
+) -> Option<(LinearForm, i64)> {
+    let f_lhs = extract_linear(lhs, var_ids)?;
+    let f_rhs = extract_linear(rhs, var_ids)?;
+    let mut diff = LinearForm::default();
+    diff.add_scaled(&f_lhs, 1);
+    diff.add_scaled(&f_rhs, -1);
+    // diff = (lhs - rhs). The "lhs ≤ rhs" comparison becomes "diff ≤ 0".
+    // But diff has a constant part: diff = vars_part + diff.constant.
+    // So "diff ≤ 0" → "vars_part ≤ -diff.constant".
+    let rhs_const = -diff.constant;
+    diff.constant = 0;
+    Some((diff, rhs_const))
+}
+
+/// Get or create a Simplex slack for a linear form. Adds the row if new.
+fn get_or_create_slack(
+    form: &LinearForm,
+    solver: &mut LiaCdclT,
+) -> u32 {
+    // For simplicity, always create a fresh slack.
+    // A production solver would canonicalize and cache.
+    let slack = solver.alloc_simplex();
+    let coeffs: Vec<(u32, Rational)> = form
+        .coeffs
+        .iter()
+        .filter(|(_, &c)| c != 0)
+        .map(|(&v, &c)| (v, Rational::from_int(c)))
+        .collect();
+    if !coeffs.is_empty() {
+        solver.simplex.add_row(slack, coeffs);
+    }
+    slack
+}
+
+/// Encode a Boolean term into a SAT literal (with Tseitin for Boolean connectives).
+/// Returns Err(()) if the term is not encodable (unsupported construct).
+fn encode_bool(term: &Term, solver: &mut LiaCdclT) -> Result<Literal, ()> {
+    match &term.inner {
+        TermInner::True => {
+            let v = solver.alloc_sat();
+            solver.add_clause(&[Literal::positive(v)]);
+            Ok(Literal::positive(v))
+        }
+        TermInner::False => {
+            let v = solver.alloc_sat();
+            solver.add_clause(&[Literal::negative(v)]);
+            Ok(Literal::negative(v))
+        }
+        TermInner::Not(inner) if matches!(inner.inner, TermInner::Eq(..))
+            && matches!(
+                inner.inner,
+                TermInner::Eq(ref a, _) if a.sort.is_arithmetic()
+            ) =>
+        {
+            // Arithmetic disequality: x ≠ c  ↔  (x < c) ∨ (x > c)
+            if let TermInner::Eq(lhs, rhs) = &inner.inner {
+                let lt_lit = encode_arith_cmp(ArithCmpKind::Lt, lhs, rhs, solver)?;
+                let gt_lit = encode_arith_cmp(ArithCmpKind::Gt, lhs, rhs, solver)?;
+                let v = solver.alloc_sat();
+                let z = Literal::positive(v);
+                solver.add_clause(&[z.negate(), lt_lit, gt_lit]);
+                solver.add_clause(&[lt_lit.negate(), z]);
+                solver.add_clause(&[gt_lit.negate(), z]);
+                return Ok(z);
+            }
+            unreachable!()
+        }
+        TermInner::Not(inner) => {
+            let l = encode_bool(inner, solver)?;
+            Ok(l.negate())
+        }
+        TermInner::And(args) => {
+            let subs: Vec<Literal> = args
+                .iter()
+                .map(|a| encode_bool(a, solver))
+                .collect::<Result<_, _>>()?;
+            let v = solver.alloc_sat();
+            let z = Literal::positive(v);
+            for &sl in &subs {
+                solver.add_clause(&[z.negate(), sl]);
+            }
+            let mut cl: Vec<Literal> = subs.iter().map(|l| l.negate()).collect();
+            cl.push(z);
+            solver.add_clause(&cl);
+            Ok(z)
+        }
+        TermInner::Or(args) => {
+            let subs: Vec<Literal> = args
+                .iter()
+                .map(|a| encode_bool(a, solver))
+                .collect::<Result<_, _>>()?;
+            let v = solver.alloc_sat();
+            let z = Literal::positive(v);
+            let mut cl = vec![z.negate()];
+            cl.extend_from_slice(&subs);
+            solver.add_clause(&cl);
+            for &sl in &subs {
+                solver.add_clause(&[sl.negate(), z]);
+            }
+            Ok(z)
+        }
+        TermInner::ArithCmp(kind, lhs, rhs) => {
+            encode_arith_cmp(*kind, lhs, rhs, solver)
+        }
+        TermInner::Eq(lhs, rhs) if lhs.sort.is_arithmetic() => {
+            // Arithmetic equality: x = c  ↔  (x ≤ c) ∧ (x ≥ c).
+            let le_lit = encode_arith_cmp(ArithCmpKind::Le, lhs, rhs, solver)?;
+            let ge_lit = encode_arith_cmp(ArithCmpKind::Ge, lhs, rhs, solver)?;
+            // Tseitin AND: v ↔ (le ∧ ge)
+            let v = solver.alloc_sat();
+            let z = Literal::positive(v);
+            solver.add_clause(&[z.negate(), le_lit]);
+            solver.add_clause(&[z.negate(), ge_lit]);
+            solver.add_clause(&[z, le_lit.negate(), ge_lit.negate()]);
+            Ok(z)
+        }
+        TermInner::Variable(name) if term.sort == SortExpr::Bool => {
+            // Boolean variable (not arithmetic).
+            let v = solver.alloc_sat();
+            let _ = name; // tracked externally if needed
+            Ok(Literal::positive(v))
+        }
+        _ => Err(()),
+    }
+}
+
+fn encode_arith_cmp(
+    kind: ArithCmpKind,
+    lhs: &Term,
+    rhs: &Term,
+    solver: &mut LiaCdclT,
+) -> Result<Literal, ()> {
+    // Normalize: diff = lhs - rhs, and compare diff ≤ 0 (or similar).
+    let var_ids = solver.var_ids.clone();
+    let (form, rhs_const) = normalize_cmp(lhs, rhs, &var_ids).ok_or(())?;
+
+    // If the form is purely constant (no variables), evaluate statically.
+    if form.is_constant() {
+        let holds = match kind {
+            ArithCmpKind::Le => 0 <= rhs_const,
+            ArithCmpKind::Lt => 0 < rhs_const,
+            ArithCmpKind::Ge => 0 >= rhs_const,
+            ArithCmpKind::Gt => 0 > rhs_const,
+        };
+        let v = solver.alloc_sat();
+        if holds {
+            solver.add_clause(&[Literal::positive(v)]);
+            return Ok(Literal::positive(v));
+        } else {
+            solver.add_clause(&[Literal::negative(v)]);
+            return Ok(Literal::negative(v));
+        }
+    }
+
+    let slack = get_or_create_slack(&form, solver);
+
+    // Map the comparison to a Simplex atom:
+    // slack = lhs_vars - rhs_vars
+    // Le: slack ≤ rhs_const   → Upper(slack, rhs_const)
+    // Lt: slack ≤ rhs_const-1 → Upper(slack, rhs_const-1)  [integers]
+    // Ge: slack ≥ rhs_const   → Lower(slack, rhs_const)
+    // Gt: slack ≥ rhs_const+1 → Lower(slack, rhs_const+1)  [integers]
+    let atom = match kind {
+        ArithCmpKind::Le => SimplexAtom::Upper { var: slack, bound: rhs_const },
+        ArithCmpKind::Lt => SimplexAtom::Upper { var: slack, bound: rhs_const - 1 },
+        ArithCmpKind::Ge => SimplexAtom::Lower { var: slack, bound: rhs_const },
+        ArithCmpKind::Gt => SimplexAtom::Lower { var: slack, bound: rhs_const + 1 },
+    };
+    let v = solver.alloc_sat();
+    solver.atoms.insert(v, atom);
+    Ok(Literal::positive(v))
+}
+
+// ---------------------------------------------------------------------------
+// Public entry point
+// ---------------------------------------------------------------------------
+
+/// Solve a QF_LIA / QF_LRA problem given the raw SMT-LIB text.
+pub fn solve_qf_lia(text: &str) -> Result<LiaResult, String> {
+    let script = Script::parse(text).map_err(|e| e.to_string())?;
+    if script.assertions().is_empty() {
+        return Err("no assertions".to_string());
+    }
+
+    // Collect Int/Real declared constants.
+    let mut var_names: Vec<(String, SortExpr)> = Vec::new();
+    use rm_syntax::Command;
+    for cmd in &script.commands {
+        if let Command::DeclareFun { name, args, result } = cmd {
+            if args.is_empty() && result.is_arithmetic() {
+                var_names.push((name.clone(), result.clone()));
+            }
+        }
+    }
+
+    // Allocate Simplex variables: first come user vars, then slacks.
+    // Pre-allocate enough space. We'll conservatively use 2x user vars as
+    // initial capacity; slacks are added dynamically.
+    let user_count = var_names.len() as u32;
+    // Rough upper bound: each comparison can introduce one slack.
+    let max_atoms = count_assertions(&script);
+    let max_simplex = user_count + max_atoms + 10;
+
+    let mut solver = LiaCdclT::new(max_simplex);
+    solver.next_simplex_var = user_count;
+
+    for (i, (name, sort)) in var_names.iter().enumerate() {
+        let id = i as u32;
+        solver.var_ids.insert(name.clone(), id);
+        if i < solver.is_int.len() {
+            solver.is_int[i] = *sort == SortExpr::Int;
+        }
+    }
+
+    // Encode assertions.
+    for assertion in script.assertions() {
+        match encode_bool(assertion, &mut solver) {
+            Ok(lit) => solver.add_clause(&[lit]),
+            Err(()) => {
+                // Fall back: unsupported construct → Unknown.
+                return Ok(LiaResult {
+                    status: LiaStatus::Unknown,
+                    model: Vec::new(),
+                });
+            }
+        }
+    }
+
+    let status = solver.solve();
+    let model = if status == LiaStatus::Sat {
+        solver
+            .var_ids
+            .iter()
+            .map(|(name, &id)| (name.clone(), solver.simplex.model_int(id)))
+            .collect()
+    } else {
+        Vec::new()
+    };
+    Ok(LiaResult { status, model })
+}
+
+fn count_assertions(script: &Script) -> u32 {
+    // Rough count: number of assertion terms (each may introduce a few slacks).
+    script.assertions().len() as u32 * 4 + 16
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn run(text: &str) -> LiaResult {
+        solve_qf_lia(text).expect("parse error")
+    }
+
+    fn sat(text: &str) -> bool {
+        run(text).status == LiaStatus::Sat
+    }
+
+    fn unsat(text: &str) -> bool {
+        run(text).status == LiaStatus::Unsat
+    }
+
+    const PREAMBLE: &str = "(set-logic QF_LIA)\n\
+                             (declare-fun x () Int)\n\
+                             (declare-fun y () Int)\n";
+
+    #[test]
+    fn trivial_sat() {
+        assert!(sat(&format!("{PREAMBLE}(assert (>= x 0))\n(check-sat)\n")));
+    }
+
+    #[test]
+    fn trivial_unsat() {
+        // x >= 5 and x <= 3
+        assert!(unsat(&format!(
+            "{PREAMBLE}(assert (>= x 5))\n(assert (<= x 3))\n(check-sat)\n"
+        )));
+    }
+
+    #[test]
+    fn simple_two_var_sat() {
+        // x + y <= 10, x >= 2, y >= 3 → SAT (x=2, y=3 works)
+        assert!(sat(&format!(
+            "{PREAMBLE}\
+             (assert (<= (+ x y) 10))\n\
+             (assert (>= x 2))\n\
+             (assert (>= y 3))\n\
+             (check-sat)\n"
+        )));
+    }
+
+    #[test]
+    fn simple_two_var_unsat() {
+        // x + y >= 10, x <= 3, y <= 3 → x+y <= 6 < 10 → UNSAT
+        assert!(unsat(&format!(
+            "{PREAMBLE}\
+             (assert (>= (+ x y) 10))\n\
+             (assert (<= x 3))\n\
+             (assert (<= y 3))\n\
+             (check-sat)\n"
+        )));
+    }
+
+    #[test]
+    fn scaled_var_sat() {
+        // 2*x + y <= 7, x >= 2, y >= 1 → x=2, y=1, 2*2+1=5<=7 → SAT
+        assert!(sat(&format!(
+            "{PREAMBLE}\
+             (assert (<= (+ (* 2 x) y) 7))\n\
+             (assert (>= x 2))\n\
+             (assert (>= y 1))\n\
+             (check-sat)\n"
+        )));
+    }
+
+    #[test]
+    fn scaled_var_unsat() {
+        // 2*x + y >= 10, x <= 3, y <= 2 → max 2*3+2=8 < 10 → UNSAT
+        assert!(unsat(&format!(
+            "{PREAMBLE}\
+             (assert (>= (+ (* 2 x) y) 10))\n\
+             (assert (<= x 3))\n\
+             (assert (<= y 2))\n\
+             (check-sat)\n"
+        )));
+    }
+
+    #[test]
+    fn disjunction_sat() {
+        // (x <= 0 or x >= 5), x = 7 → SAT (x=7 satisfies x>=5)
+        assert!(sat(&format!(
+            "{PREAMBLE}\
+             (assert (or (<= x 0) (>= x 5)))\n\
+             (assert (= x 7))\n\
+             (check-sat)\n"
+        )));
+    }
+
+    #[test]
+    fn disjunction_unsat() {
+        // (x <= -1 or x >= 5), 1 <= x, x <= 4 → UNSAT
+        assert!(unsat(&format!(
+            "{PREAMBLE}\
+             (assert (or (<= x (- 1)) (>= x 5)))\n\
+             (assert (>= x 1))\n\
+             (assert (<= x 4))\n\
+             (check-sat)\n"
+        )));
+    }
+
+    #[test]
+    fn model_extraction() {
+        let r = run(&format!(
+            "{PREAMBLE}\
+             (assert (= x 42))\n\
+             (check-sat)\n"
+        ));
+        assert_eq!(r.status, LiaStatus::Sat);
+        let xval = r.model.iter().find(|(n, _)| n == "x").map(|(_, v)| *v);
+        assert_eq!(xval, Some(42), "model: {:?}", r.model);
+    }
+}

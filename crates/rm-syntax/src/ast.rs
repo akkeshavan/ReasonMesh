@@ -1,8 +1,8 @@
-//! SMT-LIB 2.7 AST: terms for the QF_BV fragment.
+//! SMT-LIB 2.7 AST: terms for QF_BV and QF_LIA/QF_LRA fragments.
 //!
-//! Terms use explicit [`BvOp`] operators rather than raw symbol names so the
-//! IR layer can dispatch directly on the operation. Free function symbols
-//! (declared with `declare-fun`) are represented by [`Term::FunCall`].
+//! Terms use explicit operator enums so the IR layer can dispatch directly.
+//! Free function symbols (declared with `declare-fun`) are represented by
+//! [`TermInner::FunCall`].
 
 use serde::{Deserialize, Serialize};
 
@@ -27,6 +27,8 @@ pub enum TermInner {
         bits: Vec<bool>,
         width: u32,
     },
+    /// Integer or real numeric literal.
+    IntLiteral(i64),
     /// A free symbol (declared constant or function argument).
     Variable(String),
     /// Application of a built-in bit-vector operator.
@@ -41,9 +43,30 @@ pub enum TermInner {
     Or(Vec<Term>),
     /// Boolean if-then-else.
     Ite(Box<Term>, Box<Term>, Box<Term>),
-    /// `(= a b)`. For Bool args this is Boolean iff; for BV args it is
-    /// structural equality.
+    /// `(= a b)`. For Bool args this is Boolean iff; for BV/arithmetic args it
+    /// is structural/arithmetic equality.
     Eq(Box<Term>, Box<Term>),
+    /// Arithmetic operation: `(+ t1 t2 ...)`, `(- t)`, `(- t1 t2)`, `(* c t)`.
+    ArithOp(ArithOpKind, Vec<Term>),
+    /// Arithmetic comparison returning Bool: `<=`, `<`, `>=`, `>`.
+    ArithCmp(ArithCmpKind, Box<Term>, Box<Term>),
+}
+
+/// Linear arithmetic operators.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ArithOpKind {
+    Add,
+    Sub,
+    Mul,
+}
+
+/// Arithmetic comparison operators (result sort Bool).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ArithCmpKind {
+    Le,
+    Lt,
+    Ge,
+    Gt,
 }
 
 impl Term {

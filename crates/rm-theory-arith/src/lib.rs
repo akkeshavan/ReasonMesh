@@ -14,6 +14,8 @@
 
 pub mod bound;
 pub mod diff;
+pub mod simplex;
 
 pub use bound::{Bound, BoundKind};
 pub use diff::{ConflictCore, DiffLogicSolver, DlError, DlResult};
+pub use simplex::{Rational, SimplexConflict, SimplexSolver};

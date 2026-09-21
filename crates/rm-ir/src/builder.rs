@@ -96,6 +96,12 @@ impl Builder {
                 let lb = self.lower(b);
                 self.dag.intern_apply(Op::Eq, vec![la, lb])
             }
+            // Arithmetic terms are not lowered through the BV IR.
+            TermInner::IntLiteral(_)
+            | TermInner::ArithOp(_, _)
+            | TermInner::ArithCmp(_, _, _) => {
+                panic!("arithmetic terms cannot be lowered to the BV DAG")
+            }
         }
     }
 
