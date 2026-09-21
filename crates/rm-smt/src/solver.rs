@@ -112,50 +112,88 @@ impl SmtSolver {
                         model: None,
                         values: Vec::new(),
                     }),
-                    (DlStatus::Unknown, _) => Ok(SmtResult {
+                    // Has disjunctions (e.g. not(= x y)) — fall through to CDCL(T)
+                    (DlStatus::Unknown, _) => {
+                        match solve_qf_ufidl(&self.raw).map_err(SmtError::Internal)? {
+                            (NoResult::Sat, dl_model) => Ok(SmtResult {
+                                status: SmtStatus::Sat,
+                                model: None,
+                                values: dl_model
+                                    .into_iter()
+                                    .map(|(n, v)| (n, v.to_string()))
+                                    .collect(),
+                            }),
+                            (NoResult::Unsat, _) => Ok(SmtResult {
+                                status: SmtStatus::Unsat,
+                                model: None,
+                                values: Vec::new(),
+                            }),
+                            (NoResult::Unknown, _) => Ok(SmtResult {
+                                status: SmtStatus::Unknown,
+                                model: None,
+                                values: Vec::new(),
+                            }),
+                        }
+                    }
+                }
+            }
+            Some("QF_UF") => {
+                let uf_result = solve_qf_uf(&self.raw).map_err(SmtError::Internal)?;
+                match uf_result.status {
+                    UfStatus::Sat => Ok(SmtResult {
+                        status: SmtStatus::Sat,
+                        model: None,
+                        values: uf_result.model.into_iter().collect(),
+                    }),
+                    UfStatus::Unsat => Ok(SmtResult {
+                        status: SmtStatus::Unsat,
+                        model: None,
+                        values: Vec::new(),
+                    }),
+                    // Has disjunctions (e.g. or, implies) — fall through to CDCL(T)
+                    UfStatus::Unknown => {
+                        match solve_qf_ufidl(&self.raw).map_err(SmtError::Internal)? {
+                            (NoResult::Sat, _) => Ok(SmtResult {
+                                status: SmtStatus::Sat,
+                                model: None,
+                                values: Vec::new(),
+                            }),
+                            (NoResult::Unsat, _) => Ok(SmtResult {
+                                status: SmtStatus::Unsat,
+                                model: None,
+                                values: Vec::new(),
+                            }),
+                            (NoResult::Unknown, _) => Ok(SmtResult {
+                                status: SmtStatus::Unknown,
+                                model: None,
+                                values: Vec::new(),
+                            }),
+                        }
+                    }
+                }
+            }
+            Some("QF_UFIDL") => {
+                match solve_qf_ufidl(&self.raw).map_err(SmtError::Internal)? {
+                    (NoResult::Sat, dl_model) => Ok(SmtResult {
+                        status: SmtStatus::Sat,
+                        model: None,
+                        values: dl_model
+                            .into_iter()
+                            .map(|(n, v)| (n, v.to_string()))
+                            .collect(),
+                    }),
+                    (NoResult::Unsat, _) => Ok(SmtResult {
+                        status: SmtStatus::Unsat,
+                        model: None,
+                        values: Vec::new(),
+                    }),
+                    (NoResult::Unknown, _) => Ok(SmtResult {
                         status: SmtStatus::Unknown,
                         model: None,
                         values: Vec::new(),
                     }),
                 }
             }
-            Some("QF_UF") => match solve_qf_uf(&self.raw).map_err(SmtError::Internal)? {
-                uf_result if uf_result.status == UfStatus::Sat => {
-                    let values = uf_result.model.into_iter().collect();
-                    Ok(SmtResult {
-                        status: SmtStatus::Sat,
-                        model: None,
-                        values,
-                    })
-                }
-                uf_result if uf_result.status == UfStatus::Unsat => Ok(SmtResult {
-                    status: SmtStatus::Unsat,
-                    model: None,
-                    values: Vec::new(),
-                }),
-                _ => Ok(SmtResult {
-                    status: SmtStatus::Unknown,
-                    model: None,
-                    values: Vec::new(),
-                }),
-            },
-            Some("QF_UFIDL") => match solve_qf_ufidl(&self.raw).map_err(SmtError::Internal)? {
-                NoResult::Sat => Ok(SmtResult {
-                    status: SmtStatus::Sat,
-                    model: None,
-                    values: Vec::new(),
-                }),
-                NoResult::Unsat => Ok(SmtResult {
-                    status: SmtStatus::Unsat,
-                    model: None,
-                    values: Vec::new(),
-                }),
-                NoResult::Unknown => Ok(SmtResult {
-                    status: SmtStatus::Unknown,
-                    model: None,
-                    values: Vec::new(),
-                }),
-            },
             Some(other) => Err(SmtError::UnsupportedLogic(other.to_owned())),
         }
     }

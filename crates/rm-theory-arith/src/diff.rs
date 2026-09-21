@@ -111,6 +111,8 @@ impl DiffLogicSolver {
     pub fn backtrack_to(&mut self, level: u32) {
         let target = if (level as usize) < self.level_lim.len() {
             self.level_lim[level as usize]
+        } else if level == 0 {
+            0 // Clear all edges; handles the case where level_lim is empty
         } else {
             return;
         };
@@ -368,6 +370,54 @@ impl DiffLogicSolver {
     /// Number of asserted edges.
     pub fn num_edges(&self) -> usize {
         self.edges.len()
+    }
+
+    /// Returns the SAT literals on the shortest path from `source` to `target`
+    /// (the edges that justify the tightest derivable bound on `target - source`).
+    /// Returns `None` if no path exists.
+    pub fn path_explanation(&self, source: VarId, target: VarId) -> Option<Vec<u32>> {
+        if source > self.num_vars || target > self.num_vars {
+            return None;
+        }
+        let n = self.num_vars as usize + 1;
+        let mut dist = vec![i64::MAX / 2; n];
+        let mut pred: Vec<Option<usize>> = vec![None; n];
+        dist[source as usize] = 0;
+        for _ in 0..n {
+            let mut changed = false;
+            for (idx, edge) in self.edges.iter().enumerate() {
+                let d = dist[edge.from as usize];
+                if d < i64::MAX / 2 {
+                    let nd = d.saturating_add(edge.weight);
+                    if nd < dist[edge.to as usize] {
+                        dist[edge.to as usize] = nd;
+                        pred[edge.to as usize] = Some(idx);
+                        changed = true;
+                    }
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        if dist[target as usize] >= i64::MAX / 2 {
+            return None;
+        }
+        let mut lits = Vec::new();
+        let mut cur = target as usize;
+        for _ in 0..=n {
+            match pred[cur] {
+                Some(ei) => {
+                    lits.push(self.edges[ei].sat_lit);
+                    cur = self.edges[ei].from as usize;
+                    if cur == source as usize {
+                        break;
+                    }
+                }
+                None => break,
+            }
+        }
+        Some(lits)
     }
 
     /// Produce AKX `BoundKnowledge` for all currently tight bounds.

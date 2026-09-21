@@ -384,7 +384,8 @@ fn intern_no_declarations(
 // ---------------------------------------------------------------------------
 
 /// Parse and solve a QF_UFIDL (or QF_UF / QF_IDL) SMT-LIB script.
-pub fn solve_qf_ufidl(text: &str) -> Result<NoResult, String> {
+/// Returns `(verdict, dl_model)` where `dl_model` maps var names to integer values on SAT.
+pub fn solve_qf_ufidl(text: &str) -> Result<(NoResult, Vec<(String, i64)>), String> {
     use rm_syntax::{lex, parse_program};
 
     let tokens = lex(text).map_err(|e| e.to_string())?;
@@ -397,7 +398,7 @@ pub fn solve_qf_ufidl(text: &str) -> Result<NoResult, String> {
     }
 
     if decls.assertions.is_empty() {
-        return Ok(NoResult::Sat);
+        return Ok((NoResult::Sat, Vec::new()));
     }
 
     let num_arith = decls.dl_vars.values().copied().max().unwrap_or(0);
@@ -422,7 +423,7 @@ pub fn solve_qf_ufidl(text: &str) -> Result<NoResult, String> {
                 has_disjunctions = true;
                 break;
             }
-            FlattenResult::Unsupported => return Ok(NoResult::Unknown),
+            FlattenResult::Unsupported => return Ok((NoResult::Unknown, Vec::new())),
         }
     }
 
@@ -432,13 +433,19 @@ pub fn solve_qf_ufidl(text: &str) -> Result<NoResult, String> {
 
     for lit in &all_literals {
         if solver.assert_lit(lit).is_err() {
-            return Ok(NoResult::Unsat);
+            return Ok((NoResult::Unsat, Vec::new()));
         }
     }
     if solver.dl.check().is_err() || solver.no_fixed_point().is_err() {
-        return Ok(NoResult::Unsat);
+        return Ok((NoResult::Unsat, Vec::new()));
     }
-    Ok(NoResult::Sat)
+    let mut dl_model: Vec<(String, i64)> = decls
+        .dl_vars
+        .iter()
+        .filter_map(|(name, &id)| solver.dl.var_upper_bound(id).map(|v| (name.clone(), v)))
+        .collect();
+    dl_model.sort_by_key(|(n, _)| n.clone());
+    Ok((NoResult::Sat, dl_model))
 }
 
 // ---------------------------------------------------------------------------
@@ -634,8 +641,6 @@ fn flatten_arith(
 // Lazy CDCL(T) for formulas with disjunctions
 // ---------------------------------------------------------------------------
 
-const MAX_CDCLT_VARS: u32 = 4096;
-const MAX_CDCLT_ITERS: u32 = 1000;
 
 /// Theory atom registered with the CDCL(T) SAT backbone.
 #[derive(Clone, Debug)]
@@ -646,32 +651,64 @@ enum BackboneAtom {
 }
 
 /// Lazy CDCL(T) solver.
+///
+/// Tseitin clauses are buffered during encoding; the SAT solver is created
+/// just before the first `solve()` call so it is sized exactly to the actual
+/// number of Boolean variables used.
 struct CdclT {
-    sat: CdclSolver,
     atoms: FxHashMap<u32, BackboneAtom>,
     egraph: EGraph,
     cc: CongruenceClosure,
     dl: DiffLogicSolver,
     next_var: u32,
+    /// dl_var_id → variable name (for model extraction after SAT)
+    dl_var_names: FxHashMap<u32, String>,
+    /// (dl_var_id, uf_node_id) for Nelson-Oppen shared variables
+    dl_uf_pairs: Vec<(u32, ENodeId)>,
+    /// Buffered Tseitin clauses, added to `sat` during `finalize()`.
+    pending_clauses: Vec<Vec<Literal>>,
+    /// The SAT backbone — None until `finalize()` is called.
+    sat: Option<CdclSolver>,
 }
 
 impl CdclT {
     fn new(num_arith: u32) -> Self {
         CdclT {
-            sat: CdclSolver::new(MAX_CDCLT_VARS),
             atoms: FxHashMap::default(),
             egraph: EGraph::new(),
             cc: CongruenceClosure::new(64),
             dl: DiffLogicSolver::new(num_arith),
             next_var: 1,
+            dl_var_names: FxHashMap::default(),
+            dl_uf_pairs: Vec::new(),
+            pending_clauses: Vec::new(),
+            sat: None,
         }
     }
 
     fn alloc_var(&mut self) -> u32 {
         let v = self.next_var;
         self.next_var += 1;
-        assert!(v <= MAX_CDCLT_VARS, "CDCL(T): too many variables");
         v
+    }
+
+    /// Buffer a clause for later loading into the SAT solver.
+    fn add_clause(&mut self, lits: &[Literal]) {
+        self.pending_clauses.push(lits.to_vec());
+    }
+
+    /// Create the SAT solver with the exact variable count and load buffered clauses.
+    /// Must be called exactly once, before `solve()`.
+    fn finalize(&mut self) {
+        let num_vars = self.next_var - 1;
+        let mut sat = CdclSolver::new(num_vars);
+        // BVE eliminates variables that theory atoms depend on; theory lemmas
+        // added during solving reference those variables, so BVE is incompatible.
+        sat.skip_bve();
+        for clause in self.pending_clauses.drain(..) {
+            sat.add_clause(&clause);
+        }
+        self.sat = Some(sat);
     }
 
     fn intern_const(&mut self, name: &str) -> ENodeId {
@@ -700,22 +737,29 @@ impl CdclT {
                 continue;
             }
             let val = model.value_of(v);
+            // Store raw literals (with polarity) as sat_lit tags so conflict
+            // clauses can be correctly formed by negating them.
+            let sat_raw = if val {
+                Literal::positive(v).raw()
+            } else {
+                Literal::negative(v).raw()
+            };
             let atom = self.atoms[&v].clone();
             match atom {
                 BackboneAtom::Eq { lhs, rhs } => {
                     if val {
-                        if let Err(e) = self.cc.assert_eq(&self.egraph, lhs, rhs, v) {
+                        if let Err(e) = self.cc.assert_eq(&self.egraph, lhs, rhs, sat_raw) {
                             return Some(mk_conflict_euf(e));
                         }
-                    } else if let Err(e) = self.cc.assert_neq(&self.egraph, lhs, rhs, v) {
+                    } else if let Err(e) = self.cc.assert_neq(&self.egraph, lhs, rhs, sat_raw) {
                         return Some(mk_conflict_euf(e));
                     }
                 }
                 BackboneAtom::Leq { x, y, c } => {
                     let res = if val {
-                        self.dl.assert_leq(x, y, c, v)
+                        self.dl.assert_leq(x, y, c, sat_raw)
                     } else {
-                        self.dl.assert_leq(y, x, -c - 1, v)
+                        self.dl.assert_leq(y, x, -c - 1, sat_raw)
                     };
                     if let Err(e) = res {
                         return Some(mk_conflict_dl(e));
@@ -723,9 +767,9 @@ impl CdclT {
                 }
                 BackboneAtom::Lt { x, y, c } => {
                     let res = if val {
-                        self.dl.assert_leq(x, y, c - 1, v)
+                        self.dl.assert_leq(x, y, c - 1, sat_raw)
                     } else {
-                        self.dl.assert_leq(y, x, -c, v)
+                        self.dl.assert_leq(y, x, -c, sat_raw)
                     };
                     if let Err(e) = res {
                         return Some(mk_conflict_dl(e));
@@ -738,27 +782,63 @@ impl CdclT {
             return Some(mk_conflict_dl(e));
         }
 
-        None
-    }
-
-    fn solve(&mut self) -> NoResult {
-        for _ in 0..MAX_CDCLT_ITERS {
-            match self.sat.solve(&[], 50_000) {
-                SolveResult::Unsat => return NoResult::Unsat,
-                SolveResult::Unknown | SolveResult::BudgetExceeded => return NoResult::Unknown,
-                SolveResult::Sat(ref model) => {
-                    if let Some(conflict) = self.theory_check(model) {
-                        if conflict.is_empty() {
-                            return NoResult::Unsat;
-                        }
-                        self.sat.add_clause(&conflict);
-                    } else {
-                        return NoResult::Sat;
+        // Nelson-Oppen: propagate DL-derived equalities to EUF.
+        // If DL has tight bounds x-y≤0 and y-x≤0, assert x=y to EUF.
+        for i in 0..self.dl_uf_pairs.len() {
+            for j in (i + 1)..self.dl_uf_pairs.len() {
+                let (xi, xuid) = self.dl_uf_pairs[i];
+                let (yi, yuid) = self.dl_uf_pairs[j];
+                let xy_tight = self.dl.bound_between(yi, xi).map(|b| b <= 0).unwrap_or(false);
+                let yx_tight = self.dl.bound_between(xi, yi).map(|b| b <= 0).unwrap_or(false);
+                if xy_tight && yx_tight && !self.cc.are_equal(xuid, yuid) {
+                    // DL says xi = yi; collect the edge lits that justify both paths
+                    let mut dl_lits: Vec<u32> = Vec::new();
+                    if let Some(p) = self.dl.path_explanation(yi, xi) {
+                        dl_lits.extend(p);
+                    }
+                    if let Some(p) = self.dl.path_explanation(xi, yi) {
+                        dl_lits.extend(p);
+                    }
+                    let tag = dl_lits.first().copied().unwrap_or(0);
+                    if let Err(e) = self.cc.assert_eq(&self.egraph, xuid, yuid, tag) {
+                        let mut conflict = mk_conflict_euf(e);
+                        // dl_lits are raw literals; negate to form blocking clause
+                        conflict.extend(dl_lits.iter().map(|&raw| Literal::from_raw(raw).negate()));
+                        conflict.sort_unstable();
+                        conflict.dedup();
+                        return Some(conflict);
                     }
                 }
             }
         }
-        NoResult::Unknown
+
+        None
+    }
+
+    fn solve(&mut self) -> NoResult {
+        self.finalize();
+        loop {
+            // Scope the sat borrow so we can call self.theory_check after.
+            let sat_result = {
+                let sat = self.sat.as_mut().unwrap();
+                match sat.solve(&[], 500_000) {
+                    SolveResult::Unsat => return NoResult::Unsat,
+                    SolveResult::BudgetExceeded => None,
+                    SolveResult::Unknown => return NoResult::Unknown,
+                    SolveResult::Sat(ref model) => Some(model.clone()),
+                }
+            };
+            if let Some(model) = sat_result {
+                if let Some(conflict) = self.theory_check(&model) {
+                    if conflict.is_empty() {
+                        return NoResult::Unsat;
+                    }
+                    self.sat.as_mut().unwrap().add_clause(&conflict);
+                } else {
+                    return NoResult::Sat;
+                }
+            }
+        }
     }
 }
 
@@ -767,7 +847,10 @@ fn mk_conflict_euf(e: rm_theory_euf::CcError) -> Vec<Literal> {
         rm_theory_euf::CcError::Conflict { explanation, .. } => explanation.sat_lits(),
         _ => vec![],
     };
-    lits.iter().map(|&s| Literal::negative(s)).collect()
+    // sat_lits are stored as raw literals (with polarity); negate each to form the blocking clause.
+    lits.iter()
+        .map(|&raw| Literal::from_raw(raw).negate())
+        .collect()
 }
 
 fn mk_conflict_dl(e: DlError) -> Vec<Literal> {
@@ -775,11 +858,15 @@ fn mk_conflict_dl(e: DlError) -> Vec<Literal> {
         DlError::Conflict(core) => core.sat_lits,
         _ => vec![],
     };
-    lits.iter().map(|&s| Literal::negative(s)).collect()
+    // sat_lits are stored as raw literals (with polarity); negate each to form the blocking clause.
+    lits.iter()
+        .map(|&raw| Literal::from_raw(raw).negate())
+        .collect()
 }
 
 /// Lazy CDCL(T) path for formulas with disjunctions.
-fn solve_with_cdclt(text: &str) -> Result<NoResult, String> {
+/// Returns the verdict and, on SAT, a DL model (var_name → integer value).
+fn solve_with_cdclt(text: &str) -> Result<(NoResult, Vec<(String, i64)>), String> {
     use rm_syntax::{lex, parse_program};
 
     let tokens = lex(text).map_err(|e| e.to_string())?;
@@ -796,11 +883,16 @@ fn solve_with_cdclt(text: &str) -> Result<NoResult, String> {
             uf_cache.insert(name.clone(), id);
         }
     }
-    for name in decls.dl_vars.keys() {
-        if !uf_cache.contains_key(name) {
+    for (name, &dl_id) in &decls.dl_vars {
+        let uid = if let Some(&id) = uf_cache.get(name) {
+            id
+        } else {
             let id = cdclt.intern_const(name);
             uf_cache.insert(name.clone(), id);
-        }
+            id
+        };
+        cdclt.dl_var_names.insert(dl_id, name.clone());
+        cdclt.dl_uf_pairs.push((dl_id, uid));
     }
 
     for assertion in &decls.assertions {
@@ -812,12 +904,24 @@ fn solve_with_cdclt(text: &str) -> Result<NoResult, String> {
             &decls.dl_vars,
         );
         match lit {
-            Ok(l) => cdclt.sat.add_clause(&[l]),
-            Err(()) => return Ok(NoResult::Unknown),
+            Ok(l) => cdclt.add_clause(&[l]),
+            Err(()) => return Ok((NoResult::Unknown, Vec::new())),
         }
     }
 
-    Ok(cdclt.solve())
+    let verdict = cdclt.solve();
+    let dl_model = if verdict == NoResult::Sat {
+        let mut model: Vec<(String, i64)> = cdclt
+            .dl_var_names
+            .iter()
+            .filter_map(|(&id, name)| cdclt.dl.var_upper_bound(id).map(|v| (name.clone(), v)))
+            .collect();
+        model.sort_by_key(|(n, _)| n.clone());
+        model
+    } else {
+        Vec::new()
+    };
+    Ok((verdict, dl_model))
 }
 
 fn encode_bool_cdclt(
@@ -832,12 +936,12 @@ fn encode_bool_cdclt(
     match expr {
         SExpr::Atom(Atom::Symbol(s)) if s == "true" => {
             let v = cdclt.alloc_var();
-            cdclt.sat.add_clause(&[Literal::positive(v)]);
+            cdclt.add_clause(&[Literal::positive(v)]);
             Ok(Literal::positive(v))
         }
         SExpr::Atom(Atom::Symbol(s)) if s == "false" => {
             let v = cdclt.alloc_var();
-            cdclt.sat.add_clause(&[Literal::negative(v)]);
+            cdclt.add_clause(&[Literal::negative(v)]);
             Ok(Literal::negative(v))
         }
         SExpr::List(items) => {
@@ -857,11 +961,11 @@ fn encode_bool_cdclt(
                     let v = cdclt.alloc_var();
                     let z = Literal::positive(v);
                     for &sl in &subs {
-                        cdclt.sat.add_clause(&[z.negate(), sl]);
+                        cdclt.add_clause(&[z.negate(), sl]);
                     }
                     let mut cl: Vec<Literal> = subs.iter().map(|l| l.negate()).collect();
                     cl.push(z);
-                    cdclt.sat.add_clause(&cl);
+                    cdclt.add_clause(&cl);
                     Ok(z)
                 }
                 "or" => {
@@ -874,15 +978,34 @@ fn encode_bool_cdclt(
                     let z = Literal::positive(v);
                     let mut cl = vec![z.negate()];
                     cl.extend_from_slice(&subs);
-                    cdclt.sat.add_clause(&cl);
+                    cdclt.add_clause(&cl);
                     for &sl in &subs {
-                        cdclt.sat.add_clause(&[sl.negate(), z]);
+                        cdclt.add_clause(&[sl.negate(), z]);
                     }
                     Ok(z)
                 }
                 "=" => {
                     let lhs = items.get(1).ok_or(())?;
                     let rhs = items.get(2).ok_or(())?;
+                    // If both sides are DL arithmetic vars, encode as two Leq atoms
+                    // (Tseitin AND: v ↔ (x-y≤0 ∧ y-x≤0)) instead of routing to EUF.
+                    if let (Some(xn), Some(yn)) = (sexpr_symbol(lhs), sexpr_symbol(rhs)) {
+                        if let (Some(&xi), Some(&yi)) = (dl_vars.get(xn), dl_vars.get(yn)) {
+                            let v1 = cdclt.alloc_var();
+                            cdclt.atoms.insert(v1, BackboneAtom::Leq { x: xi, y: yi, c: 0 });
+                            let v2 = cdclt.alloc_var();
+                            cdclt.atoms.insert(v2, BackboneAtom::Leq { x: yi, y: xi, c: 0 });
+                            let v = cdclt.alloc_var();
+                            let lv = Literal::positive(v);
+                            let lv1 = Literal::positive(v1);
+                            let lv2 = Literal::positive(v2);
+                            // v → v1, v → v2, (v1 ∧ v2) → v
+                            cdclt.add_clause(&[lv.negate(), lv1]);
+                            cdclt.add_clause(&[lv.negate(), lv2]);
+                            cdclt.add_clause(&[lv, lv1.negate(), lv2.negate()]);
+                            return Ok(lv);
+                        }
+                    }
                     let lid = intern_uf_term_cdclt(lhs, cdclt, uf_cache, uf_funcs)?;
                     let rid = intern_uf_term_cdclt(rhs, cdclt, uf_cache, uf_funcs)?;
                     let v = cdclt.alloc_var();
@@ -1075,7 +1198,7 @@ mod tests {
     use super::*;
 
     fn check(text: &str) -> NoResult {
-        solve_qf_ufidl(text).expect("parse error")
+        solve_qf_ufidl(text).expect("parse error").0
     }
 
     // ---- Pure UF ----
@@ -1249,5 +1372,95 @@ mod tests {
              (check-sat)",
         );
         assert_eq!(r, NoResult::Sat);
+    }
+
+    // ---- Disjunctive formulas (CDCL(T) backbone) ----
+
+    #[test]
+    fn cdclt_dl_diseq_sat() {
+        // x ≠ y is satisfiable
+        let r = check(
+            "(set-logic QF_IDL)
+             (declare-const x Int)
+             (declare-const y Int)
+             (assert (not (= x y)))
+             (check-sat)",
+        );
+        assert_eq!(r, NoResult::Sat);
+    }
+
+    #[test]
+    fn cdclt_dl_diseq_unsat() {
+        // x = y AND x ≠ y → UNSAT
+        let r = check(
+            "(set-logic QF_IDL)
+             (declare-const x Int)
+             (declare-const y Int)
+             (assert (= x y))
+             (assert (not (= x y)))
+             (check-sat)",
+        );
+        assert_eq!(r, NoResult::Unsat);
+    }
+
+    #[test]
+    fn cdclt_disjunction_dl_sat() {
+        // Either x ≤ 0 or y ≤ 0 — SAT
+        let r = check(
+            "(set-logic QF_IDL)
+             (declare-const x Int)
+             (declare-const y Int)
+             (assert (or (<= x 0) (<= y 0)))
+             (check-sat)",
+        );
+        assert_eq!(r, NoResult::Sat);
+    }
+
+    #[test]
+    fn cdclt_uf_disjunction_sat() {
+        // Either a = b or b = c — SAT
+        let r = check(
+            "(set-logic QF_UF)
+             (declare-sort U 0)
+             (declare-fun a () U)
+             (declare-fun b () U)
+             (declare-fun c () U)
+             (assert (or (= a b) (= b c)))
+             (check-sat)",
+        );
+        assert_eq!(r, NoResult::Sat);
+    }
+
+    #[test]
+    fn cdclt_uf_disjunction_unsat() {
+        // (a = b OR a = c) AND f(b) ≠ f(a) AND f(c) ≠ f(a) → UNSAT by congruence
+        let r = check(
+            "(set-logic QF_UF)
+             (declare-sort U 0)
+             (declare-fun a () U)
+             (declare-fun b () U)
+             (declare-fun c () U)
+             (declare-fun f (U) U)
+             (assert (or (= a b) (= a c)))
+             (assert (not (= (f b) (f a))))
+             (assert (not (= (f c) (f a))))
+             (check-sat)",
+        );
+        assert_eq!(r, NoResult::Unsat);
+    }
+
+    #[test]
+    fn cdclt_dl_model_has_values() {
+        let (verdict, model) = solve_qf_ufidl(
+            "(set-logic QF_IDL)
+             (declare-const x Int)
+             (declare-const y Int)
+             (assert (<= (- x y) 3))
+             (assert (not (= x y)))
+             (check-sat)",
+        )
+        .unwrap();
+        assert_eq!(verdict, NoResult::Sat);
+        assert!(!model.is_empty(), "model should contain x and y values");
     }
 }

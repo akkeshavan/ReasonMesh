@@ -278,6 +278,11 @@ impl CdclSolver {
         self.num_vars
     }
 
+    /// Disable BVE preprocessing for this solver instance.
+    pub fn skip_bve(&mut self) {
+        self.bve_done = true;
+    }
+
     /// Attach a GPU accelerator for parallel WalkSAT phase guidance.
     /// When set, each `walk_phase()` call dispatches 10 000 trajectories to the
     /// GPU instead of the single-trajectory CPU path.
@@ -362,6 +367,24 @@ impl CdclSolver {
                 let cr = self.db.add(lits, false, 0);
                 self.binaries[lits[0].negate().raw() as usize].push((lits[1], cr.0));
                 self.binaries[lits[1].negate().raw() as usize].push((lits[0], cr.0));
+                // Handle the case where one literal is already False (unit at current level).
+                // This matters when adding theory lemmas after the triggering literal has
+                // already been fully propagated — the new binary would otherwise be silently
+                // ignored, causing an infinite loop in the CDCL(T) outer loop.
+                let v0 = self.assignment.literal_value(lits[0]);
+                let v1 = self.assignment.literal_value(lits[1]);
+                match (v0, v1) {
+                    (Value::False, Value::False) => { self.db.set_empty_clause(); }
+                    (Value::False, Value::Undef) => {
+                        let lvl = self.assignment.current_level();
+                        self.assignment.assign(lits[1], lvl, cr.0);
+                    }
+                    (Value::Undef, Value::False) => {
+                        let lvl = self.assignment.current_level();
+                        self.assignment.assign(lits[0], lvl, cr.0);
+                    }
+                    _ => {}
+                }
             }
             _ => {
                 let cr = self.db.add(lits, false, 0);
@@ -2093,6 +2116,16 @@ impl CdclSolver {
         debug_assert_eq!(self.assignment.current_level(), 0);
         // Mark done first so the guard never re-fires, even on early return.
         self.bve_done = true;
+
+        // Settle all pending unit propagations before BVE sees the formula.
+        // BVE deletes original clauses before propagation runs; if a root
+        // assertion or Tseitin unit was on the trail but not yet propagated,
+        // BVE would process the pre-propagation formula and could delete clauses
+        // that are essential for UNSAT detection, producing incorrect SAT results.
+        if self.propagate().is_some() {
+            self.db.set_empty_clause();
+            return;
+        }
 
         let arena_start = self.db.data_len();
         let eliminated = crate::bve::run(
