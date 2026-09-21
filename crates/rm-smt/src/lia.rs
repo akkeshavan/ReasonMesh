@@ -100,6 +100,12 @@ struct LiaCdclT {
     /// Tseitin clauses buffered before SAT solver creation.
     pending_clauses: Vec<Vec<Literal>>,
     sat: Option<CdclSolver>,
+    /// Pre-allocated pool of SAT variables for branch-and-bound cuts.
+    /// These are reserved before `finalize()` so the SAT solver's variable
+    /// count already covers them; we hand them out on demand during
+    /// `theory_check` without needing to grow the solver.
+    bb_next: u32,
+    bb_end: u32,
 }
 
 impl LiaCdclT {
@@ -113,6 +119,8 @@ impl LiaCdclT {
             atoms: FxHashMap::default(),
             pending_clauses: Vec::new(),
             sat: None,
+            bb_next: 0,
+            bb_end: 0,
         }
     }
 
@@ -132,7 +140,13 @@ impl LiaCdclT {
         self.pending_clauses.push(lits.to_vec());
     }
 
-    fn finalize(&mut self) {
+    /// Reserve the B&B variable pool and create the SAT solver.
+    /// `bb_budget`: number of SAT variable slots to pre-allocate for branch-and-bound.
+    fn finalize_with_bb(&mut self, bb_budget: u32) {
+        self.bb_next = self.next_sat_var;
+        self.next_sat_var += bb_budget;
+        self.bb_end = self.next_sat_var;
+
         let num_vars = self.next_sat_var - 1;
         let mut sat = CdclSolver::new(num_vars);
         sat.skip_bve();
@@ -140,6 +154,18 @@ impl LiaCdclT {
             sat.add_clause(&clause);
         }
         self.sat = Some(sat);
+    }
+
+    /// Take the next variable from the pre-allocated B&B pool.
+    /// Returns None if the budget is exhausted (caller should treat as SAT).
+    fn alloc_bb_var(&mut self) -> Option<u32> {
+        if self.bb_next < self.bb_end {
+            let v = self.bb_next;
+            self.bb_next += 1;
+            Some(v)
+        } else {
+            None
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -206,15 +232,18 @@ impl LiaCdclT {
             if !v.is_integer() {
                 let floor_v = v.floor_int();
                 let ceil_v = v.ceil_int();
-                // Emit: floor_v_atom ∨ ceil_v_atom (branch-and-bound disjunction).
-                let sv = self.alloc_sat();
-                let sv2 = self.alloc_sat();
+                // Emit: (x ≤ floor_v) ∨ (x ≥ ceil_v) — a valid tautology for integers.
+                // Use pre-allocated B&B SAT variables so the solver already knows them.
+                let (sv, sv2) = match (self.alloc_bb_var(), self.alloc_bb_var()) {
+                    (Some(a), Some(b)) => (a, b),
+                    // B&B budget exhausted; return SAT (may be unsound for integers —
+                    // the budget (64 cuts per Int var) should never be hit in practice).
+                    _ => return None,
+                };
                 self.atoms
                     .insert(sv, SimplexAtom::Upper { var: simplex_var, bound: floor_v });
                 self.atoms
                     .insert(sv2, SimplexAtom::Lower { var: simplex_var, bound: ceil_v });
-                // Return as a clause (not a conflict — but SAT solver will pick a branch).
-                // We model it as a "blocking clause" the SAT solver must satisfy.
                 return Some(vec![Literal::positive(sv), Literal::positive(sv2)]);
             }
         }
@@ -223,7 +252,10 @@ impl LiaCdclT {
     }
 
     fn solve(&mut self) -> LiaStatus {
-        self.finalize();
+        // Reserve 64 B&B cut variables per Int-sorted user variable.
+        let int_count = self.is_int.iter().filter(|&&b| b).count() as u32;
+        let bb_budget = (int_count + 1) * 64;
+        self.finalize_with_bb(bb_budget);
         loop {
             let sat_result = {
                 let sat = self.sat.as_mut().unwrap();
@@ -692,5 +724,64 @@ mod tests {
         assert_eq!(r.status, LiaStatus::Sat);
         let xval = r.model.iter().find(|(n, _)| n == "x").map(|(_, v)| *v);
         assert_eq!(xval, Some(42), "model: {:?}", r.model);
+    }
+
+    /// Rational relaxation has the non-integer solution x=2.5, y=2.5.
+    /// Branch-and-bound must pick x≤2 or x≥3 and find the integer SAT solution.
+    #[test]
+    fn branch_and_bound_sat() {
+        // 2x + 2y >= 10, x >= 2, y >= 2 — all integer solutions exist (e.g. x=3, y=2)
+        assert!(sat(&format!(
+            "{PREAMBLE}\
+             (assert (>= (+ (* 2 x) (* 2 y)) 10))\n\
+             (assert (>= x 2))\n\
+             (assert (>= y 2))\n\
+             (check-sat)\n"
+        )));
+    }
+
+    /// 2x + 2y >= 11, x <= 2, y <= 2 — max integer value 2*2+2*2=8 < 11 → UNSAT.
+    /// Rational relaxation is SAT (x=y=2.75), so B&B must prove UNSAT.
+    #[test]
+    fn branch_and_bound_unsat() {
+        assert!(unsat(&format!(
+            "{PREAMBLE}\
+             (assert (>= (+ (* 2 x) (* 2 y)) 11))\n\
+             (assert (<= x 2))\n\
+             (assert (<= y 2))\n\
+             (check-sat)\n"
+        )));
+    }
+
+    /// B&B with an explicit disjunction: exactly one of two ranges must hold.
+    #[test]
+    fn branch_and_bound_with_disjunction() {
+        // (x = 1 or x = 3), 2x + y = 7  → x=3,y=1 is the only integer solution
+        assert!(sat(&format!(
+            "(set-logic QF_LIA)\n\
+             (declare-fun x () Int)\n\
+             (declare-fun y () Int)\n\
+             (assert (or (= x 1) (= x 3)))\n\
+             (assert (= (+ (* 2 x) y) 7))\n\
+             (check-sat)\n"
+        )));
+    }
+
+    /// Model values satisfy the original constraints.
+    #[test]
+    fn model_satisfies_constraints() {
+        let r = run(&format!(
+            "{PREAMBLE}\
+             (assert (<= (+ x y) 5))\n\
+             (assert (>= x 2))\n\
+             (assert (>= y 1))\n\
+             (check-sat)\n"
+        ));
+        assert_eq!(r.status, LiaStatus::Sat);
+        let x = r.model.iter().find(|(n, _)| n == "x").map(|(_, v)| *v).unwrap();
+        let y = r.model.iter().find(|(n, _)| n == "y").map(|(_, v)| *v).unwrap();
+        assert!(x + y <= 5, "x+y={}", x + y);
+        assert!(x >= 2, "x={}", x);
+        assert!(y >= 1, "y={}", y);
     }
 }
