@@ -21,9 +21,11 @@ use rm_sat::{parse_dimacs, CdclSolver, DimacsCnf, SolveResult};
 use rm_smt::{SmtSolver, SmtStatus, SmtResult};
 use rm_telemetry::{EventKind, Outcome, RunMeta, TraceError, TraceWriter};
 use rm_worker::{Problem as WorkerProblem, WorkerConfig, WorkerOutcome, WorkerPool, WorkerStats};
+use std::collections::HashMap;
 use std::io::{BufWriter, Read, Write};
 use std::path::Path;
 use std::process::Stdio;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use thiserror::Error;
 
@@ -97,16 +99,80 @@ pub enum RunError {
     },
 }
 
+/// Load previously-completed results from an NDJSON checkpoint file.
+/// Each line is a JSON-encoded `ProblemResult`. Silently ignores malformed lines.
+fn load_checkpoint(path: &Path) -> HashMap<String, ProblemResult> {
+    let content = match std::fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(_) => return HashMap::new(),
+    };
+    let mut map = HashMap::new();
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if let Ok(result) = serde_json::from_str::<ProblemResult>(line) {
+            map.insert(result.name.clone(), result);
+        }
+    }
+    map
+}
+
+/// Append one completed `ProblemResult` to the checkpoint file (NDJSON, one
+/// result per line). Flushed immediately so a kill won't lose the record.
+fn checkpoint_append(writer: &Mutex<BufWriter<std::fs::File>>, result: &ProblemResult) {
+    let line = match serde_json::to_string(result) {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+    if let Ok(mut guard) = writer.lock() {
+        let _ = writeln!(guard, "{line}");
+        let _ = guard.flush();
+    }
+}
+
 /// Execute the manifest. Returns the run result; per-problem failures that
 /// cannot be turned into a verdict (bad input, internal error) abort the run
 /// with `RunError`.
-pub fn run_manifest(manifest: &Manifest) -> Result<ManifestRun, RunError> {
+///
+/// `checkpoint` is an optional path to an NDJSON file for incremental
+/// checkpointing. On start, any already-completed problems are loaded from it
+/// and skipped. Each new result is appended immediately so the run can be
+/// resumed after interruption with `--checkpoint <same-path>`.
+pub fn run_manifest(manifest: &Manifest, checkpoint: Option<&Path>) -> Result<ManifestRun, RunError> {
     if manifest.output.trace && !manifest.output.dir.exists() {
         std::fs::create_dir_all(&manifest.output.dir).map_err(|source| RunError::OutputDir {
             dir: manifest.output.dir.display().to_string(),
             source,
         })?;
     }
+
+    // Load existing checkpoint results.
+    let checkpointed: HashMap<String, ProblemResult> = checkpoint
+        .filter(|p| p.exists())
+        .map(|p| load_checkpoint(p))
+        .unwrap_or_default();
+    if !checkpointed.is_empty() {
+        let remaining = manifest.problems.iter()
+            .filter(|p| !checkpointed.contains_key(&p.name))
+            .count();
+        eprintln!(
+            "info: checkpoint loaded — {} done, {} remaining",
+            checkpointed.len(),
+            remaining
+        );
+    }
+
+    // Open checkpoint file for appending new results.
+    let ckpt_writer: Option<Arc<Mutex<BufWriter<std::fs::File>>>> = checkpoint.map(|p| {
+        let f = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(p)
+            .expect("cannot open checkpoint file for writing");
+        Arc::new(Mutex::new(BufWriter::new(f)))
+    });
 
     // Create one GPU service for the whole run so Metal is initialised once
     // and the MSL kernel is compiled exactly once. Each problem's pool gets
@@ -121,12 +187,21 @@ pub fn run_manifest(manifest: &Manifest) -> Result<ManifestRun, RunError> {
 
     let run_start = Instant::now();
     let par = manifest.solver.parallel_problems.max(1);
+
+    // Per-problem solve closure: returns checkpoint hit or runs fresh solve.
+    let solve_one = |p: &Problem| -> Result<ProblemResult, RunError> {
+        if let Some(cached) = checkpointed.get(&p.name) {
+            return Ok(cached.clone());
+        }
+        let result = solve_problem(manifest, p, gpu_client.clone());
+        if let (Ok(ref r), Some(ref w)) = (&result, &ckpt_writer) {
+            checkpoint_append(w, r);
+        }
+        result
+    };
+
     let problems: Result<Vec<_>, _> = if par <= 1 {
-        manifest
-            .problems
-            .iter()
-            .map(|p| solve_problem(manifest, p, gpu_client.clone()))
-            .collect()
+        manifest.problems.iter().map(solve_one).collect()
     } else {
         rayon::ThreadPoolBuilder::new()
             .num_threads(par)
@@ -135,13 +210,7 @@ pub fn run_manifest(manifest: &Manifest) -> Result<ManifestRun, RunError> {
                 dir: "rayon".into(),
                 source: std::io::Error::other("failed to build rayon thread pool"),
             })?
-            .install(|| {
-                manifest
-                    .problems
-                    .par_iter()
-                    .map(|p| solve_problem(manifest, p, gpu_client.clone()))
-                    .collect()
-            })
+            .install(|| manifest.problems.par_iter().map(solve_one).collect())
     };
     let problems = problems?;
     drop(gpu); // join service thread cleanly after all problems are done
@@ -1063,7 +1132,7 @@ mod tests {
             ],
         );
 
-        let run = run_manifest(&manifest).unwrap();
+        let run = run_manifest(&manifest, None).unwrap();
         assert_eq!(run.problems.len(), 2);
         assert_eq!(run.problems[0].outcome, Outcome::Sat);
         assert!(run.problems[0].matches_expected);
@@ -1099,7 +1168,7 @@ mod tests {
                 expect: None,
             }],
         );
-        let run = run_manifest(&manifest).unwrap();
+        let run = run_manifest(&manifest, None).unwrap();
         assert_eq!(run.summary.solved, 1);
         let par2 = run.summary.par2_ns;
         let par10 = run.summary.par10_ns;
@@ -1120,7 +1189,7 @@ mod tests {
                 expect: None,
             }],
         );
-        let err = run_manifest(&manifest).unwrap_err();
+        let err = run_manifest(&manifest, None).unwrap_err();
         assert!(matches!(err, RunError::Dimacs { .. }));
     }
 
@@ -1139,7 +1208,7 @@ mod tests {
                 expect: Some(Expected::Sat),
             }],
         );
-        let run = run_manifest(&manifest).unwrap();
+        let run = run_manifest(&manifest, None).unwrap();
         assert_eq!(run.problems[0].outcome, Outcome::Sat);
         assert!(run.problems[0].matches_expected);
         // Aggregated search counters are non-trivial (some worker searched).
@@ -1165,7 +1234,7 @@ mod tests {
                 expect: Some(Expected::Unsat),
             }],
         );
-        let run = run_manifest(&manifest).unwrap();
+        let run = run_manifest(&manifest, None).unwrap();
         assert_eq!(run.problems[0].outcome, Outcome::Unsat);
         assert!(run.problems[0].matches_expected);
     }
@@ -1186,7 +1255,7 @@ mod tests {
                 expect: Some(Expected::Sat),
             }],
         );
-        let run = run_manifest(&manifest).unwrap();
+        let run = run_manifest(&manifest, None).unwrap();
         assert_eq!(run.problems[0].outcome, Outcome::Sat);
         assert!(run.problems[0].matches_expected);
         // With both policies zeroed, nothing may flow: the knowledge block
@@ -1225,7 +1294,7 @@ mod tests {
                 expect: Some(Expected::Sat),
             }],
         );
-        let run = run_manifest(&manifest).unwrap();
+        let run = run_manifest(&manifest, None).unwrap();
         assert_eq!(run.problems[0].outcome, Outcome::Sat);
         assert!(
             run.problems[0].knowledge.is_some(),

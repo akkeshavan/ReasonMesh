@@ -313,10 +313,17 @@ impl SimplexSolver {
         Ok(())
     }
 
-    /// Run feasibility check.  Returns `Ok(())` if the current bounds are
-    /// satisfiable, or `Err(conflict)` with a minimal infeasibility core.
-    pub fn check(&mut self) -> Result<(), SimplexConflict> {
-        let max_iters = (self.num_vars as usize + 1) * (self.num_vars as usize + 1) * 4;
+    /// Run feasibility check.
+    ///
+    /// Returns:
+    /// - `Ok(true)`  — current bounds are satisfiable (converged).
+    /// - `Ok(false)` — iteration limit exhausted without convergence; feasibility unknown.
+    /// - `Err(c)`    — infeasible, with a minimal conflict core `c`.
+    pub fn check(&mut self) -> Result<bool, SimplexConflict> {
+        // Use n^3 iterations to handle degenerate cases. Pure cycling is prevented by
+        // Bland's-style variable selection (smallest-index violated var / entering var).
+        let n = self.num_vars as usize;
+        let max_iters = n.saturating_mul(n).saturating_mul(n).max(1024);
         for _ in 0..max_iters {
             // Find first violating basic variable.
             let violated = (0..self.num_vars)
@@ -339,7 +346,7 @@ impl SimplexSolver {
                 });
 
             let (xi, above_ub) = match violated {
-                None => return Ok(()),
+                None => return Ok(true),
                 Some(v) => v,
             };
 
@@ -359,8 +366,8 @@ impl SimplexSolver {
                 }
             }
         }
-        // Iteration limit hit — treat as SAT (sound but incomplete for degenerate cases).
-        Ok(())
+        // Iteration limit hit — feasibility unknown, not necessarily SAT.
+        Ok(false)
     }
 
     /// Return the current rational value of a variable.

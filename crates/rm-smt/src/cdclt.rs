@@ -419,6 +419,7 @@ pub fn solve_qf_ufidl(text: &str) -> Result<(NoResult, Vec<(String, i64)>), Stri
             &mut lits,
         ) {
             FlattenResult::Ok => all_literals.extend(lits),
+            FlattenResult::Conflict => return Ok((NoResult::Unsat, Vec::new())),
             FlattenResult::Disjunction => {
                 has_disjunctions = true;
                 break;
@@ -454,6 +455,8 @@ pub fn solve_qf_ufidl(text: &str) -> Result<(NoResult, Vec<(String, i64)>), Stri
 
 enum FlattenResult {
     Ok,
+    /// Assertion is unconditionally false (e.g. `(assert false)`, `(assert (not true))`).
+    Conflict,
     Disjunction,
     Unsupported,
 }
@@ -470,13 +473,11 @@ fn flatten_assertion(
     use rm_syntax::{Atom, SExpr};
 
     match expr {
-        SExpr::Atom(Atom::Symbol(s)) if s == "true" => FlattenResult::Ok,
+        SExpr::Atom(Atom::Symbol(s)) if s == "true" => {
+            if polarity { FlattenResult::Ok } else { FlattenResult::Conflict }
+        }
         SExpr::Atom(Atom::Symbol(s)) if s == "false" => {
-            if polarity {
-                FlattenResult::Unsupported
-            } else {
-                FlattenResult::Ok
-            }
+            if polarity { FlattenResult::Conflict } else { FlattenResult::Ok }
         }
         SExpr::List(items) => {
             let Some(op) = items.first().and_then(|e| sexpr_symbol(e)) else {
@@ -749,10 +750,10 @@ impl CdclT {
                 BackboneAtom::Eq { lhs, rhs } => {
                     if val {
                         if let Err(e) = self.cc.assert_eq(&self.egraph, lhs, rhs, sat_raw) {
-                            return Some(mk_conflict_euf(e));
+                            if let Some(c) = mk_conflict_euf(e) { return Some(c); }
                         }
                     } else if let Err(e) = self.cc.assert_neq(&self.egraph, lhs, rhs, sat_raw) {
-                        return Some(mk_conflict_euf(e));
+                        if let Some(c) = mk_conflict_euf(e) { return Some(c); }
                     }
                 }
                 BackboneAtom::Leq { x, y, c } => {
@@ -801,12 +802,13 @@ impl CdclT {
                     }
                     let tag = dl_lits.first().copied().unwrap_or(0);
                     if let Err(e) = self.cc.assert_eq(&self.egraph, xuid, yuid, tag) {
-                        let mut conflict = mk_conflict_euf(e);
-                        // dl_lits are raw literals; negate to form blocking clause
-                        conflict.extend(dl_lits.iter().map(|&raw| Literal::from_raw(raw).negate()));
-                        conflict.sort_unstable();
-                        conflict.dedup();
-                        return Some(conflict);
+                        if let Some(mut conflict) = mk_conflict_euf(e) {
+                            // dl_lits are raw literals; negate to form blocking clause
+                            conflict.extend(dl_lits.iter().map(|&raw| Literal::from_raw(raw).negate()));
+                            conflict.sort_unstable();
+                            conflict.dedup();
+                            return Some(conflict);
+                        }
                     }
                 }
             }
@@ -842,15 +844,25 @@ impl CdclT {
     }
 }
 
-fn mk_conflict_euf(e: rm_theory_euf::CcError) -> Vec<Literal> {
-    let lits = match e {
-        rm_theory_euf::CcError::Conflict { explanation, .. } => explanation.sat_lits(),
-        _ => vec![],
-    };
-    // sat_lits are stored as raw literals (with polarity); negate each to form the blocking clause.
-    lits.iter()
-        .map(|&raw| Literal::from_raw(raw).negate())
-        .collect()
+/// Returns `None` for unexpected non-Conflict EUF errors (caller should treat as Unknown).
+fn mk_conflict_euf(e: rm_theory_euf::CcError) -> Option<Vec<Literal>> {
+    match e {
+        rm_theory_euf::CcError::Conflict { explanation, .. } => {
+            // sat_lits are stored as raw literals; negate each to form the blocking clause.
+            Some(
+                explanation.sat_lits()
+                    .iter()
+                    .map(|&raw| Literal::from_raw(raw).negate())
+                    .collect(),
+            )
+        }
+        other => {
+            // Non-Conflict errors are EUF implementation bugs, not input-triggered conflicts.
+            // Returning an empty vec would be misread as "empty clause = UNSAT" — unsound.
+            debug_assert!(false, "unexpected EUF error (not a Conflict): {other:?}");
+            None
+        }
+    }
 }
 
 fn mk_conflict_dl(e: DlError) -> Vec<Literal> {

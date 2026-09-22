@@ -255,9 +255,10 @@ impl Blaster {
             Op::BvSdiv => {
                 let neg = self.circuit.xor(a_sign, b_sign);
                 let inv = self.bv_not(&quot);
-                let ones = self.ones(n);
+                // ~q + 1 via carry-in (two's-complement negation)
                 let zero = self.circuit.const_gate(false);
-                let plus1 = self.add_cin(&inv, &ones, zero);
+                let cin  = self.circuit.const_gate(true);
+                let plus1 = self.add_cin(&inv, &vec![zero; n], cin);
                 quot.iter()
                     .zip(&plus1)
                     .map(|(q, p)| self.circuit.mux(neg, *p, *q))
@@ -265,9 +266,9 @@ impl Blaster {
             }
             Op::BvSrem => {
                 let inv = self.bv_not(&rem);
-                let ones = self.ones(n);
                 let zero = self.circuit.const_gate(false);
-                let plus1 = self.add_cin(&inv, &ones, zero);
+                let cin  = self.circuit.const_gate(true);
+                let plus1 = self.add_cin(&inv, &vec![zero; n], cin);
                 rem.iter()
                     .zip(&plus1)
                     .map(|(r, p)| self.circuit.mux(a_sign, *p, *r))
@@ -276,9 +277,9 @@ impl Blaster {
             Op::BvSmod => {
                 let sign = b_sign;
                 let inv = self.bv_not(&rem);
-                let ones = self.ones(n);
                 let zero = self.circuit.const_gate(false);
-                let plus1 = self.add_cin(&inv, &ones, zero);
+                let cin  = self.circuit.const_gate(true);
+                let plus1 = self.add_cin(&inv, &vec![zero; n], cin);
                 rem.iter()
                     .zip(&plus1)
                     .map(|(r, p)| self.circuit.mux(sign, *p, *r))
@@ -293,9 +294,10 @@ impl Blaster {
         let n = a.len();
         let sign = *a.last().unwrap();
         let inv: Vec<GateId> = a.iter().map(|&x| self.circuit.not(x)).collect();
-        let ones = self.ones(n);
+        // ~a + 1 via carry-in (two's-complement negation)
         let zero = self.circuit.const_gate(false);
-        let plus1 = self.add_cin(&inv, &ones, zero);
+        let cin  = self.circuit.const_gate(true);
+        let plus1 = self.add_cin(&inv, &vec![zero; n], cin);
         let out: Vec<GateId> = (0..n)
             .map(|i| self.circuit.mux(sign, plus1[i], a[i]))
             .collect();
@@ -311,10 +313,13 @@ impl Blaster {
             _ => self.circuit.const_gate(false),
         };
         let mut res = a;
+        // Number of shift-amount bits needed to express any shift in 0..n.
+        // For n=1: ceil(log2(2))=1 stage needed (shift-by-1 must be applied).
+        // Using n (not n-1) so stage count is ceil(log2(n+1)).
         let stages = if n == 0 {
             0
         } else {
-            (usize::BITS - (n - 1).leading_zeros()) as usize
+            (usize::BITS - n.leading_zeros()) as usize
         };
         for stage in 0..stages {
             let amount = 1usize << stage;

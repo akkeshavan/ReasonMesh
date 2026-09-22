@@ -91,6 +91,8 @@ struct LiaCdclT {
     simplex: SimplexSolver,
     /// Name → Simplex VarId for user-declared variables.
     var_ids: FxHashMap<String, u32>,
+    /// Name → SAT variable for Bool-sorted declared constants.
+    bool_var_ids: FxHashMap<String, u32>,
     /// Whether a Simplex var is originally Int-sorted (needs integer check).
     is_int: Vec<bool>,
     /// Next Simplex VarId to allocate (user vars + slacks share the space).
@@ -114,6 +116,7 @@ impl LiaCdclT {
             next_sat_var: 1,
             simplex: SimplexSolver::new(max_simplex_vars),
             var_ids: FxHashMap::default(),
+            bool_var_ids: FxHashMap::default(),
             is_int: vec![true; max_simplex_vars as usize],
             next_simplex_var: 0,
             atoms: FxHashMap::default(),
@@ -172,7 +175,11 @@ impl LiaCdclT {
     // Theory check
     // -----------------------------------------------------------------------
 
-    fn theory_check(&mut self, model: &rm_sat::Model) -> Option<Vec<Literal>> {
+    /// Returns:
+    /// - `Ok(None)`       — theory is feasible given the SAT model (no conflict).
+    /// - `Ok(Some(lits))` — theory conflict; `lits` is the blocking clause.
+    /// - `Err(())`        — simplex iteration limit exhausted; feasibility unknown.
+    fn theory_check(&mut self, model: &rm_sat::Model) -> Result<Option<Vec<Literal>>, ()> {
         self.simplex.backtrack_to(0);
 
         let vars: Vec<u32> = self.atoms.keys().copied().collect();
@@ -199,7 +206,7 @@ impl LiaCdclT {
                             .assert_lower(var, Rational::from_int(bound + 1), sat_raw)
                     };
                     if let Err(e) = res {
-                        return Some(mk_conflict_simplex(&e.lits));
+                        return Ok(Some(mk_conflict_simplex(&e.lits)));
                     }
                 }
                 SimplexAtom::Lower { var, bound } => {
@@ -212,14 +219,16 @@ impl LiaCdclT {
                             .assert_upper(var, Rational::from_int(bound - 1), sat_raw)
                     };
                     if let Err(e) = res {
-                        return Some(mk_conflict_simplex(&e.lits));
+                        return Ok(Some(mk_conflict_simplex(&e.lits)));
                     }
                 }
             }
         }
 
-        if let Err(e) = self.simplex.check() {
-            return Some(mk_conflict_simplex(&e.lits));
+        match self.simplex.check() {
+            Ok(true) => {}
+            Ok(false) => return Err(()),  // iteration limit — feasibility unknown
+            Err(e) => return Ok(Some(mk_conflict_simplex(&e.lits))),
         }
 
         // Integer feasibility check: if any Int-sorted user variable has a
@@ -238,17 +247,17 @@ impl LiaCdclT {
                     (Some(a), Some(b)) => (a, b),
                     // B&B budget exhausted; return SAT (may be unsound for integers —
                     // the budget (64 cuts per Int var) should never be hit in practice).
-                    _ => return None,
+                    _ => return Ok(None),
                 };
                 self.atoms
                     .insert(sv, SimplexAtom::Upper { var: simplex_var, bound: floor_v });
                 self.atoms
                     .insert(sv2, SimplexAtom::Lower { var: simplex_var, bound: ceil_v });
-                return Some(vec![Literal::positive(sv), Literal::positive(sv2)]);
+                return Ok(Some(vec![Literal::positive(sv), Literal::positive(sv2)]));
             }
         }
 
-        None
+        Ok(None)
     }
 
     fn solve(&mut self) -> LiaStatus {
@@ -267,13 +276,12 @@ impl LiaCdclT {
                 }
             };
             if let Some(model) = sat_result {
-                if let Some(clause) = self.theory_check(&model) {
-                    if clause.is_empty() {
-                        return LiaStatus::Unsat;
+                match self.theory_check(&model) {
+                    Err(()) => return LiaStatus::Unknown,
+                    Ok(Some(clause)) => {
+                        self.sat.as_mut().unwrap().add_clause(&clause);
                     }
-                    self.sat.as_mut().unwrap().add_clause(&clause);
-                } else {
-                    return LiaStatus::Sat;
+                    Ok(None) => return LiaStatus::Sat,
                 }
             }
         }
@@ -477,9 +485,14 @@ fn encode_bool(term: &Term, solver: &mut LiaCdclT) -> Result<Literal, ()> {
             Ok(z)
         }
         TermInner::Variable(name) if term.sort == SortExpr::Bool => {
-            // Boolean variable (not arithmetic).
-            let v = solver.alloc_sat();
-            let _ = name; // tracked externally if needed
+            // Boolean variable: reuse the same SAT var across all occurrences of the same name.
+            let v = if let Some(&existing) = solver.bool_var_ids.get(name.as_str()) {
+                existing
+            } else {
+                let v = solver.alloc_sat();
+                solver.bool_var_ids.insert(name.clone(), v);
+                v
+            };
             Ok(Literal::positive(v))
         }
         _ => Err(()),
@@ -541,7 +554,7 @@ fn encode_arith_cmp(
 pub fn solve_qf_lia(text: &str) -> Result<LiaResult, String> {
     let script = Script::parse(text).map_err(|e| e.to_string())?;
     if script.assertions().is_empty() {
-        return Err("no assertions".to_string());
+        return Ok(LiaResult { status: LiaStatus::Sat, model: vec![] });
     }
 
     // Collect Int/Real declared constants.

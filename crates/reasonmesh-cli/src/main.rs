@@ -190,7 +190,14 @@ enum Command {
     /// Verify an UNSAT proof/certificate.
     CheckProof { proof: PathBuf },
     /// Run a benchmark manifest.
-    Benchmark { manifest: PathBuf },
+    Benchmark {
+        manifest: PathBuf,
+        /// NDJSON checkpoint file for incremental resume. Each completed result
+        /// is appended immediately; restart with the same path to skip already-
+        /// solved problems.
+        #[arg(long)]
+        checkpoint: Option<PathBuf>,
+    },
 }
 
 /// Parse a DIMACS file and convert it into a `Problem` ready for the worker pool.
@@ -1072,8 +1079,8 @@ fn main() {
         Command::CheckProof { proof } => {
             std::process::exit(run_check_proof(&proof));
         }
-        Command::Benchmark { manifest } => match Manifest::load(&manifest) {
-            Ok(m) => match run_manifest(&m) {
+        Command::Benchmark { manifest, checkpoint } => match Manifest::load(&manifest) {
+            Ok(m) => match run_manifest(&m, checkpoint.as_deref()) {
                 Ok(run) => {
                     let out = run.to_json_pretty();
                     use std::io::Write;
