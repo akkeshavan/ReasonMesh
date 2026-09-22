@@ -115,7 +115,7 @@ impl SmtSolver {
                     }),
                     // Has disjunctions (e.g. not(= x y)) — fall through to CDCL(T)
                     (DlStatus::Unknown, _) => {
-                        match solve_qf_ufidl(&self.raw).map_err(SmtError::Internal)? {
+                        match solve_qf_ufidl(&self.raw, max_conflicts).map_err(SmtError::Internal)? {
                             (NoResult::Sat, dl_model) => Ok(SmtResult {
                                 status: SmtStatus::Sat,
                                 model: None,
@@ -153,7 +153,7 @@ impl SmtSolver {
                     }),
                     // Has disjunctions (e.g. or, implies) — fall through to CDCL(T)
                     UfStatus::Unknown => {
-                        match solve_qf_ufidl(&self.raw).map_err(SmtError::Internal)? {
+                        match solve_qf_ufidl(&self.raw, max_conflicts).map_err(SmtError::Internal)? {
                             (NoResult::Sat, _) => Ok(SmtResult {
                                 status: SmtStatus::Sat,
                                 model: None,
@@ -174,7 +174,7 @@ impl SmtSolver {
                 }
             }
             Some("QF_UFIDL") => {
-                match solve_qf_ufidl(&self.raw).map_err(SmtError::Internal)? {
+                match solve_qf_ufidl(&self.raw, max_conflicts).map_err(SmtError::Internal)? {
                     (NoResult::Sat, dl_model) => Ok(SmtResult {
                         status: SmtStatus::Sat,
                         model: None,

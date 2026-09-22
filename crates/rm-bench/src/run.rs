@@ -309,23 +309,18 @@ fn solve_smt_problem(manifest: &Manifest, problem: &Problem) -> Result<ProblemRe
     let max_conflicts = Some(manifest.solver.timeout_secs.saturating_mul(500_000));
 
     let (outcome, timed_out) = {
-        let result = std::thread::scope(|s| {
-            let h = s.spawn(|| {
-                SmtSolver::parse(&input)
-                    .and_then(|mut solver| solver.solve(max_conflicts.unwrap_or(u64::MAX)))
-            });
-            // Poll for timeout — SMT solver doesn't yet have an external kill switch.
-            let deadline = Instant::now() + timeout;
-            loop {
-                if h.is_finished() {
-                    break h.join().ok().and_then(|r| r.ok());
-                }
-                if Instant::now() >= deadline {
-                    break None;
-                }
-                std::thread::sleep(Duration::from_millis(50));
-            }
+        // Use a channel so we can abandon the solver thread on timeout.
+        // std::thread::scope would block until the thread joins; with a
+        // non-scoped thread + recv_timeout we can move on when the deadline
+        // fires even if the solver is stuck.
+        let input_arc = Arc::new(input);
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let r = SmtSolver::parse(input_arc.as_str())
+                .and_then(|mut solver| solver.solve(max_conflicts.unwrap_or(u64::MAX)));
+            let _ = tx.send(r);
         });
+        let result = rx.recv_timeout(timeout).ok().and_then(|r| r.ok());
         match result {
             None => (Outcome::Unknown, true),
             Some(SmtResult { status: SmtStatus::Sat, .. }) => (Outcome::Sat, false),

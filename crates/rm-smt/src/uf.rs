@@ -14,7 +14,7 @@
 //!
 //! Model for SAT: mapping from term names to their e-class representative name.
 
-use rm_syntax::{lex, parse_program, Atom, SExpr};
+use rm_syntax::{lex, parse_program, preprocess, Atom, SExpr};
 use rm_theory_euf::{CongruenceClosure, EGraph};
 use rustc_hash::FxHashMap;
 
@@ -71,7 +71,7 @@ fn collect_uf_declarations(exprs: &[SExpr]) -> UfDecls {
             }
             "assert" => {
                 if let Some(body) = items.get(1) {
-                    assertions.push(body.clone());
+                    assertions.push(preprocess(body));
                 }
             }
             _ => {}

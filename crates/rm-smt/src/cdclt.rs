@@ -342,7 +342,7 @@ fn parse_smtlib_decls(exprs: &[rm_syntax::SExpr]) -> SmtLibDecls {
             }
             "assert" => {
                 if let Some(body) = items.get(1) {
-                    assertions.push(body.clone());
+                    assertions.push(rm_syntax::preprocess(body));
                 }
             }
             _ => {}
@@ -385,7 +385,7 @@ fn intern_no_declarations(
 
 /// Parse and solve a QF_UFIDL (or QF_UF / QF_IDL) SMT-LIB script.
 /// Returns `(verdict, dl_model)` where `dl_model` maps var names to integer values on SAT.
-pub fn solve_qf_ufidl(text: &str) -> Result<(NoResult, Vec<(String, i64)>), String> {
+pub fn solve_qf_ufidl(text: &str, max_conflicts: u64) -> Result<(NoResult, Vec<(String, i64)>), String> {
     use rm_syntax::{lex, parse_program};
 
     let tokens = lex(text).map_err(|e| e.to_string())?;
@@ -420,16 +420,17 @@ pub fn solve_qf_ufidl(text: &str) -> Result<(NoResult, Vec<(String, i64)>), Stri
         ) {
             FlattenResult::Ok => all_literals.extend(lits),
             FlattenResult::Conflict => return Ok((NoResult::Unsat, Vec::new())),
-            FlattenResult::Disjunction => {
+            // Unsupported in the flat path → try the full CDCL(T) backbone,
+            // which handles Bool atoms, implication, xor, etc.
+            FlattenResult::Disjunction | FlattenResult::Unsupported => {
                 has_disjunctions = true;
                 break;
             }
-            FlattenResult::Unsupported => return Ok((NoResult::Unknown, Vec::new())),
         }
     }
 
     if has_disjunctions {
-        return solve_with_cdclt(text);
+        return solve_with_cdclt(text, max_conflicts);
     }
 
     for lit in &all_literals {
@@ -670,6 +671,14 @@ struct CdclT {
     pending_clauses: Vec<Vec<Literal>>,
     /// The SAT backbone — None until `finalize()` is called.
     sat: Option<CdclSolver>,
+    /// Bool-sorted function applications (e.g. `(f a)` used as assertions) →
+    /// SAT variable. These have no theory constraint; the SAT backbone handles them.
+    bool_prop_atoms: FxHashMap<String, u32>,
+    /// Reverse cache: (lhs, rhs) → sat_var for Eq atoms; avoids duplicating SAT
+    /// variables when the same equality appears multiple times (e.g. after let expansion).
+    eq_atom_cache: FxHashMap<(ENodeId, ENodeId), u32>,
+    /// Reverse cache for Leq/Lt atoms (x, y, c, is_lt) → sat_var.
+    arith_atom_cache: FxHashMap<(u32, u32, i64, bool), u32>,
 }
 
 impl CdclT {
@@ -684,6 +693,9 @@ impl CdclT {
             dl_uf_pairs: Vec::new(),
             pending_clauses: Vec::new(),
             sat: None,
+            bool_prop_atoms: FxHashMap::default(),
+            eq_atom_cache: FxHashMap::default(),
+            arith_atom_cache: FxHashMap::default(),
         }
     }
 
@@ -729,8 +741,14 @@ impl CdclT {
     /// Check the SAT model against the theories.
     /// Returns None on consistency, or a conflict clause on violation.
     fn theory_check(&mut self, model: &rm_sat::Model) -> Option<Vec<Literal>> {
+        // Undo the previous call's assertions first (using the level pushed by that call),
+        // then push a fresh level so the NEXT call can undo this call's assertions.
+        // Order matters: backtrack before push — otherwise we record undo.len()=N as the
+        // target and backtrack immediately undoes nothing.
         self.cc.backtrack_to(0);
         self.dl.backtrack_to(0);
+        self.cc.new_decision_level();
+        self.dl.new_decision_level();
 
         let vars: Vec<u32> = self.atoms.keys().copied().collect();
         for v in vars {
@@ -817,20 +835,39 @@ impl CdclT {
         None
     }
 
-    fn solve(&mut self) -> NoResult {
+    fn solve(&mut self, max_conflicts: u64) -> NoResult {
         self.finalize();
+        let batch = 500_000u64;
+        let mut sat_conflicts = 0u64;
+        // Each theory-check iteration counts as one unit toward the budget even if
+        // the SAT solver finds a model without consuming SAT conflicts.  Without this,
+        // a formula whose theory keeps generating short unit-clause conflicts can loop
+        // forever because BudgetExceeded (and its `spent` increment) is never reached.
+        let mut theory_iters = 0u64;
         loop {
+            let budget_ok = sat_conflicts < max_conflicts
+                && theory_iters < max_conflicts.saturating_add(100);
+            if !budget_ok {
+                return NoResult::Unknown;
+            }
             // Scope the sat borrow so we can call self.theory_check after.
             let sat_result = {
                 let sat = self.sat.as_mut().unwrap();
-                match sat.solve(&[], 500_000) {
+                let remaining = max_conflicts.saturating_sub(sat_conflicts);
+                let this_batch = batch.min(remaining.max(1));
+                let r = sat.solve(&[], this_batch);
+                match r {
                     SolveResult::Unsat => return NoResult::Unsat,
-                    SolveResult::BudgetExceeded => None,
+                    SolveResult::BudgetExceeded => {
+                        sat_conflicts += this_batch;
+                        None
+                    }
                     SolveResult::Unknown => return NoResult::Unknown,
                     SolveResult::Sat(ref model) => Some(model.clone()),
                 }
             };
             if let Some(model) = sat_result {
+                theory_iters += 1;
                 if let Some(conflict) = self.theory_check(&model) {
                     if conflict.is_empty() {
                         return NoResult::Unsat;
@@ -878,7 +915,7 @@ fn mk_conflict_dl(e: DlError) -> Vec<Literal> {
 
 /// Lazy CDCL(T) path for formulas with disjunctions.
 /// Returns the verdict and, on SAT, a DL model (var_name → integer value).
-fn solve_with_cdclt(text: &str) -> Result<(NoResult, Vec<(String, i64)>), String> {
+fn solve_with_cdclt(text: &str, max_conflicts: u64) -> Result<(NoResult, Vec<(String, i64)>), String> {
     use rm_syntax::{lex, parse_program};
 
     let tokens = lex(text).map_err(|e| e.to_string())?;
@@ -921,7 +958,7 @@ fn solve_with_cdclt(text: &str) -> Result<(NoResult, Vec<(String, i64)>), String
         }
     }
 
-    let verdict = cdclt.solve();
+    let verdict = cdclt.solve(max_conflicts);
     let dl_model = if verdict == NoResult::Sat {
         let mut model: Vec<(String, i64)> = cdclt
             .dl_var_names
@@ -1020,15 +1057,51 @@ fn encode_bool_cdclt(
                     }
                     let lid = intern_uf_term_cdclt(lhs, cdclt, uf_cache, uf_funcs)?;
                     let rid = intern_uf_term_cdclt(rhs, cdclt, uf_cache, uf_funcs)?;
-                    let v = cdclt.alloc_var();
-                    cdclt
-                        .atoms
-                        .insert(v, BackboneAtom::Eq { lhs: lid, rhs: rid });
+                    let key = if lid <= rid { (lid, rid) } else { (rid, lid) };
+                    let v = if let Some(&cached) = cdclt.eq_atom_cache.get(&key) {
+                        cached
+                    } else {
+                        let v = cdclt.alloc_var();
+                        cdclt.atoms.insert(v, BackboneAtom::Eq { lhs: lid, rhs: rid });
+                        cdclt.eq_atom_cache.insert(key, v);
+                        v
+                    };
                     Ok(Literal::positive(v))
                 }
                 "<=" | "<" | ">=" | ">" => encode_arith_lit_cdclt(items, op, cdclt, dl_vars),
-                _ => Err(()),
+                // Bool-sorted function application used as a propositional atom.
+                // We only admit it if the arity matches a declared UF function.
+                fname => {
+                    let args = &items[1..];
+                    let arity = uf_funcs.get(fname).copied();
+                    if arity == Some(args.len() as u32) || (arity.is_none() && args.is_empty()) {
+                        // Stable key for this application.
+                        let key = sexpr_key(expr);
+                        let v = if let Some(&existing) = cdclt.bool_prop_atoms.get(&key) {
+                            existing
+                        } else {
+                            let v = cdclt.alloc_var();
+                            cdclt.bool_prop_atoms.insert(key, v);
+                            v
+                        };
+                        Ok(Literal::positive(v))
+                    } else {
+                        Err(())
+                    }
+                }
             }
+        }
+        // A bare symbol that is a Bool constant (0-arity UF function).
+        SExpr::Atom(Atom::Symbol(name)) if uf_funcs.get(name.as_str()) == Some(&0) => {
+            let key = name.clone();
+            let v = if let Some(&existing) = cdclt.bool_prop_atoms.get(&key) {
+                existing
+            } else {
+                let v = cdclt.alloc_var();
+                cdclt.bool_prop_atoms.insert(key, v);
+                v
+            };
+            Ok(Literal::positive(v))
         }
         _ => Err(()),
     }
@@ -1071,13 +1144,20 @@ fn encode_arith_lit_cdclt(
         return Err(());
     };
 
-    let v = cdclt.alloc_var();
-    let atom = if is_lt {
-        BackboneAtom::Lt { x, y, c }
+    let cache_key = (x, y, c, is_lt);
+    let v = if let Some(&cached) = cdclt.arith_atom_cache.get(&cache_key) {
+        cached
     } else {
-        BackboneAtom::Leq { x, y, c }
+        let v = cdclt.alloc_var();
+        let atom = if is_lt {
+            BackboneAtom::Lt { x, y, c }
+        } else {
+            BackboneAtom::Leq { x, y, c }
+        };
+        cdclt.atoms.insert(v, atom);
+        cdclt.arith_atom_cache.insert(cache_key, v);
+        v
     };
-    cdclt.atoms.insert(v, atom);
     Ok(Literal::positive(v))
 }
 
@@ -1210,7 +1290,7 @@ mod tests {
     use super::*;
 
     fn check(text: &str) -> NoResult {
-        solve_qf_ufidl(text).expect("parse error").0
+        solve_qf_ufidl(text, u64::MAX).expect("parse error").0
     }
 
     // ---- Pure UF ----
@@ -1470,6 +1550,7 @@ mod tests {
              (assert (<= (- x y) 3))
              (assert (not (= x y)))
              (check-sat)",
+            u64::MAX,
         )
         .unwrap();
         assert_eq!(verdict, NoResult::Sat);

@@ -2,11 +2,13 @@
 
 pub mod ast;
 pub mod parser;
+pub mod preprocess;
 pub mod s_expr;
 pub mod sort;
 
 pub use ast::{BvOp, Term, TermInner};
 pub use parser::{Command, Script};
+pub use preprocess::preprocess;
 pub use s_expr::{lex, parse_expr, parse_program, Atom, SExpr, Token};
 pub use sort::SortExpr;
 
