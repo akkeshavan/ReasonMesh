@@ -1367,6 +1367,7 @@ dependencies = [
  "rm-gpu",
  "rm-proof",
  "rm-sat",
+ "rm-smt",
  "rm-telemetry",
  "rm-worker",
  "serde",

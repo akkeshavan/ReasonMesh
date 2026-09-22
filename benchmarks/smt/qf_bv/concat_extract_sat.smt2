@@ -1,0 +1,10 @@
+; expected: sat
+(set-logic QF_BV)
+(declare-fun hi () (_ BitVec 8))
+(declare-fun lo () (_ BitVec 8))
+(declare-fun w () (_ BitVec 16))
+(assert (= w (concat hi lo)))
+(assert (= ((_ extract 15 8) w) hi))
+(assert (= ((_ extract 7 0) w) lo))
+(assert (not (= hi (_ bv0 8))))
+(check-sat)

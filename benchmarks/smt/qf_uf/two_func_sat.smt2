@@ -1,0 +1,11 @@
+; expected: unsat
+(set-logic QF_UF)
+(declare-sort U 0)
+(declare-fun f (U U) U)
+(declare-fun a () U)
+(declare-fun b () U)
+(declare-fun c () U)
+(assert (= a b))
+(assert (= b c))
+(assert (not (= (f a c) (f b b))))
+(check-sat)

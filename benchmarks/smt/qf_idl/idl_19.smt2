@@ -1,0 +1,13 @@
+; expected: sat
+(set-logic QF_IDL)
+(declare-fun a () Int)
+(declare-fun b () Int)
+(declare-fun c () Int)
+(declare-fun d () Int)
+(declare-fun e () Int)
+(assert (<= (- a b) 1))
+(assert (<= (- b c) 1))
+(assert (<= (- c d) 1))
+(assert (<= (- d e) 1))
+(assert (<= (- e a) -3))
+(check-sat)

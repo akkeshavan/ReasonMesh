@@ -1,0 +1,13 @@
+; expected: unsat  [max sum=9]
+(set-logic QF_LIA)
+(declare-fun a () Int)
+(declare-fun b () Int)
+(declare-fun c () Int)
+(assert (= (+ a b c) 10))
+(assert (>= a 0))
+(assert (>= b 0))
+(assert (>= c 0))
+(assert (<= a 3))
+(assert (<= b 3))
+(assert (<= c 3))
+(check-sat)

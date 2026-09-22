@@ -35,1835 +35,1835 @@ binary = "z3"
 
 [[problems]]
 name = "uf50/uf50-01"
-file = "benchmarks/satlib/uf50/uf50-01.cnf"
+file = "../benchmarks/satlib/uf50/uf50-01.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf50/uf50-0143"
-file = "benchmarks/satlib/uf50/uf50-0143.cnf"
+file = "../benchmarks/satlib/uf50/uf50-0143.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf50/uf50-0189"
-file = "benchmarks/satlib/uf50/uf50-0189.cnf"
+file = "../benchmarks/satlib/uf50/uf50-0189.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf50/uf50-0233"
-file = "benchmarks/satlib/uf50/uf50-0233.cnf"
+file = "../benchmarks/satlib/uf50/uf50-0233.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf50/uf50-0279"
-file = "benchmarks/satlib/uf50/uf50-0279.cnf"
+file = "../benchmarks/satlib/uf50/uf50-0279.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf50/uf50-0323"
-file = "benchmarks/satlib/uf50/uf50-0323.cnf"
+file = "../benchmarks/satlib/uf50/uf50-0323.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf50/uf50-0369"
-file = "benchmarks/satlib/uf50/uf50-0369.cnf"
+file = "../benchmarks/satlib/uf50/uf50-0369.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf50/uf50-0413"
-file = "benchmarks/satlib/uf50/uf50-0413.cnf"
+file = "../benchmarks/satlib/uf50/uf50-0413.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf50/uf50-0459"
-file = "benchmarks/satlib/uf50/uf50-0459.cnf"
+file = "../benchmarks/satlib/uf50/uf50-0459.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf50/uf50-0503"
-file = "benchmarks/satlib/uf50/uf50-0503.cnf"
+file = "../benchmarks/satlib/uf50/uf50-0503.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf50/uf50-0549"
-file = "benchmarks/satlib/uf50/uf50-0549.cnf"
+file = "../benchmarks/satlib/uf50/uf50-0549.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf50/uf50-0594"
-file = "benchmarks/satlib/uf50/uf50-0594.cnf"
+file = "../benchmarks/satlib/uf50/uf50-0594.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf50/uf50-0639"
-file = "benchmarks/satlib/uf50/uf50-0639.cnf"
+file = "../benchmarks/satlib/uf50/uf50-0639.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf50/uf50-0684"
-file = "benchmarks/satlib/uf50/uf50-0684.cnf"
+file = "../benchmarks/satlib/uf50/uf50-0684.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf50/uf50-0729"
-file = "benchmarks/satlib/uf50/uf50-0729.cnf"
+file = "../benchmarks/satlib/uf50/uf50-0729.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf50/uf50-0774"
-file = "benchmarks/satlib/uf50/uf50-0774.cnf"
+file = "../benchmarks/satlib/uf50/uf50-0774.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf50/uf50-0819"
-file = "benchmarks/satlib/uf50/uf50-0819.cnf"
+file = "../benchmarks/satlib/uf50/uf50-0819.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf50/uf50-0864"
-file = "benchmarks/satlib/uf50/uf50-0864.cnf"
+file = "../benchmarks/satlib/uf50/uf50-0864.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf50/uf50-0909"
-file = "benchmarks/satlib/uf50/uf50-0909.cnf"
+file = "../benchmarks/satlib/uf50/uf50-0909.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf50/uf50-0954"
-file = "benchmarks/satlib/uf50/uf50-0954.cnf"
+file = "../benchmarks/satlib/uf50/uf50-0954.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uuf50/uuf50-01"
-file = "benchmarks/satlib/uuf50/uuf50-01.cnf"
+file = "../benchmarks/satlib/uuf50/uuf50-01.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf50/uuf50-0143"
-file = "benchmarks/satlib/uuf50/uuf50-0143.cnf"
+file = "../benchmarks/satlib/uuf50/uuf50-0143.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf50/uuf50-0189"
-file = "benchmarks/satlib/uuf50/uuf50-0189.cnf"
+file = "../benchmarks/satlib/uuf50/uuf50-0189.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf50/uuf50-0233"
-file = "benchmarks/satlib/uuf50/uuf50-0233.cnf"
+file = "../benchmarks/satlib/uuf50/uuf50-0233.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf50/uuf50-0279"
-file = "benchmarks/satlib/uuf50/uuf50-0279.cnf"
+file = "../benchmarks/satlib/uuf50/uuf50-0279.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf50/uuf50-0323"
-file = "benchmarks/satlib/uuf50/uuf50-0323.cnf"
+file = "../benchmarks/satlib/uuf50/uuf50-0323.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf50/uuf50-0369"
-file = "benchmarks/satlib/uuf50/uuf50-0369.cnf"
+file = "../benchmarks/satlib/uuf50/uuf50-0369.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf50/uuf50-0413"
-file = "benchmarks/satlib/uuf50/uuf50-0413.cnf"
+file = "../benchmarks/satlib/uuf50/uuf50-0413.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf50/uuf50-0459"
-file = "benchmarks/satlib/uuf50/uuf50-0459.cnf"
+file = "../benchmarks/satlib/uuf50/uuf50-0459.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf50/uuf50-0503"
-file = "benchmarks/satlib/uuf50/uuf50-0503.cnf"
+file = "../benchmarks/satlib/uuf50/uuf50-0503.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf50/uuf50-0549"
-file = "benchmarks/satlib/uuf50/uuf50-0549.cnf"
+file = "../benchmarks/satlib/uuf50/uuf50-0549.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf50/uuf50-0594"
-file = "benchmarks/satlib/uuf50/uuf50-0594.cnf"
+file = "../benchmarks/satlib/uuf50/uuf50-0594.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf50/uuf50-0639"
-file = "benchmarks/satlib/uuf50/uuf50-0639.cnf"
+file = "../benchmarks/satlib/uuf50/uuf50-0639.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf50/uuf50-0684"
-file = "benchmarks/satlib/uuf50/uuf50-0684.cnf"
+file = "../benchmarks/satlib/uuf50/uuf50-0684.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf50/uuf50-0729"
-file = "benchmarks/satlib/uuf50/uuf50-0729.cnf"
+file = "../benchmarks/satlib/uuf50/uuf50-0729.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf50/uuf50-0774"
-file = "benchmarks/satlib/uuf50/uuf50-0774.cnf"
+file = "../benchmarks/satlib/uuf50/uuf50-0774.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf50/uuf50-0819"
-file = "benchmarks/satlib/uuf50/uuf50-0819.cnf"
+file = "../benchmarks/satlib/uuf50/uuf50-0819.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf50/uuf50-0864"
-file = "benchmarks/satlib/uuf50/uuf50-0864.cnf"
+file = "../benchmarks/satlib/uuf50/uuf50-0864.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf50/uuf50-0909"
-file = "benchmarks/satlib/uuf50/uuf50-0909.cnf"
+file = "../benchmarks/satlib/uuf50/uuf50-0909.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf50/uuf50-0954"
-file = "benchmarks/satlib/uuf50/uuf50-0954.cnf"
+file = "../benchmarks/satlib/uuf50/uuf50-0954.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uf100/uf100-01"
-file = "benchmarks/satlib/uf100/uf100-01.cnf"
+file = "../benchmarks/satlib/uf100/uf100-01.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf100/uf100-0143"
-file = "benchmarks/satlib/uf100/uf100-0143.cnf"
+file = "../benchmarks/satlib/uf100/uf100-0143.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf100/uf100-0189"
-file = "benchmarks/satlib/uf100/uf100-0189.cnf"
+file = "../benchmarks/satlib/uf100/uf100-0189.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf100/uf100-0233"
-file = "benchmarks/satlib/uf100/uf100-0233.cnf"
+file = "../benchmarks/satlib/uf100/uf100-0233.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf100/uf100-0279"
-file = "benchmarks/satlib/uf100/uf100-0279.cnf"
+file = "../benchmarks/satlib/uf100/uf100-0279.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf100/uf100-0323"
-file = "benchmarks/satlib/uf100/uf100-0323.cnf"
+file = "../benchmarks/satlib/uf100/uf100-0323.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf100/uf100-0369"
-file = "benchmarks/satlib/uf100/uf100-0369.cnf"
+file = "../benchmarks/satlib/uf100/uf100-0369.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf100/uf100-0413"
-file = "benchmarks/satlib/uf100/uf100-0413.cnf"
+file = "../benchmarks/satlib/uf100/uf100-0413.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf100/uf100-0459"
-file = "benchmarks/satlib/uf100/uf100-0459.cnf"
+file = "../benchmarks/satlib/uf100/uf100-0459.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf100/uf100-0503"
-file = "benchmarks/satlib/uf100/uf100-0503.cnf"
+file = "../benchmarks/satlib/uf100/uf100-0503.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf100/uf100-0549"
-file = "benchmarks/satlib/uf100/uf100-0549.cnf"
+file = "../benchmarks/satlib/uf100/uf100-0549.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf100/uf100-0594"
-file = "benchmarks/satlib/uf100/uf100-0594.cnf"
+file = "../benchmarks/satlib/uf100/uf100-0594.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf100/uf100-0639"
-file = "benchmarks/satlib/uf100/uf100-0639.cnf"
+file = "../benchmarks/satlib/uf100/uf100-0639.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf100/uf100-0684"
-file = "benchmarks/satlib/uf100/uf100-0684.cnf"
+file = "../benchmarks/satlib/uf100/uf100-0684.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf100/uf100-0729"
-file = "benchmarks/satlib/uf100/uf100-0729.cnf"
+file = "../benchmarks/satlib/uf100/uf100-0729.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf100/uf100-0774"
-file = "benchmarks/satlib/uf100/uf100-0774.cnf"
+file = "../benchmarks/satlib/uf100/uf100-0774.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf100/uf100-0819"
-file = "benchmarks/satlib/uf100/uf100-0819.cnf"
+file = "../benchmarks/satlib/uf100/uf100-0819.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf100/uf100-0864"
-file = "benchmarks/satlib/uf100/uf100-0864.cnf"
+file = "../benchmarks/satlib/uf100/uf100-0864.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf100/uf100-0909"
-file = "benchmarks/satlib/uf100/uf100-0909.cnf"
+file = "../benchmarks/satlib/uf100/uf100-0909.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf100/uf100-0954"
-file = "benchmarks/satlib/uf100/uf100-0954.cnf"
+file = "../benchmarks/satlib/uf100/uf100-0954.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uuf100/uuf100-01"
-file = "benchmarks/satlib/uuf100/uuf100-01.cnf"
+file = "../benchmarks/satlib/uuf100/uuf100-01.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf100/uuf100-0143"
-file = "benchmarks/satlib/uuf100/uuf100-0143.cnf"
+file = "../benchmarks/satlib/uuf100/uuf100-0143.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf100/uuf100-0189"
-file = "benchmarks/satlib/uuf100/uuf100-0189.cnf"
+file = "../benchmarks/satlib/uuf100/uuf100-0189.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf100/uuf100-0233"
-file = "benchmarks/satlib/uuf100/uuf100-0233.cnf"
+file = "../benchmarks/satlib/uuf100/uuf100-0233.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf100/uuf100-0279"
-file = "benchmarks/satlib/uuf100/uuf100-0279.cnf"
+file = "../benchmarks/satlib/uuf100/uuf100-0279.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf100/uuf100-0323"
-file = "benchmarks/satlib/uuf100/uuf100-0323.cnf"
+file = "../benchmarks/satlib/uuf100/uuf100-0323.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf100/uuf100-0369"
-file = "benchmarks/satlib/uuf100/uuf100-0369.cnf"
+file = "../benchmarks/satlib/uuf100/uuf100-0369.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf100/uuf100-0413"
-file = "benchmarks/satlib/uuf100/uuf100-0413.cnf"
+file = "../benchmarks/satlib/uuf100/uuf100-0413.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf100/uuf100-0459"
-file = "benchmarks/satlib/uuf100/uuf100-0459.cnf"
+file = "../benchmarks/satlib/uuf100/uuf100-0459.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf100/uuf100-0503"
-file = "benchmarks/satlib/uuf100/uuf100-0503.cnf"
+file = "../benchmarks/satlib/uuf100/uuf100-0503.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf100/uuf100-0549"
-file = "benchmarks/satlib/uuf100/uuf100-0549.cnf"
+file = "../benchmarks/satlib/uuf100/uuf100-0549.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf100/uuf100-0594"
-file = "benchmarks/satlib/uuf100/uuf100-0594.cnf"
+file = "../benchmarks/satlib/uuf100/uuf100-0594.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf100/uuf100-0639"
-file = "benchmarks/satlib/uuf100/uuf100-0639.cnf"
+file = "../benchmarks/satlib/uuf100/uuf100-0639.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf100/uuf100-0684"
-file = "benchmarks/satlib/uuf100/uuf100-0684.cnf"
+file = "../benchmarks/satlib/uuf100/uuf100-0684.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf100/uuf100-0729"
-file = "benchmarks/satlib/uuf100/uuf100-0729.cnf"
+file = "../benchmarks/satlib/uuf100/uuf100-0729.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf100/uuf100-0774"
-file = "benchmarks/satlib/uuf100/uuf100-0774.cnf"
+file = "../benchmarks/satlib/uuf100/uuf100-0774.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf100/uuf100-0819"
-file = "benchmarks/satlib/uuf100/uuf100-0819.cnf"
+file = "../benchmarks/satlib/uuf100/uuf100-0819.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf100/uuf100-0864"
-file = "benchmarks/satlib/uuf100/uuf100-0864.cnf"
+file = "../benchmarks/satlib/uuf100/uuf100-0864.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf100/uuf100-0909"
-file = "benchmarks/satlib/uuf100/uuf100-0909.cnf"
+file = "../benchmarks/satlib/uuf100/uuf100-0909.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf100/uuf100-0954"
-file = "benchmarks/satlib/uuf100/uuf100-0954.cnf"
+file = "../benchmarks/satlib/uuf100/uuf100-0954.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uf150/uf150-01"
-file = "benchmarks/satlib/uf150/uf150-01.cnf"
+file = "../benchmarks/satlib/uf150/uf150-01.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf150/uf150-013"
-file = "benchmarks/satlib/uf150/uf150-013.cnf"
+file = "../benchmarks/satlib/uf150/uf150-013.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf150/uf150-018"
-file = "benchmarks/satlib/uf150/uf150-018.cnf"
+file = "../benchmarks/satlib/uf150/uf150-018.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf150/uf150-022"
-file = "benchmarks/satlib/uf150/uf150-022.cnf"
+file = "../benchmarks/satlib/uf150/uf150-022.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf150/uf150-027"
-file = "benchmarks/satlib/uf150/uf150-027.cnf"
+file = "../benchmarks/satlib/uf150/uf150-027.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf150/uf150-031"
-file = "benchmarks/satlib/uf150/uf150-031.cnf"
+file = "../benchmarks/satlib/uf150/uf150-031.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf150/uf150-036"
-file = "benchmarks/satlib/uf150/uf150-036.cnf"
+file = "../benchmarks/satlib/uf150/uf150-036.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf150/uf150-040"
-file = "benchmarks/satlib/uf150/uf150-040.cnf"
+file = "../benchmarks/satlib/uf150/uf150-040.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf150/uf150-045"
-file = "benchmarks/satlib/uf150/uf150-045.cnf"
+file = "../benchmarks/satlib/uf150/uf150-045.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf150/uf150-05"
-file = "benchmarks/satlib/uf150/uf150-05.cnf"
+file = "../benchmarks/satlib/uf150/uf150-05.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf150/uf150-054"
-file = "benchmarks/satlib/uf150/uf150-054.cnf"
+file = "../benchmarks/satlib/uf150/uf150-054.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf150/uf150-059"
-file = "benchmarks/satlib/uf150/uf150-059.cnf"
+file = "../benchmarks/satlib/uf150/uf150-059.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf150/uf150-063"
-file = "benchmarks/satlib/uf150/uf150-063.cnf"
+file = "../benchmarks/satlib/uf150/uf150-063.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf150/uf150-068"
-file = "benchmarks/satlib/uf150/uf150-068.cnf"
+file = "../benchmarks/satlib/uf150/uf150-068.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf150/uf150-072"
-file = "benchmarks/satlib/uf150/uf150-072.cnf"
+file = "../benchmarks/satlib/uf150/uf150-072.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf150/uf150-077"
-file = "benchmarks/satlib/uf150/uf150-077.cnf"
+file = "../benchmarks/satlib/uf150/uf150-077.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf150/uf150-081"
-file = "benchmarks/satlib/uf150/uf150-081.cnf"
+file = "../benchmarks/satlib/uf150/uf150-081.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf150/uf150-086"
-file = "benchmarks/satlib/uf150/uf150-086.cnf"
+file = "../benchmarks/satlib/uf150/uf150-086.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf150/uf150-090"
-file = "benchmarks/satlib/uf150/uf150-090.cnf"
+file = "../benchmarks/satlib/uf150/uf150-090.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf150/uf150-095"
-file = "benchmarks/satlib/uf150/uf150-095.cnf"
+file = "../benchmarks/satlib/uf150/uf150-095.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uuf150/uuf150-01"
-file = "benchmarks/satlib/uuf150/uuf150-01.cnf"
+file = "../benchmarks/satlib/uuf150/uuf150-01.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf150/uuf150-013"
-file = "benchmarks/satlib/uuf150/uuf150-013.cnf"
+file = "../benchmarks/satlib/uuf150/uuf150-013.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf150/uuf150-018"
-file = "benchmarks/satlib/uuf150/uuf150-018.cnf"
+file = "../benchmarks/satlib/uuf150/uuf150-018.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf150/uuf150-022"
-file = "benchmarks/satlib/uuf150/uuf150-022.cnf"
+file = "../benchmarks/satlib/uuf150/uuf150-022.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf150/uuf150-027"
-file = "benchmarks/satlib/uuf150/uuf150-027.cnf"
+file = "../benchmarks/satlib/uuf150/uuf150-027.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf150/uuf150-031"
-file = "benchmarks/satlib/uuf150/uuf150-031.cnf"
+file = "../benchmarks/satlib/uuf150/uuf150-031.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf150/uuf150-036"
-file = "benchmarks/satlib/uuf150/uuf150-036.cnf"
+file = "../benchmarks/satlib/uuf150/uuf150-036.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf150/uuf150-040"
-file = "benchmarks/satlib/uuf150/uuf150-040.cnf"
+file = "../benchmarks/satlib/uuf150/uuf150-040.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf150/uuf150-045"
-file = "benchmarks/satlib/uuf150/uuf150-045.cnf"
+file = "../benchmarks/satlib/uuf150/uuf150-045.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf150/uuf150-05"
-file = "benchmarks/satlib/uuf150/uuf150-05.cnf"
+file = "../benchmarks/satlib/uuf150/uuf150-05.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf150/uuf150-054"
-file = "benchmarks/satlib/uuf150/uuf150-054.cnf"
+file = "../benchmarks/satlib/uuf150/uuf150-054.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf150/uuf150-059"
-file = "benchmarks/satlib/uuf150/uuf150-059.cnf"
+file = "../benchmarks/satlib/uuf150/uuf150-059.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf150/uuf150-063"
-file = "benchmarks/satlib/uuf150/uuf150-063.cnf"
+file = "../benchmarks/satlib/uuf150/uuf150-063.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf150/uuf150-068"
-file = "benchmarks/satlib/uuf150/uuf150-068.cnf"
+file = "../benchmarks/satlib/uuf150/uuf150-068.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf150/uuf150-072"
-file = "benchmarks/satlib/uuf150/uuf150-072.cnf"
+file = "../benchmarks/satlib/uuf150/uuf150-072.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf150/uuf150-077"
-file = "benchmarks/satlib/uuf150/uuf150-077.cnf"
+file = "../benchmarks/satlib/uuf150/uuf150-077.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf150/uuf150-081"
-file = "benchmarks/satlib/uuf150/uuf150-081.cnf"
+file = "../benchmarks/satlib/uuf150/uuf150-081.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf150/uuf150-086"
-file = "benchmarks/satlib/uuf150/uuf150-086.cnf"
+file = "../benchmarks/satlib/uuf150/uuf150-086.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf150/uuf150-090"
-file = "benchmarks/satlib/uuf150/uuf150-090.cnf"
+file = "../benchmarks/satlib/uuf150/uuf150-090.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf150/uuf150-095"
-file = "benchmarks/satlib/uuf150/uuf150-095.cnf"
+file = "../benchmarks/satlib/uuf150/uuf150-095.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf200/uuf200-01"
-file = "benchmarks/satlib/uuf200/uuf200-01.cnf"
+file = "../benchmarks/satlib/uuf200/uuf200-01.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf200/uuf200-013"
-file = "benchmarks/satlib/uuf200/uuf200-013.cnf"
+file = "../benchmarks/satlib/uuf200/uuf200-013.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf200/uuf200-017"
-file = "benchmarks/satlib/uuf200/uuf200-017.cnf"
+file = "../benchmarks/satlib/uuf200/uuf200-017.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf200/uuf200-020"
-file = "benchmarks/satlib/uuf200/uuf200-020.cnf"
+file = "../benchmarks/satlib/uuf200/uuf200-020.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf200/uuf200-024"
-file = "benchmarks/satlib/uuf200/uuf200-024.cnf"
+file = "../benchmarks/satlib/uuf200/uuf200-024.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf200/uuf200-028"
-file = "benchmarks/satlib/uuf200/uuf200-028.cnf"
+file = "../benchmarks/satlib/uuf200/uuf200-028.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf200/uuf200-031"
-file = "benchmarks/satlib/uuf200/uuf200-031.cnf"
+file = "../benchmarks/satlib/uuf200/uuf200-031.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf200/uuf200-035"
-file = "benchmarks/satlib/uuf200/uuf200-035.cnf"
+file = "../benchmarks/satlib/uuf200/uuf200-035.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf200/uuf200-039"
-file = "benchmarks/satlib/uuf200/uuf200-039.cnf"
+file = "../benchmarks/satlib/uuf200/uuf200-039.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf200/uuf200-042"
-file = "benchmarks/satlib/uuf200/uuf200-042.cnf"
+file = "../benchmarks/satlib/uuf200/uuf200-042.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf200/uuf200-046"
-file = "benchmarks/satlib/uuf200/uuf200-046.cnf"
+file = "../benchmarks/satlib/uuf200/uuf200-046.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf200/uuf200-05"
-file = "benchmarks/satlib/uuf200/uuf200-05.cnf"
+file = "../benchmarks/satlib/uuf200/uuf200-05.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf200/uuf200-053"
-file = "benchmarks/satlib/uuf200/uuf200-053.cnf"
+file = "../benchmarks/satlib/uuf200/uuf200-053.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf200/uuf200-057"
-file = "benchmarks/satlib/uuf200/uuf200-057.cnf"
+file = "../benchmarks/satlib/uuf200/uuf200-057.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf200/uuf200-060"
-file = "benchmarks/satlib/uuf200/uuf200-060.cnf"
+file = "../benchmarks/satlib/uuf200/uuf200-060.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf200/uuf200-064"
-file = "benchmarks/satlib/uuf200/uuf200-064.cnf"
+file = "../benchmarks/satlib/uuf200/uuf200-064.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf200/uuf200-068"
-file = "benchmarks/satlib/uuf200/uuf200-068.cnf"
+file = "../benchmarks/satlib/uuf200/uuf200-068.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf200/uuf200-071"
-file = "benchmarks/satlib/uuf200/uuf200-071.cnf"
+file = "../benchmarks/satlib/uuf200/uuf200-071.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf200/uuf200-075"
-file = "benchmarks/satlib/uuf200/uuf200-075.cnf"
+file = "../benchmarks/satlib/uuf200/uuf200-075.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf200/uuf200-079"
-file = "benchmarks/satlib/uuf200/uuf200-079.cnf"
+file = "../benchmarks/satlib/uuf200/uuf200-079.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uf250/uf250-01"
-file = "benchmarks/satlib/uf250/uf250-01.cnf"
+file = "../benchmarks/satlib/uf250/uf250-01.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf250/uf250-013"
-file = "benchmarks/satlib/uf250/uf250-013.cnf"
+file = "../benchmarks/satlib/uf250/uf250-013.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf250/uf250-018"
-file = "benchmarks/satlib/uf250/uf250-018.cnf"
+file = "../benchmarks/satlib/uf250/uf250-018.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf250/uf250-022"
-file = "benchmarks/satlib/uf250/uf250-022.cnf"
+file = "../benchmarks/satlib/uf250/uf250-022.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf250/uf250-027"
-file = "benchmarks/satlib/uf250/uf250-027.cnf"
+file = "../benchmarks/satlib/uf250/uf250-027.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf250/uf250-031"
-file = "benchmarks/satlib/uf250/uf250-031.cnf"
+file = "../benchmarks/satlib/uf250/uf250-031.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf250/uf250-036"
-file = "benchmarks/satlib/uf250/uf250-036.cnf"
+file = "../benchmarks/satlib/uf250/uf250-036.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf250/uf250-040"
-file = "benchmarks/satlib/uf250/uf250-040.cnf"
+file = "../benchmarks/satlib/uf250/uf250-040.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf250/uf250-045"
-file = "benchmarks/satlib/uf250/uf250-045.cnf"
+file = "../benchmarks/satlib/uf250/uf250-045.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf250/uf250-05"
-file = "benchmarks/satlib/uf250/uf250-05.cnf"
+file = "../benchmarks/satlib/uf250/uf250-05.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf250/uf250-054"
-file = "benchmarks/satlib/uf250/uf250-054.cnf"
+file = "../benchmarks/satlib/uf250/uf250-054.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf250/uf250-059"
-file = "benchmarks/satlib/uf250/uf250-059.cnf"
+file = "../benchmarks/satlib/uf250/uf250-059.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf250/uf250-063"
-file = "benchmarks/satlib/uf250/uf250-063.cnf"
+file = "../benchmarks/satlib/uf250/uf250-063.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf250/uf250-068"
-file = "benchmarks/satlib/uf250/uf250-068.cnf"
+file = "../benchmarks/satlib/uf250/uf250-068.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf250/uf250-072"
-file = "benchmarks/satlib/uf250/uf250-072.cnf"
+file = "../benchmarks/satlib/uf250/uf250-072.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf250/uf250-077"
-file = "benchmarks/satlib/uf250/uf250-077.cnf"
+file = "../benchmarks/satlib/uf250/uf250-077.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf250/uf250-081"
-file = "benchmarks/satlib/uf250/uf250-081.cnf"
+file = "../benchmarks/satlib/uf250/uf250-081.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf250/uf250-086"
-file = "benchmarks/satlib/uf250/uf250-086.cnf"
+file = "../benchmarks/satlib/uf250/uf250-086.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf250/uf250-090"
-file = "benchmarks/satlib/uf250/uf250-090.cnf"
+file = "../benchmarks/satlib/uf250/uf250-090.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uf250/uf250-095"
-file = "benchmarks/satlib/uf250/uf250-095.cnf"
+file = "../benchmarks/satlib/uf250/uf250-095.cnf"
 expect = "sat"
 
 [[problems]]
 name = "uuf250/uuf250-01"
-file = "benchmarks/satlib/uuf250/uuf250-01.cnf"
+file = "../benchmarks/satlib/uuf250/uuf250-01.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf250/uuf250-013"
-file = "benchmarks/satlib/uuf250/uuf250-013.cnf"
+file = "../benchmarks/satlib/uuf250/uuf250-013.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf250/uuf250-018"
-file = "benchmarks/satlib/uuf250/uuf250-018.cnf"
+file = "../benchmarks/satlib/uuf250/uuf250-018.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf250/uuf250-022"
-file = "benchmarks/satlib/uuf250/uuf250-022.cnf"
+file = "../benchmarks/satlib/uuf250/uuf250-022.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf250/uuf250-027"
-file = "benchmarks/satlib/uuf250/uuf250-027.cnf"
+file = "../benchmarks/satlib/uuf250/uuf250-027.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf250/uuf250-031"
-file = "benchmarks/satlib/uuf250/uuf250-031.cnf"
+file = "../benchmarks/satlib/uuf250/uuf250-031.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf250/uuf250-036"
-file = "benchmarks/satlib/uuf250/uuf250-036.cnf"
+file = "../benchmarks/satlib/uuf250/uuf250-036.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf250/uuf250-040"
-file = "benchmarks/satlib/uuf250/uuf250-040.cnf"
+file = "../benchmarks/satlib/uuf250/uuf250-040.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf250/uuf250-045"
-file = "benchmarks/satlib/uuf250/uuf250-045.cnf"
+file = "../benchmarks/satlib/uuf250/uuf250-045.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf250/uuf250-05"
-file = "benchmarks/satlib/uuf250/uuf250-05.cnf"
+file = "../benchmarks/satlib/uuf250/uuf250-05.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf250/uuf250-054"
-file = "benchmarks/satlib/uuf250/uuf250-054.cnf"
+file = "../benchmarks/satlib/uuf250/uuf250-054.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf250/uuf250-059"
-file = "benchmarks/satlib/uuf250/uuf250-059.cnf"
+file = "../benchmarks/satlib/uuf250/uuf250-059.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf250/uuf250-063"
-file = "benchmarks/satlib/uuf250/uuf250-063.cnf"
+file = "../benchmarks/satlib/uuf250/uuf250-063.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf250/uuf250-068"
-file = "benchmarks/satlib/uuf250/uuf250-068.cnf"
+file = "../benchmarks/satlib/uuf250/uuf250-068.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf250/uuf250-072"
-file = "benchmarks/satlib/uuf250/uuf250-072.cnf"
+file = "../benchmarks/satlib/uuf250/uuf250-072.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf250/uuf250-077"
-file = "benchmarks/satlib/uuf250/uuf250-077.cnf"
+file = "../benchmarks/satlib/uuf250/uuf250-077.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf250/uuf250-081"
-file = "benchmarks/satlib/uuf250/uuf250-081.cnf"
+file = "../benchmarks/satlib/uuf250/uuf250-081.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf250/uuf250-086"
-file = "benchmarks/satlib/uuf250/uuf250-086.cnf"
+file = "../benchmarks/satlib/uuf250/uuf250-086.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf250/uuf250-090"
-file = "benchmarks/satlib/uuf250/uuf250-090.cnf"
+file = "../benchmarks/satlib/uuf250/uuf250-090.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "uuf250/uuf250-095"
-file = "benchmarks/satlib/uuf250/uuf250-095.cnf"
+file = "../benchmarks/satlib/uuf250/uuf250-095.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "flat50/flat50-1"
-file = "benchmarks/satlib/flat50/flat50-1.cnf"
+file = "../benchmarks/satlib/flat50/flat50-1.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat50/flat50-142"
-file = "benchmarks/satlib/flat50/flat50-142.cnf"
+file = "../benchmarks/satlib/flat50/flat50-142.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat50/flat50-187"
-file = "benchmarks/satlib/flat50/flat50-187.cnf"
+file = "../benchmarks/satlib/flat50/flat50-187.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat50/flat50-230"
-file = "benchmarks/satlib/flat50/flat50-230.cnf"
+file = "../benchmarks/satlib/flat50/flat50-230.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat50/flat50-275"
-file = "benchmarks/satlib/flat50/flat50-275.cnf"
+file = "../benchmarks/satlib/flat50/flat50-275.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat50/flat50-319"
-file = "benchmarks/satlib/flat50/flat50-319.cnf"
+file = "../benchmarks/satlib/flat50/flat50-319.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat50/flat50-363"
-file = "benchmarks/satlib/flat50/flat50-363.cnf"
+file = "../benchmarks/satlib/flat50/flat50-363.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat50/flat50-407"
-file = "benchmarks/satlib/flat50/flat50-407.cnf"
+file = "../benchmarks/satlib/flat50/flat50-407.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat50/flat50-451"
-file = "benchmarks/satlib/flat50/flat50-451.cnf"
+file = "../benchmarks/satlib/flat50/flat50-451.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat50/flat50-496"
-file = "benchmarks/satlib/flat50/flat50-496.cnf"
+file = "../benchmarks/satlib/flat50/flat50-496.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat50/flat50-54"
-file = "benchmarks/satlib/flat50/flat50-54.cnf"
+file = "../benchmarks/satlib/flat50/flat50-54.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat50/flat50-584"
-file = "benchmarks/satlib/flat50/flat50-584.cnf"
+file = "../benchmarks/satlib/flat50/flat50-584.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat50/flat50-628"
-file = "benchmarks/satlib/flat50/flat50-628.cnf"
+file = "../benchmarks/satlib/flat50/flat50-628.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat50/flat50-672"
-file = "benchmarks/satlib/flat50/flat50-672.cnf"
+file = "../benchmarks/satlib/flat50/flat50-672.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat50/flat50-716"
-file = "benchmarks/satlib/flat50/flat50-716.cnf"
+file = "../benchmarks/satlib/flat50/flat50-716.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat50/flat50-761"
-file = "benchmarks/satlib/flat50/flat50-761.cnf"
+file = "../benchmarks/satlib/flat50/flat50-761.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat50/flat50-805"
-file = "benchmarks/satlib/flat50/flat50-805.cnf"
+file = "../benchmarks/satlib/flat50/flat50-805.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat50/flat50-85"
-file = "benchmarks/satlib/flat50/flat50-85.cnf"
+file = "../benchmarks/satlib/flat50/flat50-85.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat50/flat50-894"
-file = "benchmarks/satlib/flat50/flat50-894.cnf"
+file = "../benchmarks/satlib/flat50/flat50-894.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat50/flat50-938"
-file = "benchmarks/satlib/flat50/flat50-938.cnf"
+file = "../benchmarks/satlib/flat50/flat50-938.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat100/flat100-1"
-file = "benchmarks/satlib/flat100/flat100-1.cnf"
+file = "../benchmarks/satlib/flat100/flat100-1.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat100/flat100-13"
-file = "benchmarks/satlib/flat100/flat100-13.cnf"
+file = "../benchmarks/satlib/flat100/flat100-13.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat100/flat100-18"
-file = "benchmarks/satlib/flat100/flat100-18.cnf"
+file = "../benchmarks/satlib/flat100/flat100-18.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat100/flat100-22"
-file = "benchmarks/satlib/flat100/flat100-22.cnf"
+file = "../benchmarks/satlib/flat100/flat100-22.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat100/flat100-27"
-file = "benchmarks/satlib/flat100/flat100-27.cnf"
+file = "../benchmarks/satlib/flat100/flat100-27.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat100/flat100-31"
-file = "benchmarks/satlib/flat100/flat100-31.cnf"
+file = "../benchmarks/satlib/flat100/flat100-31.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat100/flat100-36"
-file = "benchmarks/satlib/flat100/flat100-36.cnf"
+file = "../benchmarks/satlib/flat100/flat100-36.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat100/flat100-40"
-file = "benchmarks/satlib/flat100/flat100-40.cnf"
+file = "../benchmarks/satlib/flat100/flat100-40.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat100/flat100-45"
-file = "benchmarks/satlib/flat100/flat100-45.cnf"
+file = "../benchmarks/satlib/flat100/flat100-45.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat100/flat100-5"
-file = "benchmarks/satlib/flat100/flat100-5.cnf"
+file = "../benchmarks/satlib/flat100/flat100-5.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat100/flat100-54"
-file = "benchmarks/satlib/flat100/flat100-54.cnf"
+file = "../benchmarks/satlib/flat100/flat100-54.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat100/flat100-59"
-file = "benchmarks/satlib/flat100/flat100-59.cnf"
+file = "../benchmarks/satlib/flat100/flat100-59.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat100/flat100-63"
-file = "benchmarks/satlib/flat100/flat100-63.cnf"
+file = "../benchmarks/satlib/flat100/flat100-63.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat100/flat100-68"
-file = "benchmarks/satlib/flat100/flat100-68.cnf"
+file = "../benchmarks/satlib/flat100/flat100-68.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat100/flat100-72"
-file = "benchmarks/satlib/flat100/flat100-72.cnf"
+file = "../benchmarks/satlib/flat100/flat100-72.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat100/flat100-77"
-file = "benchmarks/satlib/flat100/flat100-77.cnf"
+file = "../benchmarks/satlib/flat100/flat100-77.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat100/flat100-81"
-file = "benchmarks/satlib/flat100/flat100-81.cnf"
+file = "../benchmarks/satlib/flat100/flat100-81.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat100/flat100-86"
-file = "benchmarks/satlib/flat100/flat100-86.cnf"
+file = "../benchmarks/satlib/flat100/flat100-86.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat100/flat100-90"
-file = "benchmarks/satlib/flat100/flat100-90.cnf"
+file = "../benchmarks/satlib/flat100/flat100-90.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat100/flat100-95"
-file = "benchmarks/satlib/flat100/flat100-95.cnf"
+file = "../benchmarks/satlib/flat100/flat100-95.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat150/flat150-1"
-file = "benchmarks/satlib/flat150/flat150-1.cnf"
+file = "../benchmarks/satlib/flat150/flat150-1.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat150/flat150-13"
-file = "benchmarks/satlib/flat150/flat150-13.cnf"
+file = "../benchmarks/satlib/flat150/flat150-13.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat150/flat150-18"
-file = "benchmarks/satlib/flat150/flat150-18.cnf"
+file = "../benchmarks/satlib/flat150/flat150-18.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat150/flat150-22"
-file = "benchmarks/satlib/flat150/flat150-22.cnf"
+file = "../benchmarks/satlib/flat150/flat150-22.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat150/flat150-27"
-file = "benchmarks/satlib/flat150/flat150-27.cnf"
+file = "../benchmarks/satlib/flat150/flat150-27.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat150/flat150-31"
-file = "benchmarks/satlib/flat150/flat150-31.cnf"
+file = "../benchmarks/satlib/flat150/flat150-31.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat150/flat150-36"
-file = "benchmarks/satlib/flat150/flat150-36.cnf"
+file = "../benchmarks/satlib/flat150/flat150-36.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat150/flat150-40"
-file = "benchmarks/satlib/flat150/flat150-40.cnf"
+file = "../benchmarks/satlib/flat150/flat150-40.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat150/flat150-45"
-file = "benchmarks/satlib/flat150/flat150-45.cnf"
+file = "../benchmarks/satlib/flat150/flat150-45.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat150/flat150-5"
-file = "benchmarks/satlib/flat150/flat150-5.cnf"
+file = "../benchmarks/satlib/flat150/flat150-5.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat150/flat150-54"
-file = "benchmarks/satlib/flat150/flat150-54.cnf"
+file = "../benchmarks/satlib/flat150/flat150-54.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat150/flat150-59"
-file = "benchmarks/satlib/flat150/flat150-59.cnf"
+file = "../benchmarks/satlib/flat150/flat150-59.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat150/flat150-63"
-file = "benchmarks/satlib/flat150/flat150-63.cnf"
+file = "../benchmarks/satlib/flat150/flat150-63.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat150/flat150-68"
-file = "benchmarks/satlib/flat150/flat150-68.cnf"
+file = "../benchmarks/satlib/flat150/flat150-68.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat150/flat150-72"
-file = "benchmarks/satlib/flat150/flat150-72.cnf"
+file = "../benchmarks/satlib/flat150/flat150-72.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat150/flat150-77"
-file = "benchmarks/satlib/flat150/flat150-77.cnf"
+file = "../benchmarks/satlib/flat150/flat150-77.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat150/flat150-81"
-file = "benchmarks/satlib/flat150/flat150-81.cnf"
+file = "../benchmarks/satlib/flat150/flat150-81.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat150/flat150-86"
-file = "benchmarks/satlib/flat150/flat150-86.cnf"
+file = "../benchmarks/satlib/flat150/flat150-86.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat150/flat150-9"
-file = "benchmarks/satlib/flat150/flat150-9.cnf"
+file = "../benchmarks/satlib/flat150/flat150-9.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat150/flat150-94"
-file = "benchmarks/satlib/flat150/flat150-94.cnf"
+file = "../benchmarks/satlib/flat150/flat150-94.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat200/flat200-1"
-file = "benchmarks/satlib/flat200/flat200-1.cnf"
+file = "../benchmarks/satlib/flat200/flat200-1.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat200/flat200-13"
-file = "benchmarks/satlib/flat200/flat200-13.cnf"
+file = "../benchmarks/satlib/flat200/flat200-13.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat200/flat200-18"
-file = "benchmarks/satlib/flat200/flat200-18.cnf"
+file = "../benchmarks/satlib/flat200/flat200-18.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat200/flat200-22"
-file = "benchmarks/satlib/flat200/flat200-22.cnf"
+file = "../benchmarks/satlib/flat200/flat200-22.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat200/flat200-27"
-file = "benchmarks/satlib/flat200/flat200-27.cnf"
+file = "../benchmarks/satlib/flat200/flat200-27.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat200/flat200-31"
-file = "benchmarks/satlib/flat200/flat200-31.cnf"
+file = "../benchmarks/satlib/flat200/flat200-31.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat200/flat200-36"
-file = "benchmarks/satlib/flat200/flat200-36.cnf"
+file = "../benchmarks/satlib/flat200/flat200-36.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat200/flat200-40"
-file = "benchmarks/satlib/flat200/flat200-40.cnf"
+file = "../benchmarks/satlib/flat200/flat200-40.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat200/flat200-45"
-file = "benchmarks/satlib/flat200/flat200-45.cnf"
+file = "../benchmarks/satlib/flat200/flat200-45.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat200/flat200-5"
-file = "benchmarks/satlib/flat200/flat200-5.cnf"
+file = "../benchmarks/satlib/flat200/flat200-5.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat200/flat200-54"
-file = "benchmarks/satlib/flat200/flat200-54.cnf"
+file = "../benchmarks/satlib/flat200/flat200-54.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat200/flat200-59"
-file = "benchmarks/satlib/flat200/flat200-59.cnf"
+file = "../benchmarks/satlib/flat200/flat200-59.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat200/flat200-63"
-file = "benchmarks/satlib/flat200/flat200-63.cnf"
+file = "../benchmarks/satlib/flat200/flat200-63.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat200/flat200-68"
-file = "benchmarks/satlib/flat200/flat200-68.cnf"
+file = "../benchmarks/satlib/flat200/flat200-68.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat200/flat200-72"
-file = "benchmarks/satlib/flat200/flat200-72.cnf"
+file = "../benchmarks/satlib/flat200/flat200-72.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat200/flat200-77"
-file = "benchmarks/satlib/flat200/flat200-77.cnf"
+file = "../benchmarks/satlib/flat200/flat200-77.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat200/flat200-81"
-file = "benchmarks/satlib/flat200/flat200-81.cnf"
+file = "../benchmarks/satlib/flat200/flat200-81.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat200/flat200-86"
-file = "benchmarks/satlib/flat200/flat200-86.cnf"
+file = "../benchmarks/satlib/flat200/flat200-86.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat200/flat200-90"
-file = "benchmarks/satlib/flat200/flat200-90.cnf"
+file = "../benchmarks/satlib/flat200/flat200-90.cnf"
 expect = "sat"
 
 [[problems]]
 name = "flat200/flat200-95"
-file = "benchmarks/satlib/flat200/flat200-95.cnf"
+file = "../benchmarks/satlib/flat200/flat200-95.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-100-1_6-no-1"
-file = "benchmarks/satlib/aim/aim-100-1_6-no-1.cnf"
+file = "../benchmarks/satlib/aim/aim-100-1_6-no-1.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "aim/aim-100-1_6-no-2"
-file = "benchmarks/satlib/aim/aim-100-1_6-no-2.cnf"
+file = "../benchmarks/satlib/aim/aim-100-1_6-no-2.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "aim/aim-100-1_6-no-3"
-file = "benchmarks/satlib/aim/aim-100-1_6-no-3.cnf"
+file = "../benchmarks/satlib/aim/aim-100-1_6-no-3.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "aim/aim-100-1_6-no-4"
-file = "benchmarks/satlib/aim/aim-100-1_6-no-4.cnf"
+file = "../benchmarks/satlib/aim/aim-100-1_6-no-4.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "aim/aim-100-1_6-yes1-1"
-file = "benchmarks/satlib/aim/aim-100-1_6-yes1-1.cnf"
+file = "../benchmarks/satlib/aim/aim-100-1_6-yes1-1.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-100-1_6-yes1-2"
-file = "benchmarks/satlib/aim/aim-100-1_6-yes1-2.cnf"
+file = "../benchmarks/satlib/aim/aim-100-1_6-yes1-2.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-100-1_6-yes1-3"
-file = "benchmarks/satlib/aim/aim-100-1_6-yes1-3.cnf"
+file = "../benchmarks/satlib/aim/aim-100-1_6-yes1-3.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-100-1_6-yes1-4"
-file = "benchmarks/satlib/aim/aim-100-1_6-yes1-4.cnf"
+file = "../benchmarks/satlib/aim/aim-100-1_6-yes1-4.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-100-2_0-no-1"
-file = "benchmarks/satlib/aim/aim-100-2_0-no-1.cnf"
+file = "../benchmarks/satlib/aim/aim-100-2_0-no-1.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "aim/aim-100-2_0-no-2"
-file = "benchmarks/satlib/aim/aim-100-2_0-no-2.cnf"
+file = "../benchmarks/satlib/aim/aim-100-2_0-no-2.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "aim/aim-100-2_0-no-3"
-file = "benchmarks/satlib/aim/aim-100-2_0-no-3.cnf"
+file = "../benchmarks/satlib/aim/aim-100-2_0-no-3.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "aim/aim-100-2_0-no-4"
-file = "benchmarks/satlib/aim/aim-100-2_0-no-4.cnf"
+file = "../benchmarks/satlib/aim/aim-100-2_0-no-4.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "aim/aim-100-2_0-yes1-1"
-file = "benchmarks/satlib/aim/aim-100-2_0-yes1-1.cnf"
+file = "../benchmarks/satlib/aim/aim-100-2_0-yes1-1.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-100-2_0-yes1-2"
-file = "benchmarks/satlib/aim/aim-100-2_0-yes1-2.cnf"
+file = "../benchmarks/satlib/aim/aim-100-2_0-yes1-2.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-100-2_0-yes1-3"
-file = "benchmarks/satlib/aim/aim-100-2_0-yes1-3.cnf"
+file = "../benchmarks/satlib/aim/aim-100-2_0-yes1-3.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-100-2_0-yes1-4"
-file = "benchmarks/satlib/aim/aim-100-2_0-yes1-4.cnf"
+file = "../benchmarks/satlib/aim/aim-100-2_0-yes1-4.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-100-3_4-yes1-1"
-file = "benchmarks/satlib/aim/aim-100-3_4-yes1-1.cnf"
+file = "../benchmarks/satlib/aim/aim-100-3_4-yes1-1.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-100-3_4-yes1-2"
-file = "benchmarks/satlib/aim/aim-100-3_4-yes1-2.cnf"
+file = "../benchmarks/satlib/aim/aim-100-3_4-yes1-2.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-100-3_4-yes1-3"
-file = "benchmarks/satlib/aim/aim-100-3_4-yes1-3.cnf"
+file = "../benchmarks/satlib/aim/aim-100-3_4-yes1-3.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-100-3_4-yes1-4"
-file = "benchmarks/satlib/aim/aim-100-3_4-yes1-4.cnf"
+file = "../benchmarks/satlib/aim/aim-100-3_4-yes1-4.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-100-6_0-yes1-1"
-file = "benchmarks/satlib/aim/aim-100-6_0-yes1-1.cnf"
+file = "../benchmarks/satlib/aim/aim-100-6_0-yes1-1.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-100-6_0-yes1-2"
-file = "benchmarks/satlib/aim/aim-100-6_0-yes1-2.cnf"
+file = "../benchmarks/satlib/aim/aim-100-6_0-yes1-2.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-100-6_0-yes1-3"
-file = "benchmarks/satlib/aim/aim-100-6_0-yes1-3.cnf"
+file = "../benchmarks/satlib/aim/aim-100-6_0-yes1-3.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-100-6_0-yes1-4"
-file = "benchmarks/satlib/aim/aim-100-6_0-yes1-4.cnf"
+file = "../benchmarks/satlib/aim/aim-100-6_0-yes1-4.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-200-1_6-no-1"
-file = "benchmarks/satlib/aim/aim-200-1_6-no-1.cnf"
+file = "../benchmarks/satlib/aim/aim-200-1_6-no-1.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "aim/aim-200-1_6-no-2"
-file = "benchmarks/satlib/aim/aim-200-1_6-no-2.cnf"
+file = "../benchmarks/satlib/aim/aim-200-1_6-no-2.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "aim/aim-200-1_6-no-3"
-file = "benchmarks/satlib/aim/aim-200-1_6-no-3.cnf"
+file = "../benchmarks/satlib/aim/aim-200-1_6-no-3.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "aim/aim-200-1_6-no-4"
-file = "benchmarks/satlib/aim/aim-200-1_6-no-4.cnf"
+file = "../benchmarks/satlib/aim/aim-200-1_6-no-4.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "aim/aim-200-1_6-yes1-1"
-file = "benchmarks/satlib/aim/aim-200-1_6-yes1-1.cnf"
+file = "../benchmarks/satlib/aim/aim-200-1_6-yes1-1.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-200-1_6-yes1-2"
-file = "benchmarks/satlib/aim/aim-200-1_6-yes1-2.cnf"
+file = "../benchmarks/satlib/aim/aim-200-1_6-yes1-2.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-200-1_6-yes1-3"
-file = "benchmarks/satlib/aim/aim-200-1_6-yes1-3.cnf"
+file = "../benchmarks/satlib/aim/aim-200-1_6-yes1-3.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-200-1_6-yes1-4"
-file = "benchmarks/satlib/aim/aim-200-1_6-yes1-4.cnf"
+file = "../benchmarks/satlib/aim/aim-200-1_6-yes1-4.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-200-2_0-no-1"
-file = "benchmarks/satlib/aim/aim-200-2_0-no-1.cnf"
+file = "../benchmarks/satlib/aim/aim-200-2_0-no-1.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "aim/aim-200-2_0-no-2"
-file = "benchmarks/satlib/aim/aim-200-2_0-no-2.cnf"
+file = "../benchmarks/satlib/aim/aim-200-2_0-no-2.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "aim/aim-200-2_0-no-3"
-file = "benchmarks/satlib/aim/aim-200-2_0-no-3.cnf"
+file = "../benchmarks/satlib/aim/aim-200-2_0-no-3.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "aim/aim-200-2_0-no-4"
-file = "benchmarks/satlib/aim/aim-200-2_0-no-4.cnf"
+file = "../benchmarks/satlib/aim/aim-200-2_0-no-4.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "aim/aim-200-2_0-yes1-1"
-file = "benchmarks/satlib/aim/aim-200-2_0-yes1-1.cnf"
+file = "../benchmarks/satlib/aim/aim-200-2_0-yes1-1.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-200-2_0-yes1-2"
-file = "benchmarks/satlib/aim/aim-200-2_0-yes1-2.cnf"
+file = "../benchmarks/satlib/aim/aim-200-2_0-yes1-2.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-200-2_0-yes1-3"
-file = "benchmarks/satlib/aim/aim-200-2_0-yes1-3.cnf"
+file = "../benchmarks/satlib/aim/aim-200-2_0-yes1-3.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-200-2_0-yes1-4"
-file = "benchmarks/satlib/aim/aim-200-2_0-yes1-4.cnf"
+file = "../benchmarks/satlib/aim/aim-200-2_0-yes1-4.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-200-3_4-yes1-1"
-file = "benchmarks/satlib/aim/aim-200-3_4-yes1-1.cnf"
+file = "../benchmarks/satlib/aim/aim-200-3_4-yes1-1.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-200-3_4-yes1-2"
-file = "benchmarks/satlib/aim/aim-200-3_4-yes1-2.cnf"
+file = "../benchmarks/satlib/aim/aim-200-3_4-yes1-2.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-200-3_4-yes1-3"
-file = "benchmarks/satlib/aim/aim-200-3_4-yes1-3.cnf"
+file = "../benchmarks/satlib/aim/aim-200-3_4-yes1-3.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-200-3_4-yes1-4"
-file = "benchmarks/satlib/aim/aim-200-3_4-yes1-4.cnf"
+file = "../benchmarks/satlib/aim/aim-200-3_4-yes1-4.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-200-6_0-yes1-1"
-file = "benchmarks/satlib/aim/aim-200-6_0-yes1-1.cnf"
+file = "../benchmarks/satlib/aim/aim-200-6_0-yes1-1.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-200-6_0-yes1-2"
-file = "benchmarks/satlib/aim/aim-200-6_0-yes1-2.cnf"
+file = "../benchmarks/satlib/aim/aim-200-6_0-yes1-2.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-200-6_0-yes1-3"
-file = "benchmarks/satlib/aim/aim-200-6_0-yes1-3.cnf"
+file = "../benchmarks/satlib/aim/aim-200-6_0-yes1-3.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-200-6_0-yes1-4"
-file = "benchmarks/satlib/aim/aim-200-6_0-yes1-4.cnf"
+file = "../benchmarks/satlib/aim/aim-200-6_0-yes1-4.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-50-1_6-no-1"
-file = "benchmarks/satlib/aim/aim-50-1_6-no-1.cnf"
+file = "../benchmarks/satlib/aim/aim-50-1_6-no-1.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "aim/aim-50-1_6-no-2"
-file = "benchmarks/satlib/aim/aim-50-1_6-no-2.cnf"
+file = "../benchmarks/satlib/aim/aim-50-1_6-no-2.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "aim/aim-50-1_6-no-3"
-file = "benchmarks/satlib/aim/aim-50-1_6-no-3.cnf"
+file = "../benchmarks/satlib/aim/aim-50-1_6-no-3.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "aim/aim-50-1_6-no-4"
-file = "benchmarks/satlib/aim/aim-50-1_6-no-4.cnf"
+file = "../benchmarks/satlib/aim/aim-50-1_6-no-4.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "aim/aim-50-1_6-yes1-1"
-file = "benchmarks/satlib/aim/aim-50-1_6-yes1-1.cnf"
+file = "../benchmarks/satlib/aim/aim-50-1_6-yes1-1.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-50-1_6-yes1-2"
-file = "benchmarks/satlib/aim/aim-50-1_6-yes1-2.cnf"
+file = "../benchmarks/satlib/aim/aim-50-1_6-yes1-2.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-50-1_6-yes1-3"
-file = "benchmarks/satlib/aim/aim-50-1_6-yes1-3.cnf"
+file = "../benchmarks/satlib/aim/aim-50-1_6-yes1-3.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-50-1_6-yes1-4"
-file = "benchmarks/satlib/aim/aim-50-1_6-yes1-4.cnf"
+file = "../benchmarks/satlib/aim/aim-50-1_6-yes1-4.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-50-2_0-no-1"
-file = "benchmarks/satlib/aim/aim-50-2_0-no-1.cnf"
+file = "../benchmarks/satlib/aim/aim-50-2_0-no-1.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "aim/aim-50-2_0-no-2"
-file = "benchmarks/satlib/aim/aim-50-2_0-no-2.cnf"
+file = "../benchmarks/satlib/aim/aim-50-2_0-no-2.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "aim/aim-50-2_0-no-3"
-file = "benchmarks/satlib/aim/aim-50-2_0-no-3.cnf"
+file = "../benchmarks/satlib/aim/aim-50-2_0-no-3.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "aim/aim-50-2_0-no-4"
-file = "benchmarks/satlib/aim/aim-50-2_0-no-4.cnf"
+file = "../benchmarks/satlib/aim/aim-50-2_0-no-4.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "aim/aim-50-2_0-yes1-1"
-file = "benchmarks/satlib/aim/aim-50-2_0-yes1-1.cnf"
+file = "../benchmarks/satlib/aim/aim-50-2_0-yes1-1.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-50-2_0-yes1-2"
-file = "benchmarks/satlib/aim/aim-50-2_0-yes1-2.cnf"
+file = "../benchmarks/satlib/aim/aim-50-2_0-yes1-2.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-50-2_0-yes1-3"
-file = "benchmarks/satlib/aim/aim-50-2_0-yes1-3.cnf"
+file = "../benchmarks/satlib/aim/aim-50-2_0-yes1-3.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-50-2_0-yes1-4"
-file = "benchmarks/satlib/aim/aim-50-2_0-yes1-4.cnf"
+file = "../benchmarks/satlib/aim/aim-50-2_0-yes1-4.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-50-3_4-yes1-1"
-file = "benchmarks/satlib/aim/aim-50-3_4-yes1-1.cnf"
+file = "../benchmarks/satlib/aim/aim-50-3_4-yes1-1.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-50-3_4-yes1-2"
-file = "benchmarks/satlib/aim/aim-50-3_4-yes1-2.cnf"
+file = "../benchmarks/satlib/aim/aim-50-3_4-yes1-2.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-50-3_4-yes1-3"
-file = "benchmarks/satlib/aim/aim-50-3_4-yes1-3.cnf"
+file = "../benchmarks/satlib/aim/aim-50-3_4-yes1-3.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-50-3_4-yes1-4"
-file = "benchmarks/satlib/aim/aim-50-3_4-yes1-4.cnf"
+file = "../benchmarks/satlib/aim/aim-50-3_4-yes1-4.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-50-6_0-yes1-1"
-file = "benchmarks/satlib/aim/aim-50-6_0-yes1-1.cnf"
+file = "../benchmarks/satlib/aim/aim-50-6_0-yes1-1.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-50-6_0-yes1-2"
-file = "benchmarks/satlib/aim/aim-50-6_0-yes1-2.cnf"
+file = "../benchmarks/satlib/aim/aim-50-6_0-yes1-2.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-50-6_0-yes1-3"
-file = "benchmarks/satlib/aim/aim-50-6_0-yes1-3.cnf"
+file = "../benchmarks/satlib/aim/aim-50-6_0-yes1-3.cnf"
 expect = "sat"
 
 [[problems]]
 name = "aim/aim-50-6_0-yes1-4"
-file = "benchmarks/satlib/aim/aim-50-6_0-yes1-4.cnf"
+file = "../benchmarks/satlib/aim/aim-50-6_0-yes1-4.cnf"
 expect = "sat"
 
 [[problems]]
 name = "parity/par16-1-c"
-file = "benchmarks/satlib/parity/par16-1-c.cnf"
+file = "../benchmarks/satlib/parity/par16-1-c.cnf"
 expect = "sat"
 
 [[problems]]
 name = "parity/par16-1"
-file = "benchmarks/satlib/parity/par16-1.cnf"
+file = "../benchmarks/satlib/parity/par16-1.cnf"
 expect = "sat"
 
 [[problems]]
 name = "parity/par16-2-c"
-file = "benchmarks/satlib/parity/par16-2-c.cnf"
+file = "../benchmarks/satlib/parity/par16-2-c.cnf"
 expect = "sat"
 
 [[problems]]
 name = "parity/par16-2"
-file = "benchmarks/satlib/parity/par16-2.cnf"
+file = "../benchmarks/satlib/parity/par16-2.cnf"
 expect = "sat"
 
 [[problems]]
 name = "parity/par16-3-c"
-file = "benchmarks/satlib/parity/par16-3-c.cnf"
+file = "../benchmarks/satlib/parity/par16-3-c.cnf"
 expect = "sat"
 
 [[problems]]
 name = "parity/par16-3"
-file = "benchmarks/satlib/parity/par16-3.cnf"
+file = "../benchmarks/satlib/parity/par16-3.cnf"
 expect = "sat"
 
 [[problems]]
 name = "parity/par16-4-c"
-file = "benchmarks/satlib/parity/par16-4-c.cnf"
+file = "../benchmarks/satlib/parity/par16-4-c.cnf"
 expect = "sat"
 
 [[problems]]
 name = "parity/par16-4"
-file = "benchmarks/satlib/parity/par16-4.cnf"
+file = "../benchmarks/satlib/parity/par16-4.cnf"
 expect = "sat"
 
 [[problems]]
 name = "parity/par16-5-c"
-file = "benchmarks/satlib/parity/par16-5-c.cnf"
+file = "../benchmarks/satlib/parity/par16-5-c.cnf"
 expect = "sat"
 
 [[problems]]
 name = "parity/par16-5"
-file = "benchmarks/satlib/parity/par16-5.cnf"
+file = "../benchmarks/satlib/parity/par16-5.cnf"
 expect = "sat"
 
 [[problems]]
 name = "parity/par32-1-c"
-file = "benchmarks/satlib/parity/par32-1-c.cnf"
+file = "../benchmarks/satlib/parity/par32-1-c.cnf"
 expect = "sat"
 
 [[problems]]
 name = "parity/par32-1"
-file = "benchmarks/satlib/parity/par32-1.cnf"
+file = "../benchmarks/satlib/parity/par32-1.cnf"
 expect = "sat"
 
 [[problems]]
 name = "parity/par32-2-c"
-file = "benchmarks/satlib/parity/par32-2-c.cnf"
+file = "../benchmarks/satlib/parity/par32-2-c.cnf"
 expect = "sat"
 
 [[problems]]
 name = "parity/par32-2"
-file = "benchmarks/satlib/parity/par32-2.cnf"
+file = "../benchmarks/satlib/parity/par32-2.cnf"
 expect = "sat"
 
 [[problems]]
 name = "parity/par32-3-c"
-file = "benchmarks/satlib/parity/par32-3-c.cnf"
+file = "../benchmarks/satlib/parity/par32-3-c.cnf"
 expect = "sat"
 
 [[problems]]
 name = "parity/par32-3"
-file = "benchmarks/satlib/parity/par32-3.cnf"
+file = "../benchmarks/satlib/parity/par32-3.cnf"
 expect = "sat"
 
 [[problems]]
 name = "parity/par32-4-c"
-file = "benchmarks/satlib/parity/par32-4-c.cnf"
+file = "../benchmarks/satlib/parity/par32-4-c.cnf"
 expect = "sat"
 
 [[problems]]
 name = "parity/par32-4"
-file = "benchmarks/satlib/parity/par32-4.cnf"
+file = "../benchmarks/satlib/parity/par32-4.cnf"
 expect = "sat"
 
 [[problems]]
 name = "parity/par32-5-c"
-file = "benchmarks/satlib/parity/par32-5-c.cnf"
+file = "../benchmarks/satlib/parity/par32-5-c.cnf"
 expect = "sat"
 
 [[problems]]
 name = "parity/par32-5"
-file = "benchmarks/satlib/parity/par32-5.cnf"
+file = "../benchmarks/satlib/parity/par32-5.cnf"
 expect = "sat"
 
 [[problems]]
 name = "parity/par8-1-c"
-file = "benchmarks/satlib/parity/par8-1-c.cnf"
+file = "../benchmarks/satlib/parity/par8-1-c.cnf"
 expect = "sat"
 
 [[problems]]
 name = "parity/par8-1"
-file = "benchmarks/satlib/parity/par8-1.cnf"
+file = "../benchmarks/satlib/parity/par8-1.cnf"
 expect = "sat"
 
 [[problems]]
 name = "parity/par8-2-c"
-file = "benchmarks/satlib/parity/par8-2-c.cnf"
+file = "../benchmarks/satlib/parity/par8-2-c.cnf"
 expect = "sat"
 
 [[problems]]
 name = "parity/par8-2"
-file = "benchmarks/satlib/parity/par8-2.cnf"
+file = "../benchmarks/satlib/parity/par8-2.cnf"
 expect = "sat"
 
 [[problems]]
 name = "parity/par8-3-c"
-file = "benchmarks/satlib/parity/par8-3-c.cnf"
+file = "../benchmarks/satlib/parity/par8-3-c.cnf"
 expect = "sat"
 
 [[problems]]
 name = "parity/par8-3"
-file = "benchmarks/satlib/parity/par8-3.cnf"
+file = "../benchmarks/satlib/parity/par8-3.cnf"
 expect = "sat"
 
 [[problems]]
 name = "parity/par8-4-c"
-file = "benchmarks/satlib/parity/par8-4-c.cnf"
+file = "../benchmarks/satlib/parity/par8-4-c.cnf"
 expect = "sat"
 
 [[problems]]
 name = "parity/par8-4"
-file = "benchmarks/satlib/parity/par8-4.cnf"
+file = "../benchmarks/satlib/parity/par8-4.cnf"
 expect = "sat"
 
 [[problems]]
 name = "parity/par8-5-c"
-file = "benchmarks/satlib/parity/par8-5-c.cnf"
+file = "../benchmarks/satlib/parity/par8-5-c.cnf"
 expect = "sat"
 
 [[problems]]
 name = "parity/par8-5"
-file = "benchmarks/satlib/parity/par8-5.cnf"
+file = "../benchmarks/satlib/parity/par8-5.cnf"
 expect = "sat"
 
 [[problems]]
 name = "phole/hole10"
-file = "benchmarks/satlib/phole/hole10.cnf"
+file = "../benchmarks/satlib/phole/hole10.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "phole/hole6"
-file = "benchmarks/satlib/phole/hole6.cnf"
+file = "../benchmarks/satlib/phole/hole6.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "phole/hole7"
-file = "benchmarks/satlib/phole/hole7.cnf"
+file = "../benchmarks/satlib/phole/hole7.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "phole/hole8"
-file = "benchmarks/satlib/phole/hole8.cnf"
+file = "../benchmarks/satlib/phole/hole8.cnf"
 expect = "unsat"
 
 [[problems]]
 name = "phole/hole9"
-file = "benchmarks/satlib/phole/hole9.cnf"
+file = "../benchmarks/satlib/phole/hole9.cnf"
 expect = "unsat"

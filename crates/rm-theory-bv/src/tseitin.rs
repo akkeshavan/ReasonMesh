@@ -147,10 +147,15 @@ pub struct EncodedCnf {
 
 impl EncodedCnf {
     /// Encode the circuit into CNF. `roots` are the gates asserted true.
-    pub fn encode(circuit: &Circuit, roots: &[GateId]) -> EncodedCnf {
+    ///
+    /// `num_inputs` must equal the number of primary inputs in the circuit
+    /// (i.e. `Blaster::num_inputs`). It pre-seeds the variable counter so
+    /// that Tseitin auxiliary vars start above all input variable IDs and
+    /// never alias an input that appears later in gate order.
+    pub fn encode(circuit: &Circuit, roots: &[GateId], num_inputs: u32) -> EncodedCnf {
         let mut enc = EncodedCnf {
             clauses: Vec::new(),
-            num_vars: 0,
+            num_vars: num_inputs, // reserve vars 1..=num_inputs for primary inputs
             gate_var: Vec::with_capacity(circuit.len()),
         };
         for gate in circuit.gates() {
@@ -183,7 +188,7 @@ mod tests {
         let x = c.input(0);
         let y = c.input(1);
         let z = c.and(x, y);
-        let enc = EncodedCnf::encode(&c, &[z]);
+        let enc = EncodedCnf::encode(&c, &[z], 2);
         // Unit + implication clauses exist; root asserted.
         assert!(enc.num_vars >= 3);
         assert!(!enc.clauses.is_empty());
@@ -199,7 +204,7 @@ mod tests {
         let a = c.input(0);
         let b = c.input(1);
         let both = c.and(a, b);
-        let enc = EncodedCnf::encode(&c, &[both]);
+        let enc = EncodedCnf::encode(&c, &[both], 2);
         assert!(!enc.clauses.is_empty());
     }
 }

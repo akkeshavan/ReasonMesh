@@ -1,0 +1,10 @@
+; expected: unsat  [can't fit 3 items in 2 unit boxes]
+(set-logic QF_LIA)
+(declare-fun b1 () Int)
+(declare-fun b2 () Int)
+(assert (>= b1 0))
+(assert (>= b2 0))
+(assert (= (+ b1 b2) 3))
+(assert (<= b1 1))
+(assert (<= b2 1))
+(check-sat)

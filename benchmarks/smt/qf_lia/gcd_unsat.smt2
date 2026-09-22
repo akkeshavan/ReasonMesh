@@ -1,0 +1,10 @@
+; expected: unsat  [odd number (2b+1) cannot equal multiple of 4 (4c)]
+(set-logic QF_LIA)
+(declare-fun a () Int)
+(declare-fun b () Int)
+(declare-fun c () Int)
+(assert (= a (+ (* 2 b) 1)))
+(assert (= a (* 4 c)))
+(assert (>= a 0))
+(assert (<= a 1000))
+(check-sat)

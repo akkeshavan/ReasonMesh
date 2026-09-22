@@ -18,9 +18,10 @@ use rm_akx::{ExportPolicy, ImportPolicy, WorkBudget};
 use rm_proof::model::check_dimacs_model;
 use rm_gpu;
 use rm_sat::{parse_dimacs, CdclSolver, DimacsCnf, SolveResult};
+use rm_smt::{SmtSolver, SmtStatus, SmtResult};
 use rm_telemetry::{EventKind, Outcome, RunMeta, TraceError, TraceWriter};
 use rm_worker::{Problem as WorkerProblem, WorkerConfig, WorkerOutcome, WorkerPool, WorkerStats};
-use std::io::{BufWriter, Read};
+use std::io::{BufWriter, Read, Write};
 use std::path::Path;
 use std::process::Stdio;
 use std::time::{Duration, Instant};
@@ -228,11 +229,71 @@ fn collect_baselines(manifest: &Manifest, problem: &Problem) -> Vec<BaselineResu
         .collect()
 }
 
+fn solve_smt_problem(manifest: &Manifest, problem: &Problem) -> Result<ProblemResult, RunError> {
+    let start = Instant::now();
+    let input = std::fs::read_to_string(&problem.file).map_err(|source| RunError::Read {
+        problem: problem.name.clone(),
+        source,
+    })?;
+
+    let timeout = Duration::from_secs(manifest.solver.timeout_secs);
+    let max_conflicts = Some(manifest.solver.timeout_secs.saturating_mul(500_000));
+
+    let (outcome, timed_out) = {
+        let result = std::thread::scope(|s| {
+            let h = s.spawn(|| {
+                SmtSolver::parse(&input)
+                    .and_then(|mut solver| solver.solve(max_conflicts.unwrap_or(u64::MAX)))
+            });
+            // Poll for timeout — SMT solver doesn't yet have an external kill switch.
+            let deadline = Instant::now() + timeout;
+            loop {
+                if h.is_finished() {
+                    break h.join().ok().and_then(|r| r.ok());
+                }
+                if Instant::now() >= deadline {
+                    break None;
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+        });
+        match result {
+            None => (Outcome::Unknown, true),
+            Some(SmtResult { status: SmtStatus::Sat, .. }) => (Outcome::Sat, false),
+            Some(SmtResult { status: SmtStatus::Unsat, .. }) => (Outcome::Unsat, false),
+            Some(SmtResult { status: SmtStatus::Unknown, .. }) => (Outcome::Unknown, false),
+        }
+    };
+
+    let wall = start.elapsed();
+    let baselines = collect_baselines(manifest, problem);
+    Ok(ProblemResult {
+        name: problem.name.clone(),
+        outcome,
+        expected: problem.expect,
+        matches_expected: expected_matches(problem.expect, outcome),
+        wall,
+        timed_out,
+        conflicts: 0,
+        decisions: 0,
+        propagations: 0,
+        restarts: 0,
+        knowledge: None,
+        baselines,
+        trace: None,
+    })
+}
+
 fn solve_problem(
     manifest: &Manifest,
     problem: &Problem,
     gpu: Option<rm_gpu::GpuClient>,
 ) -> Result<ProblemResult, RunError> {
+    // SMT-LIB files skip DIMACS parsing and go straight to the SMT path.
+    if problem.file.extension().is_some_and(|e| e == "smt2" || e == "smt") {
+        return solve_smt_problem(manifest, problem);
+    }
+
     let start = Instant::now();
     let input = std::fs::read_to_string(&problem.file).map_err(|source| RunError::Read {
         problem: problem.name.clone(),
@@ -286,7 +347,7 @@ fn solve_problem(
 
     let effective_strategy = if manifest.solver.strategy == SolverStrategy::Auto {
         let profile = analyse_cnf(&cnf);
-        eprintln!("info: [{}] {}", problem.name, profile);
+        let _ = writeln!(std::io::stderr(), "info: [{}] {}", problem.name, profile);
         pick_strategy_from_class(profile.detected_class, manifest.solver.workers)
     } else {
         manifest.solver.strategy.clone()

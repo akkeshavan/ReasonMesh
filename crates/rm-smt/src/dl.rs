@@ -50,7 +50,13 @@ fn collect_dl_declarations(exprs: &[SExpr]) -> DlDecls {
             }
             "declare-const" | "declare-fun" => {
                 if let Some(SExpr::Atom(Atom::Symbol(name))) = items.get(1) {
-                    let sort = items.get(2).and_then(|e| e.symbol()).unwrap_or("");
+                    // declare-const: (declare-const name sort)       → sort at [2]
+                    // declare-fun:   (declare-fun name () sort)      → sort at [3]
+                    let sort = if head == "declare-fun" {
+                        items.get(3).and_then(|e| e.symbol()).unwrap_or("")
+                    } else {
+                        items.get(2).and_then(|e| e.symbol()).unwrap_or("")
+                    };
                     if sort == "Int" || sort == "Real" {
                         var_map.entry(name.clone()).or_insert_with(|| {
                             let id = next_id;

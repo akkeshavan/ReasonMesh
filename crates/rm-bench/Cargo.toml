@@ -10,6 +10,7 @@ repository.workspace = true
 rm-akx    = { workspace = true }
 rm-gpu    = { workspace = true, features = ["metal"] }
 rm-sat    = { workspace = true }
+rm-smt    = { workspace = true }
 rm-proof  = { workspace = true }
 rm-telemetry = { workspace = true }
 rm-worker = { workspace = true }

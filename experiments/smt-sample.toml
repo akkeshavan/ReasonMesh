@@ -1,0 +1,464 @@
+schema_version = 1
+name = "smt-sample"
+description = "SMT benchmark suite: 90 problems across QF_BV, QF_UF, QF_IDL, QF_LIA. rm-sat vs Z3."
+
+[solver]
+timeout_secs = 30
+parallel_problems = 4
+
+[[baselines]]
+name = "z3"
+binary = "z3"
+args   = []
+workers = 1
+
+[[problems]]
+name = "qf_bv/add_eq_sat"
+file = "../benchmarks/smt/qf_bv/add_eq_sat.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_bv/add_self_unsat"
+file = "../benchmarks/smt/qf_bv/add_self_unsat.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "qf_bv/arith_11"
+file = "../benchmarks/smt/qf_bv/arith_11.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_bv/arith_12"
+file = "../benchmarks/smt/qf_bv/arith_12.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_bv/arith_13"
+file = "../benchmarks/smt/qf_bv/arith_13.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_bv/arith_14"
+file = "../benchmarks/smt/qf_bv/arith_14.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_bv/arith_15"
+file = "../benchmarks/smt/qf_bv/arith_15.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_bv/arith_16"
+file = "../benchmarks/smt/qf_bv/arith_16.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_bv/arith_17"
+file = "../benchmarks/smt/qf_bv/arith_17.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_bv/arith_18"
+file = "../benchmarks/smt/qf_bv/arith_18.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_bv/arith_19"
+file = "../benchmarks/smt/qf_bv/arith_19.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_bv/arith_20"
+file = "../benchmarks/smt/qf_bv/arith_20.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_bv/bit_extract_unsat"
+file = "../benchmarks/smt/qf_bv/bit_extract_unsat.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "qf_bv/bvneg_sat"
+file = "../benchmarks/smt/qf_bv/bvneg_sat.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_bv/bvnot_sat"
+file = "../benchmarks/smt/qf_bv/bvnot_sat.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_bv/concat_extract_sat"
+file = "../benchmarks/smt/qf_bv/concat_extract_sat.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_bv/diff_squares_sat"
+file = "../benchmarks/smt/qf_bv/diff_squares_sat.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_bv/mask_sat"
+file = "../benchmarks/smt/qf_bv/mask_sat.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_bv/mul2_sat"
+file = "../benchmarks/smt/qf_bv/mul2_sat.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_bv/shift_unsat"
+file = "../benchmarks/smt/qf_bv/shift_unsat.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "qf_bv/signed_chain_sat"
+file = "../benchmarks/smt/qf_bv/signed_chain_sat.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "qf_bv/udiv_sat"
+file = "../benchmarks/smt/qf_bv/udiv_sat.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_bv/urem_unsat"
+file = "../benchmarks/smt/qf_bv/urem_unsat.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "qf_bv/xor_cancel_sat"
+file = "../benchmarks/smt/qf_bv/xor_cancel_sat.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "qf_bv/zero_extend_sat"
+file = "../benchmarks/smt/qf_bv/zero_extend_sat.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_idl/chain_sat"
+file = "../benchmarks/smt/qf_idl/chain_sat.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_idl/choice_sat"
+file = "../benchmarks/smt/qf_idl/choice_sat.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_idl/eq_sat"
+file = "../benchmarks/smt/qf_idl/eq_sat.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "qf_idl/idl_07"
+file = "../benchmarks/smt/qf_idl/idl_07.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_idl/idl_08"
+file = "../benchmarks/smt/qf_idl/idl_08.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "qf_idl/idl_09"
+file = "../benchmarks/smt/qf_idl/idl_09.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "qf_idl/idl_10"
+file = "../benchmarks/smt/qf_idl/idl_10.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_idl/idl_11"
+file = "../benchmarks/smt/qf_idl/idl_11.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "qf_idl/idl_12"
+file = "../benchmarks/smt/qf_idl/idl_12.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_idl/idl_13"
+file = "../benchmarks/smt/qf_idl/idl_13.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_idl/idl_14"
+file = "../benchmarks/smt/qf_idl/idl_14.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "qf_idl/idl_15"
+file = "../benchmarks/smt/qf_idl/idl_15.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "qf_idl/idl_16"
+file = "../benchmarks/smt/qf_idl/idl_16.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_idl/idl_17"
+file = "../benchmarks/smt/qf_idl/idl_17.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_idl/idl_18"
+file = "../benchmarks/smt/qf_idl/idl_18.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "qf_idl/idl_19"
+file = "../benchmarks/smt/qf_idl/idl_19.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_idl/idl_20"
+file = "../benchmarks/smt/qf_idl/idl_20.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "qf_idl/long_chain_sat"
+file = "../benchmarks/smt/qf_idl/long_chain_sat.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_idl/neg_cycle_unsat"
+file = "../benchmarks/smt/qf_idl/neg_cycle_unsat.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "qf_idl/tight_cycle_unsat"
+file = "../benchmarks/smt/qf_idl/tight_cycle_unsat.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "qf_lia/bounds_sat"
+file = "../benchmarks/smt/qf_lia/bounds_sat.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_lia/divisibility_sat"
+file = "../benchmarks/smt/qf_lia/divisibility_sat.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_lia/four_vars_sat"
+file = "../benchmarks/smt/qf_lia/four_vars_sat.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_lia/gcd_unsat"
+file = "../benchmarks/smt/qf_lia/gcd_unsat.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "qf_lia/lia_11"
+file = "../benchmarks/smt/qf_lia/lia_11.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "qf_lia/lia_12"
+file = "../benchmarks/smt/qf_lia/lia_12.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "qf_lia/lia_13"
+file = "../benchmarks/smt/qf_lia/lia_13.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "qf_lia/lia_14"
+file = "../benchmarks/smt/qf_lia/lia_14.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_lia/lia_15"
+file = "../benchmarks/smt/qf_lia/lia_15.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "qf_lia/lia_16"
+file = "../benchmarks/smt/qf_lia/lia_16.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_lia/lia_17"
+file = "../benchmarks/smt/qf_lia/lia_17.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_lia/lia_18"
+file = "../benchmarks/smt/qf_lia/lia_18.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_lia/lia_19"
+file = "../benchmarks/smt/qf_lia/lia_19.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "qf_lia/lia_20"
+file = "../benchmarks/smt/qf_lia/lia_20.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "qf_lia/lia_21"
+file = "../benchmarks/smt/qf_lia/lia_21.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "qf_lia/lia_22"
+file = "../benchmarks/smt/qf_lia/lia_22.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "qf_lia/lia_23"
+file = "../benchmarks/smt/qf_lia/lia_23.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_lia/lia_24"
+file = "../benchmarks/smt/qf_lia/lia_24.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "qf_lia/lia_25"
+file = "../benchmarks/smt/qf_lia/lia_25.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_lia/order_cycle_unsat"
+file = "../benchmarks/smt/qf_lia/order_cycle_unsat.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "qf_lia/pigeonhole_unsat"
+file = "../benchmarks/smt/qf_lia/pigeonhole_unsat.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "qf_lia/range_sat"
+file = "../benchmarks/smt/qf_lia/range_sat.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_lia/simple_sat"
+file = "../benchmarks/smt/qf_lia/simple_sat.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_lia/system_sat"
+file = "../benchmarks/smt/qf_lia/system_sat.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_lia/tight_unsat"
+file = "../benchmarks/smt/qf_lia/tight_unsat.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "qf_uf/bool_uf_sat"
+file = "../benchmarks/smt/qf_uf/bool_uf_sat.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "qf_uf/cong_11"
+file = "../benchmarks/smt/qf_uf/cong_11.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_uf/cong_12"
+file = "../benchmarks/smt/qf_uf/cong_12.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_uf/cong_13"
+file = "../benchmarks/smt/qf_uf/cong_13.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "qf_uf/cong_14"
+file = "../benchmarks/smt/qf_uf/cong_14.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_uf/cong_15"
+file = "../benchmarks/smt/qf_uf/cong_15.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_uf/cong_16"
+file = "../benchmarks/smt/qf_uf/cong_16.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "qf_uf/cong_17"
+file = "../benchmarks/smt/qf_uf/cong_17.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_uf/cong_18"
+file = "../benchmarks/smt/qf_uf/cong_18.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "qf_uf/cong_19"
+file = "../benchmarks/smt/qf_uf/cong_19.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_uf/cong_20"
+file = "../benchmarks/smt/qf_uf/cong_20.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "qf_uf/congruence_sat"
+file = "../benchmarks/smt/qf_uf/congruence_sat.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "qf_uf/diseq_sat"
+file = "../benchmarks/smt/qf_uf/diseq_sat.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_uf/ff_x_sat"
+file = "../benchmarks/smt/qf_uf/ff_x_sat.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "qf_uf/multi_eq_unsat"
+file = "../benchmarks/smt/qf_uf/multi_eq_unsat.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "qf_uf/three_chain_sat"
+file = "../benchmarks/smt/qf_uf/three_chain_sat.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_uf/transitivity_sat"
+file = "../benchmarks/smt/qf_uf/transitivity_sat.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "qf_uf/two_cycle_sat"
+file = "../benchmarks/smt/qf_uf/two_cycle_sat.smt2"
+expect = "sat"
+
+[[problems]]
+name = "qf_uf/two_func_sat"
+file = "../benchmarks/smt/qf_uf/two_func_sat.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "qf_uf/uf_pigeonhole_sat"
+file = "../benchmarks/smt/qf_uf/uf_pigeonhole_sat.smt2"
+expect = "sat"
+

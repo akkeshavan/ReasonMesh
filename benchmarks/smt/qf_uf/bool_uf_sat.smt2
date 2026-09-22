@@ -1,0 +1,10 @@
+; expected: unsat  [p(a) and a=b implies p(b)]
+(set-logic QF_UF)
+(declare-sort U 0)
+(declare-fun p (U) Bool)
+(declare-fun a () U)
+(declare-fun b () U)
+(assert (= a b))
+(assert (p a))
+(assert (not (p b)))
+(check-sat)

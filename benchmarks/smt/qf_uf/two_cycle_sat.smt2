@@ -1,0 +1,10 @@
+; expected: sat
+(set-logic QF_UF)
+(declare-sort U 0)
+(declare-fun f (U) U)
+(declare-fun x () U)
+(declare-fun y () U)
+(assert (= (f x) y))
+(assert (= (f y) x))
+(assert (not (= x y)))
+(check-sat)

@@ -1,0 +1,11 @@
+; expected: unsat
+(set-logic QF_IDL)
+(declare-fun a () Int)
+(declare-fun b () Int)
+(declare-fun c () Int)
+(declare-fun d () Int)
+(assert (<= (- a b) 2))
+(assert (<= (- b c) 2))
+(assert (<= (- c d) 2))
+(assert (<= (- d a) -7))
+(check-sat)

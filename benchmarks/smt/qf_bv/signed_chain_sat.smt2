@@ -1,0 +1,9 @@
+; expected: unsat  [signed < cycle]
+(set-logic QF_BV)
+(declare-fun a () (_ BitVec 16))
+(declare-fun b () (_ BitVec 16))
+(declare-fun c () (_ BitVec 16))
+(assert (bvslt a b))
+(assert (bvslt b c))
+(assert (bvslt c a))
+(check-sat)

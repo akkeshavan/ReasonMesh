@@ -174,8 +174,10 @@ impl Blaster {
     fn blast_neg(&mut self, dag: &TermDag, children: &[NodeId]) -> Vec<GateId> {
         let a = self.blast(dag, children[0]);
         let inv: Vec<GateId> = a.iter().map(|&b| self.circuit.not(b)).collect();
-        let one = self.circuit.const_gate(true);
-        self.adder(&inv, &vec![one; inv.len()])
+        // Add 1 via carry-in, not by ORing all bits with 1.
+        let zero = self.circuit.const_gate(false);
+        let cin = self.circuit.const_gate(true);
+        self.add_cin(&inv, &vec![zero; inv.len()], cin)
     }
 
     fn blast_add_sub(&mut self, dag: &TermDag, children: &[NodeId], sub: bool) -> Vec<GateId> {

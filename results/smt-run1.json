@@ -1,0 +1,2451 @@
+{
+  "schema_version": 1,
+  "manifest": "smt-sample",
+  "solver_version": "0.1.0",
+  "git_revision": "unknown",
+  "run_wall": {
+    "secs": 3,
+    "nanos": 349426416
+  },
+  "problems": [
+    {
+      "name": "qf_bv/add_eq_sat",
+      "outcome": "Sat",
+      "expected": "sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 60144250
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 58386417
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_bv/add_self_unsat",
+      "outcome": "Unsat",
+      "expected": "unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 50125917
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60024042
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_bv/arith_11",
+      "outcome": "Unsat",
+      "expected": "sat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 0,
+        "nanos": 51374459
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 56293667
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_bv/arith_12",
+      "outcome": "Sat",
+      "expected": "sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 60095292
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60010042
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_bv/arith_13",
+      "outcome": "Unsat",
+      "expected": "sat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 0,
+        "nanos": 60074042
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 57725250
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_bv/arith_14",
+      "outcome": "Sat",
+      "expected": "sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 54178792
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60006250
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_bv/arith_15",
+      "outcome": "Unsat",
+      "expected": "sat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 0,
+        "nanos": 60041041
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60009250
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_bv/arith_16",
+      "outcome": "Unsat",
+      "expected": "sat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 0,
+        "nanos": 60067083
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 59321667
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_bv/arith_17",
+      "outcome": "Sat",
+      "expected": "sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 60058625
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60010667
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_bv/arith_18",
+      "outcome": "Unsat",
+      "expected": "sat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 0,
+        "nanos": 59444125
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 51483750
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_bv/arith_19",
+      "outcome": "Sat",
+      "expected": "sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 58000000
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 52061583
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_bv/arith_20",
+      "outcome": "Unsat",
+      "expected": "sat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 0,
+        "nanos": 60041750
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 52661375
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_bv/bit_extract_unsat",
+      "outcome": "Unsat",
+      "expected": "unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 60050125
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60009500
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_bv/bvneg_sat",
+      "outcome": "Unsat",
+      "expected": "sat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 0,
+        "nanos": 53836542
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60008416
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_bv/bvnot_sat",
+      "outcome": "Sat",
+      "expected": "sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 60052958
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60008833
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_bv/concat_extract_sat",
+      "outcome": "Sat",
+      "expected": "sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 60049833
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60009125
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_bv/diff_squares_sat",
+      "outcome": "Sat",
+      "expected": "sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 59894958
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60009750
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_bv/mask_sat",
+      "outcome": "Sat",
+      "expected": "sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 60050708
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 58598750
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_bv/mul2_sat",
+      "outcome": "Sat",
+      "expected": "sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 59603375
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60008958
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_bv/shift_unsat",
+      "outcome": "Unsat",
+      "expected": "unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 60057792
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60007792
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_bv/signed_chain_sat",
+      "outcome": "Unsat",
+      "expected": "unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 60042625
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60008667
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_bv/udiv_sat",
+      "outcome": "Sat",
+      "expected": "sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 60056708
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60009541
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_bv/urem_unsat",
+      "outcome": "Unsat",
+      "expected": "unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 60126459
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 54600375
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_bv/xor_cancel_sat",
+      "outcome": "Unsat",
+      "expected": "unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 54095542
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 52287833
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_bv/zero_extend_sat",
+      "outcome": "Sat",
+      "expected": "sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 54971166
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60021834
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_idl/chain_sat",
+      "outcome": "Unknown",
+      "expected": "sat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 0,
+        "nanos": 60092708
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60007667
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_idl/choice_sat",
+      "outcome": "Sat",
+      "expected": "sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 60074625
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 51837166
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_idl/eq_sat",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 0,
+        "nanos": 60058875
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 52317000
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_idl/idl_07",
+      "outcome": "Unknown",
+      "expected": "sat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 0,
+        "nanos": 50319542
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 53141875
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_idl/idl_08",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 0,
+        "nanos": 55721875
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 53487833
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_idl/idl_09",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 0,
+        "nanos": 52244000
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60005958
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_idl/idl_10",
+      "outcome": "Unknown",
+      "expected": "sat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 0,
+        "nanos": 60044750
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60006875
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_idl/idl_11",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 0,
+        "nanos": 60050083
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60008417
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_idl/idl_12",
+      "outcome": "Unknown",
+      "expected": "sat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 0,
+        "nanos": 60049500
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60008000
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_idl/idl_13",
+      "outcome": "Unknown",
+      "expected": "sat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 0,
+        "nanos": 60060083
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 58405083
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_idl/idl_14",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 0,
+        "nanos": 55562500
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60008167
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_idl/idl_15",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 0,
+        "nanos": 60053250
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60010583
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_idl/idl_16",
+      "outcome": "Unknown",
+      "expected": "sat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 0,
+        "nanos": 55971458
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 59424750
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_idl/idl_17",
+      "outcome": "Unknown",
+      "expected": "sat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 0,
+        "nanos": 60045917
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 56133417
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_idl/idl_18",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 0,
+        "nanos": 60050000
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 53000667
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_idl/idl_19",
+      "outcome": "Unknown",
+      "expected": "sat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 0,
+        "nanos": 56173875
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60008833
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_idl/idl_20",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 0,
+        "nanos": 60054500
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 50029834
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_idl/long_chain_sat",
+      "outcome": "Unknown",
+      "expected": "sat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 0,
+        "nanos": 59984125
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 51058500
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_idl/neg_cycle_unsat",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 0,
+        "nanos": 60074917
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60007292
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_idl/tight_cycle_unsat",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 0,
+        "nanos": 57984291
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 52768166
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_lia/bounds_sat",
+      "outcome": "Sat",
+      "expected": "sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 60128416
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60011792
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_lia/divisibility_sat",
+      "outcome": "Sat",
+      "expected": "sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 60066375
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 58841625
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_lia/four_vars_sat",
+      "outcome": "Sat",
+      "expected": "sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 60082625
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 56080542
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_lia/gcd_unsat",
+      "outcome": "Sat",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 2,
+        "nanos": 750355625
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 52034333
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_lia/lia_11",
+      "outcome": "Unsat",
+      "expected": "unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 53841375
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 55493166
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_lia/lia_12",
+      "outcome": "Unsat",
+      "expected": "unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 60051667
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60007292
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_lia/lia_13",
+      "outcome": "Unsat",
+      "expected": "unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 60004125
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 58888083
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_lia/lia_14",
+      "outcome": "Sat",
+      "expected": "sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 57856459
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 53972375
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_lia/lia_15",
+      "outcome": "Unsat",
+      "expected": "unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 55786917
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60020667
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_lia/lia_16",
+      "outcome": "Sat",
+      "expected": "sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 54100750
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60009125
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_lia/lia_17",
+      "outcome": "Sat",
+      "expected": "sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 60066417
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 56438667
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_lia/lia_18",
+      "outcome": "Sat",
+      "expected": "sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 60056791
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60006542
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_lia/lia_19",
+      "outcome": "Unsat",
+      "expected": "unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 59493042
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60009166
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_lia/lia_20",
+      "outcome": "Unsat",
+      "expected": "unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 51167000
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60007459
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_lia/lia_21",
+      "outcome": "Unsat",
+      "expected": "unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 60048542
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60007917
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_lia/lia_22",
+      "outcome": "Unsat",
+      "expected": "unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 60049625
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60018834
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_lia/lia_23",
+      "outcome": "Sat",
+      "expected": "sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 52372333
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 50481000
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_lia/lia_24",
+      "outcome": "Unsat",
+      "expected": "unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 60066958
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60006625
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_lia/lia_25",
+      "outcome": "Sat",
+      "expected": "sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 57900791
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 51580625
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_lia/order_cycle_unsat",
+      "outcome": "Unsat",
+      "expected": "unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 60063584
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60019875
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_lia/pigeonhole_unsat",
+      "outcome": "Unsat",
+      "expected": "unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 60092208
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60014417
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_lia/range_sat",
+      "outcome": "Sat",
+      "expected": "sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 50893959
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 54772625
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_lia/simple_sat",
+      "outcome": "Sat",
+      "expected": "sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 60176625
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 58854708
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_lia/system_sat",
+      "outcome": "Sat",
+      "expected": "sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 60100792
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60014125
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_lia/tight_unsat",
+      "outcome": "Unsat",
+      "expected": "unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 59209292
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60011292
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_uf/bool_uf_sat",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 0,
+        "nanos": 60064041
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60007667
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_uf/cong_11",
+      "outcome": "Sat",
+      "expected": "sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 60054625
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60007167
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_uf/cong_12",
+      "outcome": "Sat",
+      "expected": "sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 59854833
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 58210792
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_uf/cong_13",
+      "outcome": "Unsat",
+      "expected": "unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 51562542
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 54921875
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_uf/cong_14",
+      "outcome": "Sat",
+      "expected": "sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 60057416
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60008667
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_uf/cong_15",
+      "outcome": "Sat",
+      "expected": "sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 60043750
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60008375
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_uf/cong_16",
+      "outcome": "Unsat",
+      "expected": "unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 60047792
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60010833
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_uf/cong_17",
+      "outcome": "Sat",
+      "expected": "sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 50578250
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60007208
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_uf/cong_18",
+      "outcome": "Unsat",
+      "expected": "unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 56216583
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60010250
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_uf/cong_19",
+      "outcome": "Sat",
+      "expected": "sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 59095792
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60011250
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_uf/cong_20",
+      "outcome": "Unsat",
+      "expected": "unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 60065458
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 59866583
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_uf/congruence_sat",
+      "outcome": "Unsat",
+      "expected": "unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 60069667
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60008833
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_uf/diseq_sat",
+      "outcome": "Sat",
+      "expected": "sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 57657625
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60008750
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_uf/ff_x_sat",
+      "outcome": "Unsat",
+      "expected": "unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 60067625
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60008959
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_uf/multi_eq_unsat",
+      "outcome": "Unsat",
+      "expected": "unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 60046958
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60012708
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_uf/three_chain_sat",
+      "outcome": "Sat",
+      "expected": "sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 56135459
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 54188708
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_uf/transitivity_sat",
+      "outcome": "Unsat",
+      "expected": "unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 52637500
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60006917
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_uf/two_cycle_sat",
+      "outcome": "Sat",
+      "expected": "sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 60033708
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60007291
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_uf/two_func_sat",
+      "outcome": "Unsat",
+      "expected": "unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 60042125
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60007750
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "qf_uf/uf_pigeonhole_sat",
+      "outcome": "Sat",
+      "expected": "sat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 0,
+        "nanos": 60046333
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 52789791
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "problems": 90,
+    "solved": 70,
+    "unsolved": 20,
+    "solved_total_ns": 6764955126,
+    "par2_ns": 1206764955126,
+    "par10_ns": 6006764955126,
+    "timeout_ns": 30000000000
+  }
+}

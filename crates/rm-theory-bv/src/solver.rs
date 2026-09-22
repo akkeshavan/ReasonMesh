@@ -68,7 +68,7 @@ impl BvSolver {
         for &r in &roots {
             root_bits.extend(blaster.blast(&builder.dag, r));
         }
-        let cnf = EncodedCnf::encode(&blaster.circuit, &root_bits);
+        let cnf = EncodedCnf::encode(&blaster.circuit, &root_bits, blaster.num_inputs);
 
         let mut solver = CdclSolver::new(cnf.num_vars);
         for clause in &cnf.clauses {

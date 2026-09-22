@@ -7,6 +7,7 @@
 //! - Glucose-style EMA restart (fast/slow LBD EMAs) with Luby fallback
 //! - LBD-based learned-clause deletion with activity tiebreaking
 //! - Failed literal probing (inprocessing) every 10 restarts
+//! - XOR/parity reasoning: GF(2) unit propagation for parity-chain benchmarks
 
 // S1-7: Chronological backtracking minimum gap.
 // Only trigger chrono BT when the non-chrono jump would be this many levels deep.
@@ -22,6 +23,7 @@ use crate::{
     model::Model,
     vmtf::VmtfList,
     watched::WatchList,
+    xor::XorClause,
 };
 use rm_akx::literal::{Literal, Var};
 use rm_gpu::GpuClause;
@@ -212,6 +214,11 @@ pub struct CdclSolver {
     /// Optional GPU accelerator for parallel WalkSAT phase guidance.
     /// When None, the existing sequential CPU walk_phase is used unchanged.
     gpu: Option<Box<dyn rm_gpu::GpuAccelerator>>,
+
+    // XOR/parity reasoning (GF(2) unit propagation).
+    // Populated once after BVE by scanning the clause DB for k=2,3 XOR patterns.
+    xor_clauses: Vec<XorClause>,
+    xor_init_done: bool,
 }
 
 impl CdclSolver {
@@ -270,6 +277,8 @@ impl CdclSolver {
             bve_eliminated: Vec::new(),
             bve_done: false,
             gpu: None,
+            xor_clauses: Vec::new(),
+            xor_init_done: false,
         }
     }
 
@@ -387,37 +396,48 @@ impl CdclSolver {
                 }
             }
             _ => {
-                let cr = self.db.add(lits, false, 0);
-                // Post-check: handle clauses added after the solver is partially assigned.
-                // (Analogous to the binary case above — theory lemmas arrive post-model.)
-                let false_count = lits
-                    .iter()
-                    .filter(|&&l| self.assignment.literal_value(l) == Value::False)
-                    .count();
+                // Reorder literals so positions 0 and 1 are the two best watch
+                // candidates (non-False first). propagate() assumes lits[0] and
+                // lits[1] are the watched positions — if a False literal were at
+                // position 0 or 1 from the start, propagate()'s "other = lits[0]"
+                // check would read the wrong literal and corrupt the watch state.
+                let mut ordered: smallvec::SmallVec<[Literal; 8]> =
+                    smallvec::SmallVec::from_slice(lits);
+                let mut front = 0usize;
+                for i in 0..ordered.len() {
+                    if self.assignment.literal_value(ordered[i]) != Value::False {
+                        ordered.swap(front, i);
+                        front += 1;
+                        if front == 2 {
+                            break;
+                        }
+                    }
+                }
+                // front = number of non-False literals found (0, 1, or 2).
+                let false_count = lits.len() - {
+                    lits.iter()
+                        .filter(|&&l| self.assignment.literal_value(l) != Value::False)
+                        .count()
+                };
                 let lvl = self.assignment.current_level();
                 if false_count == lits.len() {
                     // All literals are False: immediate conflict.
                     self.db.set_empty_clause();
                     return;
-                } else if false_count == lits.len() - 1 {
-                    // All-but-one: unit propagation.
-                    if let Some(&unit) = lits
-                        .iter()
-                        .find(|&&l| self.assignment.literal_value(l) != Value::False)
-                    {
-                        if self.assignment.literal_value(unit) == Value::Undef {
-                            self.assignment.assign(unit, lvl, cr.0);
-                        }
+                }
+                let cr = self.db.add(&ordered, false, 0);
+                if false_count == lits.len() - 1 {
+                    // All-but-one: unit propagation (ordered[0] is the non-False one).
+                    let unit = ordered[0];
+                    if self.assignment.literal_value(unit) == Value::Undef {
+                        self.assignment.assign(unit, lvl, cr.0);
                     }
                 }
-                // Choose watches: prefer non-False literals so the watch invariant holds.
-                let mut non_false = lits
-                    .iter()
-                    .filter(|&&l| self.assignment.literal_value(l) != Value::False);
-                let w0 = non_false.next().copied().unwrap_or(lits[0]);
-                let w1 = non_false.next().copied().unwrap_or(lits[1]);
-                self.watches.watch(w0.negate(), cr, w1);
-                self.watches.watch(w1.negate(), cr, w0);
+                // Standard 2-watch setup: lits[0] and lits[1] are guaranteed
+                // non-False (or there are < 2 non-False, in which case the conflict
+                // case above already returned).
+                self.watches.watch(ordered[0].negate(), cr, ordered[1]);
+                self.watches.watch(ordered[1].negate(), cr, ordered[0]);
             }
         }
     }
@@ -536,6 +556,12 @@ impl CdclSolver {
             }
         }
 
+        // XOR/parity reasoning: scan the clause DB once (after BVE) for XOR patterns.
+        if !self.xor_init_done {
+            self.xor_init_done = true;
+            self.init_xor_reasoning();
+        }
+
         self.base_level = if assumptions.is_empty() {
             0
         } else {
@@ -565,6 +591,19 @@ impl CdclSolver {
                 if let Some(r) = self.process_conflict_in_loop(conflict_cr) {
                     break r;
                 }
+            } else if !self.xor_clauses.is_empty() {
+                let trail_before = self.assignment.trail().len();
+                if let Some(conflict_cr) = self.xor_propagate() {
+                    if let Some(r) = self.process_conflict_in_loop(conflict_cr) {
+                        break r;
+                    }
+                } else if self.assignment.trail().len() == trail_before {
+                    // Neither BCP nor XOR made progress — safe to branch.
+                    if let Some(r) = self.branch_or_finish() {
+                        break r;
+                    }
+                }
+                // If XOR added trail entries, loop back to BCP before branching.
             } else if let Some(r) = self.branch_or_finish() {
                 break r;
             }
@@ -1077,6 +1116,187 @@ impl CdclSolver {
     /// Reasoner to build exportable AKX clause knowledge.
     pub fn drain_learned(&mut self) -> Vec<(Vec<Literal>, u32)> {
         std::mem::take(&mut self.learned_outbox)
+    }
+
+    // -----------------------------------------------------------------------
+    // XOR / parity reasoning
+    // -----------------------------------------------------------------------
+
+    /// Scan the clause DB for k=2 and k=3 XOR-encoded clause groups and store
+    /// them in `self.xor_clauses`. Called once after BVE.
+    fn init_xor_reasoning(&mut self) {
+        use std::collections::{HashMap, HashSet};
+
+        // Deduplicate clauses before grouping.  BVE can add resolvent clauses
+        // that coincide with existing problem clauses; counting a duplicate
+        // twice would produce a false 4-tuple for k=3 (or false pair for k=2),
+        // leading to an unsound XOR constraint and wrong UNSAT results.
+        let mut seen: HashSet<SmallVec<[u32; 4]>> = HashSet::new();
+        let mut groups: HashMap<SmallVec<[u32; 4]>, SmallVec<[bool; 8]>> = HashMap::new();
+
+        self.db.for_each_clause(2, |_cr, _lbd, learnt, lits| {
+            if learnt || lits.len() > 3 {
+                return;
+            }
+            // Canonical form: sort raw literal values so differently-ordered
+            // copies of the same clause hash identically.
+            let mut canon: SmallVec<[u32; 4]> = lits.iter().map(|l| l.raw()).collect();
+            canon.sort_unstable();
+            if !seen.insert(canon) {
+                return; // skip duplicate
+            }
+
+            let mut vars: SmallVec<[u32; 4]> = lits.iter().map(|l| l.var()).collect();
+            vars.sort_unstable();
+            if vars.windows(2).any(|w| w[0] == w[1]) {
+                return;
+            }
+            let neg_parity = lits.iter().filter(|l| !l.is_positive()).count() % 2 == 1;
+            groups.entry(vars).or_default().push(neg_parity);
+        });
+
+        for (vars, parities) in groups {
+            let k = vars.len();
+            let expected = 1usize << (k - 1); // 2 for k=2, 4 for k=3
+            if parities.len() != expected {
+                continue;
+            }
+            let first = parities[0];
+            if !parities.iter().all(|&p| p == first) {
+                continue;
+            }
+            self.xor_clauses.push(XorClause {
+                vars: smallvec::SmallVec::from_slice(&vars),
+                rhs: !first,
+            });
+        }
+    }
+
+    /// One pass of XOR unit propagation. Returns a conflict ClauseRef if any
+    /// XOR constraint is violated. Assignments forced by unit XOR constraints
+    /// are added to the trail; the caller should loop back to BCP afterward.
+    fn xor_propagate(&mut self) -> Option<ClauseRef> {
+        for i in 0..self.xor_clauses.len() {
+            let mut free_var: Option<u32> = None;
+            let mut partial_xor = self.xor_clauses[i].rhs;
+            let mut n_free = 0usize;
+
+            let n_vars = self.xor_clauses[i].vars.len();
+            for j in 0..n_vars {
+                let v = self.xor_clauses[i].vars[j];
+                match self.assignment.value_of(v) {
+                    Value::True => partial_xor ^= true,
+                    Value::False => {}
+                    Value::Undef => {
+                        n_free += 1;
+                        if n_free == 1 {
+                            free_var = Some(v);
+                        }
+                    }
+                }
+            }
+
+            if n_free == 0 {
+                // All assigned: partial_xor != false means XOR constraint violated.
+                if partial_xor {
+                    return Some(self.make_xor_conflict_clause(i));
+                }
+            } else if n_free == 1 {
+                let fv = free_var.unwrap();
+                // fv must be set to partial_xor to satisfy the XOR constraint.
+                let forced_lit = if partial_xor {
+                    Literal::positive(fv)
+                } else {
+                    Literal::negative(fv)
+                };
+                match self.assignment.literal_value(forced_lit) {
+                    Value::True => {}
+                    Value::False => {
+                        return Some(self.make_xor_conflict_clause(i));
+                    }
+                    Value::Undef => {
+                        let cr = self.make_xor_reason_clause(i, forced_lit);
+                        let lvl = self.assignment.current_level();
+                        self.assignment.assign(forced_lit, lvl, cr.0);
+                        self.propagations += 1;
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Build the reason clause for an XOR-forced literal and add it to the DB.
+    /// Format: [forced_lit, neg(v1_assigned), neg(v2_assigned), ...] — the
+    /// forced literal is at position 0; all other literals are currently False.
+    fn make_xor_reason_clause(&mut self, xor_idx: usize, forced_lit: Literal) -> ClauseRef {
+        let forced_var = forced_lit.var();
+        let n = self.xor_clauses[xor_idx].vars.len();
+
+        let mut clause: SmallVec<[Literal; 8]> = SmallVec::new();
+        clause.push(forced_lit);
+        for j in 0..n {
+            let v = self.xor_clauses[xor_idx].vars[j];
+            if v == forced_var {
+                continue;
+            }
+            let lit = match self.assignment.value_of(v) {
+                Value::True => Literal::negative(v),
+                Value::False => Literal::positive(v),
+                Value::Undef => unreachable!("non-forced XOR vars must be assigned"),
+            };
+            clause.push(lit);
+        }
+        self.add_xor_explanation(&clause)
+    }
+
+    /// Build the conflict clause for a violated XOR constraint and add it to
+    /// the DB. All literals in the clause are currently False. The literal at
+    /// the highest decision level is placed first so `analyze` picks the right
+    /// UIP.
+    fn make_xor_conflict_clause(&mut self, xor_idx: usize) -> ClauseRef {
+        let n = self.xor_clauses[xor_idx].vars.len();
+        let mut clause: SmallVec<[Literal; 8]> = SmallVec::new();
+        for j in 0..n {
+            let v = self.xor_clauses[xor_idx].vars[j];
+            let lit = match self.assignment.value_of(v) {
+                Value::True => Literal::negative(v),
+                Value::False => Literal::positive(v),
+                Value::Undef => continue,
+            };
+            clause.push(lit);
+        }
+
+        // Sort descending by level so lits[0] is the most-recently-assigned literal.
+        let levels: SmallVec<[u32; 8]> =
+            clause.iter().map(|l| self.assignment.level_of(l.var())).collect();
+        let mut idx: SmallVec<[usize; 8]> = (0..clause.len()).collect();
+        idx.sort_unstable_by(|&a, &b| levels[b].cmp(&levels[a]));
+        let sorted: SmallVec<[Literal; 8]> = idx.iter().map(|&i| clause[i]).collect();
+        clause = sorted;
+
+        if clause.len() < 2 {
+            self.db.set_empty_clause();
+            return ClauseRef::DECISION;
+        }
+        self.add_xor_explanation(&clause)
+    }
+
+    /// Add an XOR explanation clause (reason or conflict) to the DB and watch
+    /// lists without touching the AKX outbox (these are structural, not learnt
+    /// knowledge).
+    fn add_xor_explanation(&mut self, lits: &[Literal]) -> ClauseRef {
+        debug_assert!(lits.len() >= 2);
+        let lbd = self.compute_lbd(lits);
+        let cr = self.db.add(lits, true, lbd);
+        if lits.len() == 2 {
+            self.binaries[lits[0].negate().raw() as usize].push((lits[1], cr.0));
+            self.binaries[lits[1].negate().raw() as usize].push((lits[0], cr.0));
+        } else {
+            self.watches.watch(lits[0].negate(), cr, lits[1]);
+            self.watches.watch(lits[1].negate(), cr, lits[0]);
+        }
+        cr
     }
 
     /// S1-6: Compute LBD (Literal Block Distance) using a timestamp array.
@@ -2711,5 +2931,99 @@ mod tests {
             SolveResult::Unsat => {}
             SolveResult::Sat(_) => panic!("PHP(10,9) is UNSAT"),
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // XOR / parity reasoning tests
+    // -----------------------------------------------------------------------
+
+    /// Build a CNF encoding XOR(v1,...,vk) = rhs using the standard 2^(k-1)
+    /// clause encoding. Returns (num_vars, clauses).
+    fn xor_chain_cnf(n_bits: u32, rhs_parity: bool) -> (u32, Vec<Vec<i32>>) {
+        // Encode a binary XOR tree over n_bits input variables.
+        // Inputs: 1..=n_bits.  Intermediate nodes: n_bits+1..
+        // XOR(a, b) = c encoded as 4 clauses (= XOR2_CNF).
+        let mut clauses = Vec::new();
+        let mut next_var = n_bits + 1;
+        let mut layer: Vec<i32> = (1..=n_bits as i32).collect();
+
+        fn xor2(a: i32, b: i32, c: i32, cls: &mut Vec<Vec<i32>>) {
+            // XOR(a,b)=c: 4 clauses
+            cls.push(vec![a, b, -c]);
+            cls.push(vec![a, -b, c]);
+            cls.push(vec![-a, b, c]);
+            cls.push(vec![-a, -b, -c]);
+        }
+
+        while layer.len() > 1 {
+            let mut next = Vec::new();
+            let mut i = 0;
+            while i + 1 < layer.len() {
+                let out = next_var as i32;
+                next_var += 1;
+                xor2(layer[i], layer[i + 1], out, &mut clauses);
+                next.push(out);
+                i += 2;
+            }
+            if i < layer.len() {
+                next.push(layer[i]);
+            }
+            layer = next;
+        }
+        // layer[0] is the final XOR result; assert it equals rhs_parity
+        let root = layer[0];
+        if rhs_parity {
+            clauses.push(vec![root]); // root = 1
+        } else {
+            clauses.push(vec![-root]); // root = 0
+        }
+
+        (next_var - 1, clauses)
+    }
+
+    #[test]
+    fn xor_chain_8bit_sat() {
+        // XOR of 8 bits = 1 should be SAT
+        let (nv, clauses) = xor_chain_cnf(8, true);
+        assert!(cdcl_is_sat(nv, &clauses));
+    }
+
+    #[test]
+    fn xor_chain_8bit_unsat() {
+        // XOR of 8 bits = 1 AND all bits forced to 0: UNSAT
+        // 8 zeros XOR = 0, but we require 1.
+        let (nv, mut clauses) = xor_chain_cnf(8, true);
+        for v in 1u32..=8 {
+            clauses.push(vec![-(v as i32)]); // force all input bits to 0
+        }
+        let mut s = dimacs_to_solver(nv, &clauses);
+        assert_eq!(s.solve(&[], u64::MAX), SolveResult::Unsat);
+    }
+
+    #[test]
+    fn xor_chain_16bit_solves_quickly() {
+        // A 16-bit XOR chain is par-hard for plain CDCL.
+        // With XOR propagation it should solve in a handful of conflicts.
+        let (nv, clauses) = xor_chain_cnf(16, true);
+        let mut s = dimacs_to_solver(nv, &clauses);
+        let result = s.solve(&[], 50_000);
+        assert!(
+            matches!(result, SolveResult::Sat(_)),
+            "expected SAT within budget, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn xor_chain_32bit_solves_quickly() {
+        // par32-equivalent: 32-bit XOR chain with XOR reasoning should succeed.
+        let (nv, clauses) = xor_chain_cnf(32, true);
+        let mut s = dimacs_to_solver(nv, &clauses);
+        let result = s.solve(&[], 200_000);
+        assert!(
+            matches!(result, SolveResult::Sat(_)),
+            "expected SAT within budget, got {:?}",
+            result
+        );
     }
 }

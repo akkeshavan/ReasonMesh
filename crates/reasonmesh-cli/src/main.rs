@@ -1076,7 +1076,13 @@ fn main() {
             Ok(m) => match run_manifest(&m) {
                 Ok(run) => {
                     let out = run.to_json_pretty();
-                    println!("{out}");
+                    use std::io::Write;
+                    if let Err(e) = writeln!(std::io::stdout(), "{out}") {
+                        if e.kind() != std::io::ErrorKind::BrokenPipe {
+                            eprintln!("error: writing benchmark output: {e}");
+                            std::process::exit(EXIT_INTERNAL_ERROR);
+                        }
+                    }
                     std::process::exit(0);
                 }
                 Err(e) => {

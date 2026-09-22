@@ -1,0 +1,12 @@
+; expected: sat
+(set-logic QF_LIA)
+(declare-fun a () Int)
+(declare-fun b () Int)
+(declare-fun c () Int)
+(declare-fun d () Int)
+(assert (>= a 1))
+(assert (>= b 1))
+(assert (>= c 1))
+(assert (>= d 1))
+(assert (<= (+ a b c d) 10))
+(check-sat)
