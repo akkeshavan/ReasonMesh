@@ -1504,6 +1504,14 @@ fn intern_uf_term_cdclt(
             uf_cache.insert(name.clone(), id);
             Ok(id)
         }
+        // Integer literals are treated as distinct UF constants "#n".
+        // Two uses of the same literal share the same ENodeId.
+        SExpr::Atom(Atom::Numeral(n)) => {
+            let name = format!("#int_{n}");
+            let id = cdclt.intern_const(&name);
+            uf_cache.insert(key, id);
+            Ok(id)
+        }
         SExpr::List(items) => {
             let fname = items.first().and_then(|e| sexpr_symbol(e)).ok_or(())?;
             let args: Vec<ENodeId> = items
@@ -1540,6 +1548,14 @@ fn intern_uf_term(
             let node = solver.egraph.node(id).clone();
             solver.cc.add_term(id, &node);
             uf_cache.insert(name.clone(), id);
+            Ok(id)
+        }
+        SExpr::Atom(Atom::Numeral(n)) => {
+            let name = format!("#int_{n}");
+            let id = solver.egraph.constant(&name);
+            let node = solver.egraph.node(id).clone();
+            solver.cc.add_term(id, &node);
+            uf_cache.insert(key, id);
             Ok(id)
         }
         SExpr::List(items) => {
