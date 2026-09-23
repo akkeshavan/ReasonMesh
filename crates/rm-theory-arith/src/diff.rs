@@ -95,6 +95,15 @@ impl DiffLogicSolver {
         self.num_vars
     }
 
+    /// Dynamically allocate a new variable and return its 1-based ID.
+    pub fn add_var(&mut self) -> u32 {
+        self.num_vars += 1;
+        self.dist.push(0);
+        self.pred_edge.push(None);
+        self.adj.push(Vec::new());
+        self.num_vars
+    }
+
     // -----------------------------------------------------------------------
     // CDCL interface
     // -----------------------------------------------------------------------

@@ -543,27 +543,34 @@ fn flatten_assertion(
                         return FlattenResult::Unsupported;
                     };
 
-                    if let (Some(xn), Some(yn)) = (lhs.symbol(), rhs.symbol()) {
-                        if let (Some(&xi), Some(&yi)) = (dl_vars.get(xn), dl_vars.get(yn)) {
+                    // (= dl_var_or_num dl_var_or_num) — encode purely in DL when both sides
+                    // are DL-representable (symbol in dl_vars or integer numeral).
+                    // Resolves to (dl_id_or_zero_const, offset) for each side.
+                    let dl_lhs: Option<(u32, i64)> = if let Some(n) = lhs.symbol() {
+                        dl_vars.get(n).map(|&id| (id, 0))
+                    } else {
+                        extract_int(lhs).map(|c| (0u32, c))
+                    };
+                    let dl_rhs: Option<(u32, i64)> = if let Some(n) = rhs.symbol() {
+                        dl_vars.get(n).map(|&id| (id, 0))
+                    } else {
+                        extract_int(rhs).map(|c| (0u32, c))
+                    };
+                    // Require at least one named variable (both numerals → trivial constant).
+                    let lhs_is_var = lhs.symbol().and_then(|n| dl_vars.get(n)).is_some();
+                    let rhs_is_var = rhs.symbol().and_then(|n| dl_vars.get(n)).is_some();
+                    if let (Some((xa, xc)), Some((ya, yc))) = (dl_lhs, dl_rhs) {
+                        if lhs_is_var || rhs_is_var {
+                            // (xa + xc = ya + yc) ≡ (xa - ya ≤ yc-xc) ∧ (ya - xa ≤ xc-yc).
+                            let diff = yc - xc;
                             if polarity {
                                 let sat1 = solver.fresh_lit();
-                                out.push(TheoryLit::Leq {
-                                    x: xi,
-                                    y: yi,
-                                    c: 0,
-                                    polarity: true,
-                                    sat_var: sat1,
-                                });
+                                out.push(TheoryLit::Leq { x: xa, y: ya, c: diff, polarity: true, sat_var: sat1 });
                                 let sat2 = solver.fresh_lit();
-                                out.push(TheoryLit::Leq {
-                                    x: yi,
-                                    y: xi,
-                                    c: 0,
-                                    polarity: true,
-                                    sat_var: sat2,
-                                });
+                                out.push(TheoryLit::Leq { x: ya, y: xa, c: -diff, polarity: true, sat_var: sat2 });
                                 return FlattenResult::Ok;
                             } else {
+                                // (not (= x c)) in the flat conjunctive path is a disjunction.
                                 return FlattenResult::Disjunction;
                             }
                         }
@@ -720,6 +727,12 @@ struct CdclT {
     eq_atom_cache: FxHashMap<(ENodeId, ENodeId), u32>,
     /// Reverse cache for Leq/Lt atoms (x, y, c, is_lt) → sat_var.
     arith_atom_cache: FxHashMap<(u32, u32, i64, bool), u32>,
+    /// Counter for fresh names ($arith_N / $ite_N) created for arithmetic sub-terms.
+    arith_count: u32,
+    /// Reverse map: UF ENodeId → linked DL variable ID. Populated when a
+    /// fresh DL variable is created for an arithmetic sub-expression so that
+    /// nested arithmetic like (+ (- x 1) 9) can find the base DL var.
+    uf_to_dl: FxHashMap<ENodeId, u32>,
     /// Shared cancellation flag. The benchmark runner (or any timeout wrapper)
     /// sets this to true after the wall-clock deadline fires; the solve loop
     /// checks it once per iteration and returns Unknown promptly.
@@ -742,6 +755,8 @@ impl CdclT {
             bool_pred_nodes: FxHashMap::default(),
             eq_atom_cache: FxHashMap::default(),
             arith_atom_cache: FxHashMap::default(),
+            arith_count: 0,
+            uf_to_dl: FxHashMap::default(),
             cancel,
         }
     }
@@ -1184,7 +1199,6 @@ fn mk_conflict_dl(e: DlError) -> Vec<Literal> {
 /// Returns the verdict and, on SAT, a DL model (var_name → integer value).
 fn solve_with_cdclt(text: &str, max_conflicts: u64, cancel: Arc<AtomicBool>) -> Result<(NoResult, Vec<(String, i64)>), String> {
     use rm_syntax::{lex, parse_program};
-
     let tokens = lex(text).map_err(|e| e.to_string())?;
     let exprs = parse_program(&tokens).map_err(|e| e.to_string())?;
     let decls = parse_smtlib_decls(&exprs);
@@ -1213,6 +1227,7 @@ fn solve_with_cdclt(text: &str, max_conflicts: u64, cancel: Arc<AtomicBool>) -> 
         };
         cdclt.dl_var_names.insert(dl_id, name.clone());
         cdclt.dl_uf_pairs.push((dl_id, uid));
+        cdclt.uf_to_dl.insert(uid, dl_id);
     }
 
     for assertion in &decls.assertions {
@@ -1331,7 +1346,7 @@ fn encode_bool_cdclt(
                     }
                     let term_ids: Vec<ENodeId> = args
                         .iter()
-                        .map(|arg| intern_uf_term_cdclt(arg, cdclt, uf_cache, uf_funcs))
+                        .map(|arg| intern_uf_term_cdclt(arg, cdclt, uf_cache, uf_funcs, dl_vars))
                         .collect::<Result<_, _>>()?;
                     // Collect negated-equality literals for each pair.
                     let mut neg_eq_lits: Vec<Literal> = Vec::new();
@@ -1370,27 +1385,37 @@ fn encode_bool_cdclt(
                 "=" => {
                     let lhs = items.get(1).ok_or(())?;
                     let rhs = items.get(2).ok_or(())?;
-                    // If both sides are DL arithmetic vars, encode as two Leq atoms
-                    // (Tseitin AND: v ↔ (x-y≤0 ∧ y-x≤0)) instead of routing to EUF.
-                    if let (Some(xn), Some(yn)) = (sexpr_symbol(lhs), sexpr_symbol(rhs)) {
-                        if let (Some(&xi), Some(&yi)) = (dl_vars.get(xn), dl_vars.get(yn)) {
+                    // If both sides are DL-representable (variable or numeral), encode as
+                    // Leq atoms (Tseitin: v ↔ (xa-ya≤diff ∧ ya-xa≤-diff)) instead of EUF.
+                    let dl_lhs: Option<(u32, i64)> = sexpr_symbol(lhs)
+                        .and_then(|n| dl_vars.get(n))
+                        .map(|&id| (id, 0))
+                        .or_else(|| extract_int(lhs).map(|c| (0u32, c)));
+                    let dl_rhs: Option<(u32, i64)> = sexpr_symbol(rhs)
+                        .and_then(|n| dl_vars.get(n))
+                        .map(|&id| (id, 0))
+                        .or_else(|| extract_int(rhs).map(|c| (0u32, c)));
+                    let lhs_is_var = sexpr_symbol(lhs).and_then(|n| dl_vars.get(n)).is_some();
+                    let rhs_is_var = sexpr_symbol(rhs).and_then(|n| dl_vars.get(n)).is_some();
+                    if let (Some((xa, xc)), Some((ya, yc))) = (dl_lhs, dl_rhs) {
+                        if lhs_is_var || rhs_is_var {
+                            let diff = yc - xc;
                             let v1 = cdclt.alloc_var();
-                            cdclt.atoms.insert(v1, BackboneAtom::Leq { x: xi, y: yi, c: 0 });
+                            cdclt.atoms.insert(v1, BackboneAtom::Leq { x: xa, y: ya, c: diff });
                             let v2 = cdclt.alloc_var();
-                            cdclt.atoms.insert(v2, BackboneAtom::Leq { x: yi, y: xi, c: 0 });
+                            cdclt.atoms.insert(v2, BackboneAtom::Leq { x: ya, y: xa, c: -diff });
                             let v = cdclt.alloc_var();
                             let lv = Literal::positive(v);
                             let lv1 = Literal::positive(v1);
                             let lv2 = Literal::positive(v2);
-                            // v → v1, v → v2, (v1 ∧ v2) → v
                             cdclt.add_clause(&[lv.negate(), lv1]);
                             cdclt.add_clause(&[lv.negate(), lv2]);
                             cdclt.add_clause(&[lv, lv1.negate(), lv2.negate()]);
                             return Ok(lv);
                         }
                     }
-                    let lid = intern_uf_term_cdclt(lhs, cdclt, uf_cache, uf_funcs)?;
-                    let rid = intern_uf_term_cdclt(rhs, cdclt, uf_cache, uf_funcs)?;
+                    let lid = intern_uf_term_cdclt(lhs, cdclt, uf_cache, uf_funcs, dl_vars)?;
+                    let rid = intern_uf_term_cdclt(rhs, cdclt, uf_cache, uf_funcs, dl_vars)?;
                     let key = if lid <= rid { (lid, rid) } else { (rid, lid) };
                     let v = if let Some(&cached) = cdclt.eq_atom_cache.get(&key) {
                         cached
@@ -1421,7 +1446,7 @@ fn encode_bool_cdclt(
                             if !args.is_empty() {
                                 let arg_ids: Option<Vec<ENodeId>> = args
                                     .iter()
-                                    .map(|a| intern_uf_term_cdclt(a, cdclt, uf_cache, uf_funcs).ok())
+                                    .map(|a| intern_uf_term_cdclt(a, cdclt, uf_cache, uf_funcs, dl_vars).ok())
                                     .collect();
                                 if let Some(ids) = arg_ids {
                                     cdclt.bool_pred_nodes.insert(v, (fname.to_string(), ids));
@@ -1528,7 +1553,8 @@ fn intern_uf_term_cdclt(
     expr: &rm_syntax::SExpr,
     cdclt: &mut CdclT,
     uf_cache: &mut FxHashMap<String, ENodeId>,
-    _uf_funcs: &FxHashMap<String, u32>,
+    uf_funcs: &FxHashMap<String, u32>,
+    dl_vars: &FxHashMap<String, u32>,
 ) -> Result<ENodeId, ()> {
     use rm_syntax::{Atom, SExpr};
     let key = sexpr_key(expr);
@@ -1551,23 +1577,133 @@ fn intern_uf_term_cdclt(
         }
         SExpr::List(items) => {
             let fname = items.first().and_then(|e| sexpr_symbol(e)).ok_or(())?;
-            // Only allow declared UF functions. Built-in arithmetic/conditional
-            // operators (+, -, *, ite, >, <, etc.) are not UF — silently treating
-            // them as UF would produce wrong-SAT by ignoring their semantics.
-            if !_uf_funcs.contains_key(fname) {
-                return Err(());
+            match fname {
+                // ite: introduce a fresh UF constant and add conditional equality lemmas.
+                // (ite cond t f) → fresh z, with clause [¬cond ∨ z=t] and [cond ∨ z=f].
+                "ite" => {
+                    let cond_expr = items.get(1).ok_or(())?;
+                    let then_expr = items.get(2).ok_or(())?;
+                    let else_expr = items.get(3).ok_or(())?;
+                    let cond_lit = encode_bool_cdclt(cond_expr, cdclt, uf_cache, uf_funcs, dl_vars)?;
+                    let then_id = intern_uf_term_cdclt(then_expr, cdclt, uf_cache, uf_funcs, dl_vars)?;
+                    let else_id = intern_uf_term_cdclt(else_expr, cdclt, uf_cache, uf_funcs, dl_vars)?;
+                    let n = cdclt.arith_count;
+                    cdclt.arith_count += 1;
+                    let fresh_name = format!("$ite_{n}");
+                    let ite_id = cdclt.intern_const(&fresh_name);
+                    // cond → ite_id = then_id
+                    let eq_then = intern_eq_atom(cdclt, ite_id, then_id);
+                    // ¬cond → ite_id = else_id
+                    let eq_else = intern_eq_atom(cdclt, ite_id, else_id);
+                    cdclt.add_clause(&[cond_lit.negate(), Literal::positive(eq_then)]);
+                    cdclt.add_clause(&[cond_lit, Literal::positive(eq_else)]);
+                    uf_cache.insert(key, ite_id);
+                    Ok(ite_id)
+                }
+                // (+ c x) or (+ x c): encode as fresh DL variable z = x + c.
+                // The non-numeral argument may be a declared DL symbol or a
+                // previously interned arithmetic sub-expression ($arith_N).
+                "+" => {
+                    let a = items.get(1).ok_or(())?;
+                    let b = items.get(2).ok_or(())?;
+                    let (base_uid_or_name, c) = if let Some(c) = extract_int(a) {
+                        (b, c)
+                    } else if let Some(c) = extract_int(b) {
+                        (a, c)
+                    } else {
+                        return Err(());
+                    };
+                    let base_dl = resolve_dl_base(base_uid_or_name, cdclt, uf_cache, uf_funcs, dl_vars)?;
+                    intern_arith_offset(cdclt, uf_cache, key, base_dl, c)
+                }
+                // (- x c): encode as fresh DL variable z = x - c (= x + (-c)).
+                "-" => {
+                    let a = items.get(1).ok_or(())?;
+                    let b = items.get(2).ok_or(())?;
+                    let c = extract_int(b).ok_or(())?;
+                    let base_dl = resolve_dl_base(a, cdclt, uf_cache, uf_funcs, dl_vars)?;
+                    intern_arith_offset(cdclt, uf_cache, key, base_dl, -c)
+                }
+                // Only allow declared UF functions. Other built-ins (*, /, >, <, etc.)
+                // are not UF — silently treating them as UF would produce wrong-SAT.
+                fname => {
+                    if !uf_funcs.contains_key(fname) {
+                        return Err(());
+                    }
+                    let args: Vec<ENodeId> = items
+                        .iter()
+                        .skip(1)
+                        .map(|a| intern_uf_term_cdclt(a, cdclt, uf_cache, uf_funcs, dl_vars))
+                        .collect::<Result<_, _>>()?;
+                    let id = cdclt.intern_apply(fname, &args);
+                    uf_cache.insert(key, id);
+                    Ok(id)
+                }
             }
-            let args: Vec<ENodeId> = items
-                .iter()
-                .skip(1)
-                .map(|a| intern_uf_term_cdclt(a, cdclt, uf_cache, _uf_funcs))
-                .collect::<Result<_, _>>()?;
-            let id = cdclt.intern_apply(fname, &args);
-            uf_cache.insert(key, id);
-            Ok(id)
         }
         _ => Err(()),
     }
+}
+
+/// Return (or create) the SAT variable for the equality atom `lhs = rhs`.
+fn intern_eq_atom(cdclt: &mut CdclT, lhs: ENodeId, rhs: ENodeId) -> u32 {
+    let key = if lhs <= rhs { (lhs, rhs) } else { (rhs, lhs) };
+    if let Some(&v) = cdclt.eq_atom_cache.get(&key) {
+        return v;
+    }
+    let v = cdclt.alloc_var();
+    cdclt.atoms.insert(v, BackboneAtom::Eq { lhs, rhs });
+    cdclt.eq_atom_cache.insert(key, v);
+    v
+}
+
+/// Intern `base_dl + offset` as a fresh DL variable linked to a UF constant.
+/// Populates uf_to_dl so nested arithmetic like (+ (- x 1) 9) can chain.
+fn intern_arith_offset(
+    cdclt: &mut CdclT,
+    uf_cache: &mut FxHashMap<String, ENodeId>,
+    key: String,
+    base_dl: u32,
+    offset: i64,
+) -> Result<ENodeId, ()> {
+    let n = cdclt.arith_count;
+    cdclt.arith_count += 1;
+    let fresh_name = format!("$arith_{n}");
+    let uid = cdclt.intern_const(&fresh_name);
+    let fresh_dl = cdclt.dl.add_var();
+    cdclt.dl_var_names.insert(fresh_dl, fresh_name);
+    cdclt.dl_uf_pairs.push((fresh_dl, uid));
+    cdclt.uf_to_dl.insert(uid, fresh_dl);
+    // fresh_dl = base_dl + offset: two unconditional DL bounds (sat_lit = 0).
+    cdclt.dl.assert_leq(fresh_dl, base_dl, offset, 0).map_err(|_| ())?;
+    cdclt.dl.assert_leq(base_dl, fresh_dl, -offset, 0).map_err(|_| ())?;
+    uf_cache.insert(key, uid);
+    Ok(uid)
+}
+
+/// Look up the DL variable ID for a UF node that was interned as an arithmetic term.
+fn uf_node_to_dl(cdclt: &CdclT, uid: ENodeId) -> Option<u32> {
+    cdclt.uf_to_dl.get(&uid).copied()
+}
+
+/// Resolve an arithmetic base expression to its DL variable ID.
+/// Handles: declared DL symbol names, and sub-expressions that intern as $arith_ nodes.
+fn resolve_dl_base(
+    expr: &rm_syntax::SExpr,
+    cdclt: &mut CdclT,
+    uf_cache: &mut FxHashMap<String, ENodeId>,
+    uf_funcs: &FxHashMap<String, u32>,
+    dl_vars: &FxHashMap<String, u32>,
+) -> Result<u32, ()> {
+    // Fast path: it's a declared DL variable symbol.
+    if let Some(name) = sexpr_symbol(expr) {
+        if let Some(&dl_id) = dl_vars.get(name) {
+            return Ok(dl_id);
+        }
+    }
+    // Slow path: intern as a UF term and look up its linked DL variable.
+    let uid = intern_uf_term_cdclt(expr, cdclt, uf_cache, uf_funcs, dl_vars)?;
+    uf_node_to_dl(cdclt, uid).ok_or(())
 }
 
 // ---------------------------------------------------------------------------
@@ -1603,6 +1739,16 @@ fn intern_uf_term(
         }
         SExpr::List(items) => {
             let fname = items.first().and_then(|e| sexpr_symbol(e)).ok_or(())?;
+            // Reject built-in operators; treating them as UF would be unsound.
+            // flatten_assertion returns Unsupported, routing to the CDCL(T) path.
+            if matches!(fname, "ite" | "+" | "-" | "*" | "/" | "div" | "mod" | "rem"
+                | "<" | "<=" | ">" | ">=" | "=" | "not" | "and" | "or" | "xor" | "=>"
+                | "distinct" | "abs" | "to_int" | "to_real" | "is_int") {
+                return Err(());
+            }
+            if !_uf_funcs.contains_key(fname) {
+                return Err(());
+            }
             let args: Vec<ENodeId> = items
                 .iter()
                 .skip(1)
