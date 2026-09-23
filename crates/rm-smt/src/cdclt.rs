@@ -973,17 +973,11 @@ impl TheorySolver for CdclT {
                     if val {
                         if let Err(e) = self.cc.assert_eq(&self.egraph, lhs, rhs, sat_raw) {
                             if let Some(conflict) = mk_conflict_euf(e) {
-                                if std::env::var("CDCLT_DEBUG").is_ok() {
-                                    eprintln!("EUF conflict (assert_eq lhs={lhs:?} rhs={rhs:?} sat_raw={sat_raw}): {:?}", conflict);
-                                }
                                 return Err(conflict);
                             }
                         }
                     } else if let Err(e) = self.cc.assert_neq(&self.egraph, lhs, rhs, sat_raw) {
                         if let Some(conflict) = mk_conflict_euf(e) {
-                            if std::env::var("CDCLT_DEBUG").is_ok() {
-                                eprintln!("EUF conflict (assert_neq lhs={lhs:?} rhs={rhs:?} sat_raw={sat_raw}): {:?}", conflict);
-                            }
                             return Err(conflict);
                         }
                     }
