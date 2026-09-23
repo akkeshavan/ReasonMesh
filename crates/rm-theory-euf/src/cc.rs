@@ -33,6 +33,9 @@ pub enum CcError {
         lhs: ENodeId,
         rhs: ENodeId,
         explanation: Explanation,
+        /// Raw SAT literal for the disequality assertion that triggered this conflict.
+        /// Must be negated and included in the conflict clause alongside the eq-chain lits.
+        diseq_lit: u32,
     },
     #[error("unknown term id {0:?}")]
     UnknownTerm(ENodeId),
@@ -69,6 +72,8 @@ enum UndoEntry {
     Diseq { lhs: ENodeId, rhs: ENodeId },
     /// A use-list entry was appended.
     UseListPush { class: ENodeId },
+    /// The child's use-list was cleared (items moved to root). Restore on backtrack.
+    UseListClear { node: ENodeId, items: Vec<ENodeId> },
     /// An explanation-forest edge was set.
     ExplEdge { node: ENodeId },
 }
@@ -156,15 +161,17 @@ impl CongruenceClosure {
     // -----------------------------------------------------------------------
 
     pub fn find(&mut self, id: ENodeId) -> ENodeId {
+        // No path compression: backtrack_to only restores the single child.parent
+        // edge changed per merge.  Path compression skips nodes and leaves stale
+        // pointers after backtracking, causing find to return wrong representatives.
+        // Union-by-rank alone keeps this O(log n) which is fine for solver sizes.
         let mut cur = id;
         loop {
             let parent = self.uf[cur.0 as usize].parent;
             if parent == cur {
                 return cur;
             }
-            let grandparent = self.uf[parent.0 as usize].parent;
-            self.uf[cur.0 as usize].parent = grandparent;
-            cur = grandparent;
+            cur = parent;
         }
     }
 
@@ -191,6 +198,11 @@ impl CongruenceClosure {
         } else {
             return;
         };
+        // Discard any pending merges left over from a conflict return mid-propagate.
+        // Stale entries carry MergeReasons from the now-undone union-find state; if
+        // kept they would trigger spurious merges with wrong explain_parent edges in
+        // the next theory_check call, producing incomplete conflict clauses.
+        self.pending.clear();
         while self.undo.len() > target {
             match self.undo.pop().unwrap() {
                 UndoEntry::Union {
@@ -209,6 +221,9 @@ impl CongruenceClosure {
                 }
                 UndoEntry::UseListPush { class } => {
                     self.use_list[class.0 as usize].pop();
+                }
+                UndoEntry::UseListClear { node, items } => {
+                    self.use_list[node.0 as usize] = items;
                 }
                 UndoEntry::ExplEdge { node } => {
                     self.explain_parent[node.0 as usize] = None;
@@ -259,6 +274,7 @@ impl CongruenceClosure {
                 lhs,
                 rhs,
                 explanation: expl,
+                diseq_lit: sat_lit,
             });
         }
         let (a, b) = if rep_l < rep_r {
@@ -308,6 +324,9 @@ impl CongruenceClosure {
             }
 
             let child_use: Vec<ENodeId> = std::mem::take(&mut self.use_list[child.0 as usize]);
+            // UseListClear is pushed BEFORE the UseListPush entries so that LIFO undo
+            // processes the pushes (restoring root's list) before restoring child's list.
+            self.undo.push(UndoEntry::UseListClear { node: child, items: child_use.clone() });
             for &node_id in &child_use {
                 // Look up current canonical signature.
                 let node = egraph.node(node_id);
@@ -320,14 +339,25 @@ impl CongruenceClosure {
                         let rep_other = self.find(other);
                         let rep_node = self.find(node_id);
                         if rep_other != rep_node {
-                            self.pending.push((
-                                node_id,
-                                other,
-                                MergeReason::Congruence {
-                                    n1: node_id,
-                                    n2: other,
-                                },
-                            ));
+                            // Guard against stale sig_table entries from previous
+                            // theory_check iterations (sig_table is never rolled back).
+                            // Verify `other`'s current canonical signature still matches
+                            // before triggering a congruence; if stale, update the table.
+                            let other_node = egraph.node(other);
+                            let other_canon: SmallVec<[ENodeId; 4]> =
+                                other_node.args.iter().map(|&a| self.find(a)).collect();
+                            if other_node.func.0 == node.func.0 && other_canon == canon {
+                                self.pending.push((
+                                    node_id,
+                                    other,
+                                    MergeReason::Congruence {
+                                        n1: node_id,
+                                        n2: other,
+                                    },
+                                ));
+                            } else {
+                                self.sig_table.insert(sig_key, node_id);
+                            }
                         }
                     }
                 } else {
@@ -338,8 +368,12 @@ impl CongruenceClosure {
                 self.undo.push(UndoEntry::UseListPush { class: root });
             }
 
-            let diseqs_snap: Vec<(ENodeId, ENodeId, u32)> = self.diseqs.clone();
-            for (a_rep, b_rep, _sat_lit) in diseqs_snap {
+            // Check all recorded disequalities for a conflict. Use an index loop
+            // instead of cloning diseqs: ENodeId is Copy so self.diseqs[i] copies
+            // three words, avoiding an O(N) allocation on every merge.
+            let n_diseqs = self.diseqs.len();
+            for i in 0..n_diseqs {
+                let (a_rep, b_rep, diseq_sat_lit) = self.diseqs[i];
                 let cur_a = self.find(a_rep);
                 let cur_b = self.find(b_rep);
                 if cur_a == cur_b {
@@ -348,6 +382,7 @@ impl CongruenceClosure {
                         lhs: a_rep,
                         rhs: b_rep,
                         explanation: expl,
+                        diseq_lit: diseq_sat_lit,
                     });
                 }
             }
@@ -360,64 +395,104 @@ impl CongruenceClosure {
     // -----------------------------------------------------------------------
 
     /// Reconstruct the set of asserted equalities that imply `lhs = rhs`.
-    /// Uses the explanation forest built during merges.
-    pub fn explain_equality(&self, _egraph: &EGraph, lhs: ENodeId, rhs: ENodeId) -> Explanation {
-        // Collect path from lhs to LCA and rhs to LCA in the explanation forest.
+    /// Uses the explanation forest built during merges. Congruence steps are
+    /// expanded recursively so every leaf premise has a concrete SAT literal.
+    pub fn explain_equality(&self, egraph: &EGraph, lhs: ENodeId, rhs: ENodeId) -> Explanation {
         let mut premises = Vec::new();
-        self.collect_path(lhs, rhs, &mut premises);
+        self.collect_explanation(egraph, lhs, rhs, &mut premises);
+        premises.sort_by_key(|l| (l.lhs, l.rhs, l.sat_lit));
+        premises.dedup();
         Explanation { lhs, rhs, premises }
     }
 
-    fn collect_path(&self, mut a: ENodeId, mut b: ENodeId, premises: &mut Vec<ExplanationLit>) {
-        let mut path_a = vec![a];
-        let mut path_b = vec![b];
-
-        while let Some((next, _)) = self.explain_parent[a.0 as usize].as_ref() {
-            a = *next;
-            path_a.push(a);
-        }
-        while let Some((next, _)) = self.explain_parent[b.0 as usize].as_ref() {
-            b = *next;
-            path_b.push(b);
-        }
-
-        let set_a: rustc_hash::FxHashSet<ENodeId> = path_a.iter().copied().collect();
-        let lca = path_b
-            .iter()
-            .find(|n| set_a.contains(n))
-            .copied()
-            .unwrap_or(path_a[0]);
-
-        let mut cur = path_a[0];
-        while cur != lca {
-            if let Some((next, reason)) = &self.explain_parent[cur.0 as usize] {
-                Self::add_reason_to_premises(reason, premises);
+    /// Iterative worklist expansion of the congruence-closure explanation forest.
+    /// Avoids stack overflow on deep congruence chains by using an explicit stack
+    /// instead of mutual recursion between collect_explanation and expand_reason.
+    fn collect_explanation(
+        &self,
+        egraph: &EGraph,
+        a: ENodeId,
+        b: ENodeId,
+        premises: &mut Vec<ExplanationLit>,
+    ) {
+        let mut worklist: Vec<(ENodeId, ENodeId)> = vec![(a, b)];
+        while let Some((a, b)) = worklist.pop() {
+            if a == b {
+                continue;
+            }
+            // Find LCA of a and b in the explain_parent forest.
+            let mut path_a = vec![a];
+            let mut cur = a;
+            while let Some((next, _)) = self.explain_parent[cur.0 as usize].as_ref() {
                 cur = *next;
-            } else {
-                break;
+                path_a.push(cur);
+            }
+            let mut path_b = vec![b];
+            let mut cur = b;
+            while let Some((next, _)) = self.explain_parent[cur.0 as usize].as_ref() {
+                cur = *next;
+                path_b.push(cur);
+            }
+
+            let set_a: rustc_hash::FxHashSet<ENodeId> = path_a.iter().copied().collect();
+            let lca = match path_b.iter().find(|n| set_a.contains(n)).copied() {
+                Some(n) => n,
+                None => {
+                    // a and b are claimed equal but their explain-forest paths share
+                    // no common ancestor — indicates a bug in explain_parent construction.
+                    // Skip rather than fabricate a wrong premise (in debug builds this
+                    // will panic to surface the underlying issue).
+                    debug_assert!(
+                        false,
+                        "no LCA in explain forest for {a:?} and {b:?}: \
+                         path_a={path_a:?} path_b={path_b:?}"
+                    );
+                    continue;
+                }
+            };
+
+            // Walk from a to LCA and b to LCA, processing each edge reason.
+            let mut cur = a;
+            while cur != lca {
+                if let Some((next, reason)) = &self.explain_parent[cur.0 as usize] {
+                    Self::process_reason(egraph, reason, premises, &mut worklist);
+                    cur = *next;
+                } else {
+                    break;
+                }
+            }
+            let mut cur = b;
+            while cur != lca {
+                if let Some((next, reason)) = &self.explain_parent[cur.0 as usize] {
+                    Self::process_reason(egraph, reason, premises, &mut worklist);
+                    cur = *next;
+                } else {
+                    break;
+                }
             }
         }
-        let mut cur = path_b[0];
-        while cur != lca {
-            if let Some((next, reason)) = &self.explain_parent[cur.0 as usize] {
-                Self::add_reason_to_premises(reason, premises);
-                cur = *next;
-            } else {
-                break;
-            }
-        }
-
-        premises.sort_by_key(|l| (l.lhs, l.rhs, l.sat_lit));
-        premises.dedup();
     }
 
-    fn add_reason_to_premises(reason: &MergeReason, premises: &mut Vec<ExplanationLit>) {
+    /// Process one edge reason: Asserted edges add a premise directly; Congruence
+    /// edges push the argument pairs onto the worklist for later processing.
+    fn process_reason(
+        egraph: &EGraph,
+        reason: &MergeReason,
+        premises: &mut Vec<ExplanationLit>,
+        worklist: &mut Vec<(ENodeId, ENodeId)>,
+    ) {
         match reason {
             MergeReason::Asserted { lhs, rhs, sat_lit } => {
                 premises.push(ExplanationLit::eq(*lhs, *rhs, Some(*sat_lit)));
             }
             MergeReason::Congruence { n1, n2 } => {
-                premises.push(ExplanationLit::eq(*n1, *n2, None));
+                let node1 = egraph.node(*n1);
+                let node2 = egraph.node(*n2);
+                for (&a1, &a2) in node1.args.iter().zip(node2.args.iter()) {
+                    if a1 != a2 {
+                        worklist.push((a1, a2));
+                    }
+                }
             }
         }
     }

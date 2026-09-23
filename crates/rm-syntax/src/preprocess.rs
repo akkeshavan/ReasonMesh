@@ -10,25 +10,43 @@ use std::collections::HashMap;
 
 use crate::{Atom, SExpr};
 
+/// Preprocess without size limit (for small/trusted inputs).
 pub fn preprocess(expr: &SExpr) -> SExpr {
-    preprocess_env(expr, &HashMap::new())
+    let mut count = 0usize;
+    preprocess_env(expr, &HashMap::new(), &mut count, usize::MAX)
+        .expect("unbounded preprocess should not return None")
 }
 
-fn preprocess_env(expr: &SExpr, env: &HashMap<String, SExpr>) -> SExpr {
+/// Preprocess with a node-count limit.  Returns `None` when let expansion
+/// would exceed `max_nodes` cloned SExpr nodes — caller should treat the
+/// problem as Unknown (too large to encode).
+pub fn preprocess_bounded(expr: &SExpr, max_nodes: usize) -> Option<SExpr> {
+    let mut count = 0usize;
+    preprocess_env(expr, &HashMap::new(), &mut count, max_nodes)
+}
+
+fn preprocess_env(
+    expr: &SExpr,
+    env: &HashMap<String, SExpr>,
+    count: &mut usize,
+    limit: usize,
+) -> Option<SExpr> {
+    *count += 1;
+    if *count > limit {
+        return None;
+    }
     match expr {
         SExpr::List(items) => {
             let head = items.first().and_then(|e| e.symbol());
             match head {
                 Some("!") => {
-                    // (! term :attr val ...) → term
                     if let Some(term) = items.get(1) {
-                        preprocess_env(term, env)
+                        preprocess_env(term, env, count, limit)
                     } else {
-                        expr.clone()
+                        Some(expr.clone())
                     }
                 }
                 Some("let") => {
-                    // (let ((x1 e1) (x2 e2) ...) body)
                     if let (Some(SExpr::List(bindings)), Some(body)) =
                         (items.get(1), items.get(2))
                     {
@@ -40,27 +58,43 @@ fn preprocess_env(expr: &SExpr, env: &HashMap<String, SExpr>) -> SExpr {
                                     Some(val),
                                 ) = (bv.first(), bv.get(1))
                                 {
-                                    let expanded = preprocess_env(val, env);
+                                    let expanded = preprocess_env(val, env, count, limit)?;
                                     new_env.insert(name.clone(), expanded);
                                 }
                             }
                         }
-                        preprocess_env(body, &new_env)
+                        preprocess_env(body, &new_env, count, limit)
                     } else {
-                        SExpr::List(items.iter().map(|e| preprocess_env(e, env)).collect())
+                        let children = items
+                            .iter()
+                            .map(|e| preprocess_env(e, env, count, limit))
+                            .collect::<Option<Vec<_>>>()?;
+                        Some(SExpr::List(children))
                     }
                 }
-                _ => SExpr::List(items.iter().map(|e| preprocess_env(e, env)).collect()),
+                _ => {
+                    let children = items
+                        .iter()
+                        .map(|e| preprocess_env(e, env, count, limit))
+                        .collect::<Option<Vec<_>>>()?;
+                    Some(SExpr::List(children))
+                }
             }
         }
         SExpr::Atom(Atom::Symbol(name)) => {
             if let Some(val) = env.get(name.as_str()) {
-                val.clone()
+                // Each clone of a let-bound value counts toward the limit
+                // so that repeated uses of large bindings are caught.
+                *count += 1;
+                if *count > limit {
+                    return None;
+                }
+                Some(val.clone())
             } else {
-                expr.clone()
+                Some(expr.clone())
             }
         }
-        _ => expr.clone(),
+        _ => Some(expr.clone()),
     }
 }
 

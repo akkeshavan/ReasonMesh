@@ -25,6 +25,10 @@ use rm_sat::{CdclSolver, SolveResult};
 use rm_theory_arith::{DiffLogicSolver, DlError};
 use rm_theory_euf::{CongruenceClosure, EGraph, ENodeId};
 use rustc_hash::FxHashMap;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 // ---------------------------------------------------------------------------
 // Result type
@@ -284,17 +288,24 @@ struct SmtLibDecls {
     dl_vars: FxHashMap<String, u32>,
     assertions: Vec<rm_syntax::SExpr>,
     logic: Option<String>,
+    /// True if any assertion exceeded the let-expansion node limit.
+    /// Callers should return Unknown rather than attempting to solve.
+    expansion_overflow: bool,
 }
 
 /// Parse `declare-const`, `declare-fun`, and `assert` commands from a
 /// sequence of SMT-LIB s-expressions.
 fn parse_smtlib_decls(exprs: &[rm_syntax::SExpr]) -> SmtLibDecls {
     use rm_syntax::{Atom, SExpr};
+    // 500_000 nodes ≈ 40 MB; prevents exponential let-expansion blowup on
+    // industrial benchmarks (e.g. UCLID aodv) with deeply nested lets.
+    const MAX_EXPAND_NODES: usize = 500_000;
     let mut uf_funcs: FxHashMap<String, u32> = FxHashMap::default();
     let mut dl_vars: FxHashMap<String, u32> = FxHashMap::default();
     let mut next_dl_id: u32 = 1;
     let mut assertions = Vec::new();
     let mut logic = None;
+    let mut expansion_overflow = false;
 
     for expr in exprs {
         let SExpr::List(items) = expr else { continue };
@@ -342,7 +353,10 @@ fn parse_smtlib_decls(exprs: &[rm_syntax::SExpr]) -> SmtLibDecls {
             }
             "assert" => {
                 if let Some(body) = items.get(1) {
-                    assertions.push(rm_syntax::preprocess(body));
+                    match rm_syntax::preprocess_bounded(body, MAX_EXPAND_NODES) {
+                        Some(expanded) => assertions.push(expanded),
+                        None => expansion_overflow = true,
+                    }
                 }
             }
             _ => {}
@@ -354,6 +368,7 @@ fn parse_smtlib_decls(exprs: &[rm_syntax::SExpr]) -> SmtLibDecls {
         dl_vars,
         assertions,
         logic,
+        expansion_overflow,
     }
 }
 
@@ -385,7 +400,7 @@ fn intern_no_declarations(
 
 /// Parse and solve a QF_UFIDL (or QF_UF / QF_IDL) SMT-LIB script.
 /// Returns `(verdict, dl_model)` where `dl_model` maps var names to integer values on SAT.
-pub fn solve_qf_ufidl(text: &str, max_conflicts: u64) -> Result<(NoResult, Vec<(String, i64)>), String> {
+pub fn solve_qf_ufidl(text: &str, max_conflicts: u64, cancel: Arc<AtomicBool>) -> Result<(NoResult, Vec<(String, i64)>), String> {
     use rm_syntax::{lex, parse_program};
 
     let tokens = lex(text).map_err(|e| e.to_string())?;
@@ -395,6 +410,10 @@ pub fn solve_qf_ufidl(text: &str, max_conflicts: u64) -> Result<(NoResult, Vec<(
     match decls.logic.as_deref() {
         Some("QF_UFIDL") | Some("QF_UF") | Some("QF_IDL") | None => {}
         Some(other) => return Err(format!("NO solver does not handle logic {other}")),
+    }
+
+    if decls.expansion_overflow {
+        return Ok((NoResult::Unknown, Vec::new()));
     }
 
     if decls.assertions.is_empty() {
@@ -430,7 +449,7 @@ pub fn solve_qf_ufidl(text: &str, max_conflicts: u64) -> Result<(NoResult, Vec<(
     }
 
     if has_disjunctions {
-        return solve_with_cdclt(text, max_conflicts);
+        return solve_with_cdclt(text, max_conflicts, cancel);
     }
 
     for lit in &all_literals {
@@ -679,10 +698,14 @@ struct CdclT {
     eq_atom_cache: FxHashMap<(ENodeId, ENodeId), u32>,
     /// Reverse cache for Leq/Lt atoms (x, y, c, is_lt) → sat_var.
     arith_atom_cache: FxHashMap<(u32, u32, i64, bool), u32>,
+    /// Shared cancellation flag. The benchmark runner (or any timeout wrapper)
+    /// sets this to true after the wall-clock deadline fires; the solve loop
+    /// checks it once per iteration and returns Unknown promptly.
+    cancel: Arc<AtomicBool>,
 }
 
 impl CdclT {
-    fn new(num_arith: u32) -> Self {
+    fn new(num_arith: u32, cancel: Arc<AtomicBool>) -> Self {
         CdclT {
             atoms: FxHashMap::default(),
             egraph: EGraph::new(),
@@ -696,6 +719,7 @@ impl CdclT {
             bool_prop_atoms: FxHashMap::default(),
             eq_atom_cache: FxHashMap::default(),
             arith_atom_cache: FxHashMap::default(),
+            cancel,
         }
     }
 
@@ -764,14 +788,22 @@ impl CdclT {
                 Literal::negative(v).raw()
             };
             let atom = self.atoms[&v].clone();
+            let dbg = std::env::var("CDCLT_DEBUG").is_ok();
             match atom {
                 BackboneAtom::Eq { lhs, rhs } => {
+                    if dbg { eprintln!("  atom x{v} = Eq({lhs:?},{rhs:?}) val={val}"); }
                     if val {
                         if let Err(e) = self.cc.assert_eq(&self.egraph, lhs, rhs, sat_raw) {
-                            if let Some(c) = mk_conflict_euf(e) { return Some(c); }
+                            if let Some(c) = mk_conflict_euf(e) {
+                                if dbg { eprintln!("  -> conflict on assert_eq: {:?}", c); }
+                                return Some(c);
+                            }
                         }
                     } else if let Err(e) = self.cc.assert_neq(&self.egraph, lhs, rhs, sat_raw) {
-                        if let Some(c) = mk_conflict_euf(e) { return Some(c); }
+                        if let Some(c) = mk_conflict_euf(e) {
+                            if dbg { eprintln!("  -> conflict on assert_neq: {:?}", c); }
+                            return Some(c);
+                        }
                     }
                 }
                 BackboneAtom::Leq { x, y, c } => {
@@ -844,9 +876,17 @@ impl CdclT {
         // a formula whose theory keeps generating short unit-clause conflicts can loop
         // forever because BudgetExceeded (and its `spent` increment) is never reached.
         let mut theory_iters = 0u64;
+        // Cap theory iterations independently of the SAT conflict budget.
+        // aodv6-class problems have ~1200 literals/conflict-clause, so 200K iters
+        // → ~1.9 GB; 10K iters → ~95 MB — enough for correct termination on
+        // solvable problems while bounding memory on hard/unsolvable ones.
+        const THEORY_ITER_CAP: u64 = 10_000;
         loop {
+            if self.cancel.load(Ordering::Relaxed) {
+                return NoResult::Unknown;
+            }
             let budget_ok = sat_conflicts < max_conflicts
-                && theory_iters < max_conflicts.saturating_add(100);
+                && theory_iters < max_conflicts.min(THEORY_ITER_CAP).saturating_add(100);
             if !budget_ok {
                 return NoResult::Unknown;
             }
@@ -869,6 +909,9 @@ impl CdclT {
             if let Some(model) = sat_result {
                 theory_iters += 1;
                 if let Some(conflict) = self.theory_check(&model) {
+                    if std::env::var("CDCLT_DEBUG").is_ok() {
+                        eprintln!("[CDCLT iter={theory_iters}] conflict len={}: {:?}", conflict.len(), conflict);
+                    }
                     if conflict.is_empty() {
                         return NoResult::Unsat;
                     }
@@ -884,14 +927,19 @@ impl CdclT {
 /// Returns `None` for unexpected non-Conflict EUF errors (caller should treat as Unknown).
 fn mk_conflict_euf(e: rm_theory_euf::CcError) -> Option<Vec<Literal>> {
     match e {
-        rm_theory_euf::CcError::Conflict { explanation, .. } => {
-            // sat_lits are stored as raw literals; negate each to form the blocking clause.
-            Some(
-                explanation.sat_lits()
-                    .iter()
-                    .map(|&raw| Literal::from_raw(raw).negate())
-                    .collect(),
-            )
+        rm_theory_euf::CcError::Conflict { explanation, diseq_lit, .. } => {
+            // Build the conflict clause: negate each eq-chain lit, then negate the
+            // diseq assertion. The diseq_lit is crucial — without it the clause is
+            // incomplete (e.g. self-equality (= x x) with diseq produces an empty
+            // eq chain, so the clause would be empty → spurious UNSAT).
+            let mut c: Vec<Literal> = explanation.sat_lits()
+                .iter()
+                .map(|&raw| Literal::from_raw(raw).negate())
+                .collect();
+            c.push(Literal::from_raw(diseq_lit).negate());
+            c.sort_unstable();
+            c.dedup();
+            Some(c)
         }
         other => {
             // Non-Conflict errors are EUF implementation bugs, not input-triggered conflicts.
@@ -915,15 +963,19 @@ fn mk_conflict_dl(e: DlError) -> Vec<Literal> {
 
 /// Lazy CDCL(T) path for formulas with disjunctions.
 /// Returns the verdict and, on SAT, a DL model (var_name → integer value).
-fn solve_with_cdclt(text: &str, max_conflicts: u64) -> Result<(NoResult, Vec<(String, i64)>), String> {
+fn solve_with_cdclt(text: &str, max_conflicts: u64, cancel: Arc<AtomicBool>) -> Result<(NoResult, Vec<(String, i64)>), String> {
     use rm_syntax::{lex, parse_program};
 
     let tokens = lex(text).map_err(|e| e.to_string())?;
     let exprs = parse_program(&tokens).map_err(|e| e.to_string())?;
     let decls = parse_smtlib_decls(&exprs);
 
+    if decls.expansion_overflow {
+        return Ok((NoResult::Unknown, Vec::new()));
+    }
+
     let num_arith = decls.dl_vars.values().copied().max().unwrap_or(0);
-    let mut cdclt = CdclT::new(num_arith);
+    let mut cdclt = CdclT::new(num_arith, cancel);
 
     let mut uf_cache: FxHashMap<String, ENodeId> = FxHashMap::default();
     for (name, arity) in &decls.uf_funcs {
@@ -1290,7 +1342,7 @@ mod tests {
     use super::*;
 
     fn check(text: &str) -> NoResult {
-        solve_qf_ufidl(text, u64::MAX).expect("parse error").0
+        solve_qf_ufidl(text, u64::MAX, Arc::new(AtomicBool::new(false))).expect("parse error").0
     }
 
     // ---- Pure UF ----
@@ -1551,6 +1603,7 @@ mod tests {
              (assert (not (= x y)))
              (check-sat)",
             u64::MAX,
+            Arc::new(AtomicBool::new(false)),
         )
         .unwrap();
         assert_eq!(verdict, NoResult::Sat);

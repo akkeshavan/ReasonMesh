@@ -7,6 +7,7 @@ use crate::lia::{solve_qf_lia, LiaStatus};
 use crate::uf::{solve_qf_uf, UfStatus};
 use rm_syntax::Script;
 use rm_theory_bv::{BvModel, BvResult, BvSolver};
+use std::sync::{Arc, atomic::AtomicBool};
 
 /// Errors from the SMT solver facade.
 #[derive(Debug, thiserror::Error)]
@@ -41,13 +42,32 @@ pub struct SmtResult {
 /// Facade solver for a single SMT-LIB script.
 pub struct SmtSolver {
     raw: String,
+    /// Cancellation flag. Set this to `true` (via `cancel_token()`) to ask the
+    /// solver to return `Unknown` at the next safe checkpoint. The benchmark
+    /// runner uses this to stop timed-out solver threads promptly instead of
+    /// letting them run (and allocate) until the theory-iteration cap.
+    cancel: Arc<AtomicBool>,
 }
 
 impl SmtSolver {
     pub fn parse(text: &str) -> Result<SmtSolver, SmtError> {
         Ok(SmtSolver {
             raw: text.to_owned(),
+            cancel: Arc::new(AtomicBool::new(false)),
         })
+    }
+
+    /// Return a handle to the cancellation flag for this solver.
+    /// Setting the flag to `true` makes `solve` return `Unknown` promptly.
+    pub fn cancel_token(&self) -> Arc<AtomicBool> {
+        self.cancel.clone()
+    }
+
+    /// Replace the cancellation flag with an externally supplied one.
+    /// Useful when the caller wants to create the flag before the solver.
+    pub fn with_cancel(mut self, cancel: Arc<AtomicBool>) -> Self {
+        self.cancel = cancel;
+        self
     }
 
     /// Extract the set-logic name from the raw text by scanning for `(set-logic <symbol>)`.
@@ -115,7 +135,7 @@ impl SmtSolver {
                     }),
                     // Has disjunctions (e.g. not(= x y)) — fall through to CDCL(T)
                     (DlStatus::Unknown, _) => {
-                        match solve_qf_ufidl(&self.raw, max_conflicts).map_err(SmtError::Internal)? {
+                        match solve_qf_ufidl(&self.raw, max_conflicts, self.cancel.clone()).map_err(SmtError::Internal)? {
                             (NoResult::Sat, dl_model) => Ok(SmtResult {
                                 status: SmtStatus::Sat,
                                 model: None,
@@ -153,7 +173,7 @@ impl SmtSolver {
                     }),
                     // Has disjunctions (e.g. or, implies) — fall through to CDCL(T)
                     UfStatus::Unknown => {
-                        match solve_qf_ufidl(&self.raw, max_conflicts).map_err(SmtError::Internal)? {
+                        match solve_qf_ufidl(&self.raw, max_conflicts, self.cancel.clone()).map_err(SmtError::Internal)? {
                             (NoResult::Sat, _) => Ok(SmtResult {
                                 status: SmtStatus::Sat,
                                 model: None,
@@ -174,7 +194,7 @@ impl SmtSolver {
                 }
             }
             Some("QF_UFIDL") => {
-                match solve_qf_ufidl(&self.raw, max_conflicts).map_err(SmtError::Internal)? {
+                match solve_qf_ufidl(&self.raw, max_conflicts, self.cancel.clone()).map_err(SmtError::Internal)? {
                     (NoResult::Sat, dl_model) => Ok(SmtResult {
                         status: SmtStatus::Sat,
                         model: None,

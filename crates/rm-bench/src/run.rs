@@ -25,7 +25,7 @@ use std::collections::HashMap;
 use std::io::{BufWriter, Read, Write};
 use std::path::Path;
 use std::process::Stdio;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
 use std::time::{Duration, Instant};
 use thiserror::Error;
 
@@ -309,18 +309,27 @@ fn solve_smt_problem(manifest: &Manifest, problem: &Problem) -> Result<ProblemRe
     let max_conflicts = Some(manifest.solver.timeout_secs.saturating_mul(500_000));
 
     let (outcome, timed_out) = {
-        // Use a channel so we can abandon the solver thread on timeout.
-        // std::thread::scope would block until the thread joins; with a
-        // non-scoped thread + recv_timeout we can move on when the deadline
-        // fires even if the solver is stuck.
+        // Create the cancellation flag before spawning so the main thread can
+        // signal the solver thread to stop once the deadline fires.  The spawned
+        // thread is NOT joined — we move on when recv_timeout returns — but
+        // setting cancel=true lets the solver exit its loop promptly instead of
+        // running (and allocating) until the theory-iteration cap.
+        let cancel = Arc::new(AtomicBool::new(false));
+        let cancel_for_thread = cancel.clone();
         let input_arc = Arc::new(input);
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
             let r = SmtSolver::parse(input_arc.as_str())
-                .and_then(|mut solver| solver.solve(max_conflicts.unwrap_or(u64::MAX)));
+                .map(|s| s.with_cancel(cancel_for_thread))
+                .and_then(|solver| solver.solve(max_conflicts.unwrap_or(u64::MAX)));
             let _ = tx.send(r);
         });
-        let result = rx.recv_timeout(timeout).ok().and_then(|r| r.ok());
+        let recv_result = rx.recv_timeout(timeout);
+        if recv_result.is_err() {
+            // Deadline fired (or sender disconnected). Signal the thread to stop.
+            cancel.store(true, Ordering::Relaxed);
+        }
+        let result = recv_result.ok().and_then(|r| r.ok());
         match result {
             None => (Outcome::Unknown, true),
             Some(SmtResult { status: SmtStatus::Sat, .. }) => (Outcome::Sat, false),
