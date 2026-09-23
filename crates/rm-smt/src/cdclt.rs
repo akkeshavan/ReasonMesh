@@ -1118,6 +1118,10 @@ impl TheorySolver for CdclT {
         self.cc.backtrack_to(target_level);
         self.dl.backtrack_to(target_level);
     }
+
+    fn theory_final_check(&mut self, model: &rm_sat::Model) -> Option<Vec<Literal>> {
+        self.theory_check(model)
+    }
 }
 
 /// Returns `None` for unexpected non-Conflict EUF errors (caller should treat as Unknown).

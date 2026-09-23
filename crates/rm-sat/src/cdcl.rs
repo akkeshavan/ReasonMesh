@@ -43,6 +43,14 @@ pub trait TheorySolver {
 
     /// Called before the SAT solver backtracks to `target_level`.
     fn theory_backtrack(&mut self, target_level: u32);
+
+    /// Called when the SAT backbone returns a complete model.
+    /// Returns `Some(conflict_clause)` if the model is theory-inconsistent,
+    /// `None` if consistent. Default: always consistent (pure SAT, no theory).
+    fn theory_final_check(&mut self, model: &Model) -> Option<Vec<Literal>> {
+        let _ = model;
+        None
+    }
 }
 
 use crate::{
@@ -662,7 +670,21 @@ impl CdclSolver {
                             // No new theory information — branch or finish.
                             let trail_before = self.assignment.trail().len();
                             if let Some(r) = self.branch_or_finish() {
-                                break r;
+                                // Full model found — do a final theory consistency check
+                                // before accepting the SAT result. theory_propagate is
+                                // incremental and may miss inconsistencies when level sync
+                                // causes some atoms to not be re-asserted after backjumps.
+                                if let SolveResult::Sat(ref model) = r {
+                                    if let Some(conflict) = theory.theory_final_check(model) {
+                                        // Theory rejected the model — add conflict clause and
+                                        // continue the search (don't break).
+                                        self.add_clause(&conflict);
+                                    } else {
+                                        break r;
+                                    }
+                                } else {
+                                    break r;
+                                }
                             }
                             // Detect restart inside branch_or_finish.
                             if self.assignment.trail().len() < trail_before {
