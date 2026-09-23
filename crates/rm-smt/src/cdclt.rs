@@ -867,6 +867,11 @@ impl CdclT {
             }
         }
 
+        // Nelson-Oppen EUF → DL: if EUF merged two arith variables, assert DL equality.
+        if let Some(conflict) = no_euf_to_dl(&self.dl_uf_pairs, &mut self.cc, &mut self.dl, &self.egraph) {
+            return Some(conflict);
+        }
+
         if let Err(e) = self.dl.check() {
             return Some(mk_conflict_dl(e));
         }
@@ -1039,6 +1044,11 @@ impl TheorySolver for CdclT {
             }
         }
 
+        // Nelson-Oppen EUF → DL: if EUF merged two arith variables, assert DL equality.
+        if let Some(conflict) = no_euf_to_dl(&self.dl_uf_pairs, &mut self.cc, &mut self.dl, &self.egraph) {
+            return Err(conflict);
+        }
+
         // Check DL consistency after all new DL assertions.
         if let Err(e) = self.dl.check() {
             return Err(mk_conflict_dl(e));
@@ -1190,9 +1200,48 @@ fn mk_conflict_dl(e: DlError) -> Vec<Literal> {
         _ => vec![],
     };
     // sat_lits are stored as raw literals (with polarity); negate each to form the blocking clause.
+    // Filter out sat_lit=0 (background / unconditional constraints — no SAT literal to negate).
     lits.iter()
+        .filter(|&&raw| raw != 0)
         .map(|&raw| Literal::from_raw(raw).negate())
         .collect()
+}
+
+/// Nelson-Oppen EUF → DL: if EUF has merged two DL-linked UF nodes, assert their
+/// DL equality and return a conflict clause if DL rejects the merge.
+fn no_euf_to_dl(
+    dl_uf_pairs: &[(u32, ENodeId)],
+    cc: &mut CongruenceClosure,
+    dl: &mut DiffLogicSolver,
+    egraph: &EGraph,
+) -> Option<Vec<Literal>> {
+    for i in 0..dl_uf_pairs.len() {
+        for j in (i + 1)..dl_uf_pairs.len() {
+            let (xi, xuid) = dl_uf_pairs[i];
+            let (yi, yuid) = dl_uf_pairs[j];
+            if xi == yi || !cc.are_equal(xuid, yuid) {
+                continue;
+            }
+            let expl = cc.explain_equality(egraph, xuid, yuid);
+            let euf_lits: Vec<u32> = expl.sat_lits();
+            let tag = euf_lits.iter().copied().find(|&r| r != 0).unwrap_or(0);
+            if let Err(e) = dl.assert_leq(xi, yi, 0, tag) {
+                let mut conflict = mk_conflict_dl(e);
+                conflict.extend(euf_lits.iter().filter(|&&r| r != 0).map(|&r| Literal::from_raw(r).negate()));
+                conflict.sort_unstable();
+                conflict.dedup();
+                return Some(conflict);
+            }
+            if let Err(e) = dl.assert_leq(yi, xi, 0, tag) {
+                let mut conflict = mk_conflict_dl(e);
+                conflict.extend(euf_lits.iter().filter(|&&r| r != 0).map(|&r| Literal::from_raw(r).negate()));
+                conflict.sort_unstable();
+                conflict.dedup();
+                return Some(conflict);
+            }
+        }
+    }
+    None
 }
 
 /// Lazy CDCL(T) path for formulas with disjunctions.
@@ -1674,9 +1723,24 @@ fn intern_arith_offset(
     cdclt.dl_var_names.insert(fresh_dl, fresh_name);
     cdclt.dl_uf_pairs.push((fresh_dl, uid));
     cdclt.uf_to_dl.insert(uid, fresh_dl);
-    // fresh_dl = base_dl + offset: two unconditional DL bounds (sat_lit = 0).
-    cdclt.dl.assert_leq(fresh_dl, base_dl, offset, 0).map_err(|_| ())?;
-    cdclt.dl.assert_leq(base_dl, fresh_dl, -offset, 0).map_err(|_| ())?;
+    // fresh_dl = base_dl + offset: encode as unit-forced SAT Leq atoms so
+    // the constraint survives DL backtracking across theory_check calls.
+    let key1 = (fresh_dl, base_dl, offset, false);
+    let v1 = if let Some(&v) = cdclt.arith_atom_cache.get(&key1) { v } else {
+        let v = cdclt.alloc_var();
+        cdclt.atoms.insert(v, BackboneAtom::Leq { x: fresh_dl, y: base_dl, c: offset });
+        cdclt.arith_atom_cache.insert(key1, v);
+        v
+    };
+    cdclt.add_clause(&[Literal::positive(v1)]);
+    let key2 = (base_dl, fresh_dl, -offset, false);
+    let v2 = if let Some(&v) = cdclt.arith_atom_cache.get(&key2) { v } else {
+        let v = cdclt.alloc_var();
+        cdclt.atoms.insert(v, BackboneAtom::Leq { x: base_dl, y: fresh_dl, c: -offset });
+        cdclt.arith_atom_cache.insert(key2, v);
+        v
+    };
+    cdclt.add_clause(&[Literal::positive(v2)]);
     uf_cache.insert(key, uid);
     Ok(uid)
 }
