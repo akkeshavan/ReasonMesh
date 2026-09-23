@@ -973,11 +973,17 @@ impl TheorySolver for CdclT {
                     if val {
                         if let Err(e) = self.cc.assert_eq(&self.egraph, lhs, rhs, sat_raw) {
                             if let Some(conflict) = mk_conflict_euf(e) {
+                                if std::env::var("CDCLT_DEBUG").is_ok() {
+                                    eprintln!("EUF conflict (assert_eq lhs={lhs:?} rhs={rhs:?} sat_raw={sat_raw}): {:?}", conflict);
+                                }
                                 return Err(conflict);
                             }
                         }
                     } else if let Err(e) = self.cc.assert_neq(&self.egraph, lhs, rhs, sat_raw) {
                         if let Some(conflict) = mk_conflict_euf(e) {
+                            if std::env::var("CDCLT_DEBUG").is_ok() {
+                                eprintln!("EUF conflict (assert_neq lhs={lhs:?} rhs={rhs:?} sat_raw={sat_raw}): {:?}", conflict);
+                            }
                             return Err(conflict);
                         }
                     }
@@ -1093,8 +1099,13 @@ impl TheorySolver for CdclT {
                     let expl = self.cc.explain_equality(&self.egraph, *lhs, *rhs);
                     let sat_lits = expl.sat_lits();
                     if sat_lits.is_empty() {
-                        // Trivially equal (same node or reflexivity) — add unit clause.
-                        lemmas.push(vec![Literal::positive(var)]);
+                        // Only emit unit lemma when lhs == rhs (trivially reflexive).
+                        // Empty sat_lits for a non-trivial equality means the explain forest
+                        // had no LCA (a bug path that silently returns incomplete premises);
+                        // emitting an unconditional unit clause in that case is unsound.
+                        if lhs == rhs {
+                            lemmas.push(vec![Literal::positive(var)]);
+                        }
                     } else {
                         let mut lemma = vec![Literal::positive(var)];
                         for raw in sat_lits {

@@ -615,10 +615,13 @@ impl CdclSolver {
                 match theory.theory_propagate(level, &trail_snap, prev_trail_len) {
                     Err(conflict) => {
                         // Theory conflict: backjump to the second-highest literal level
-                        // so the highest-level literal (1-UIP) becomes UNDEF.
-                        // This makes the conflict clause unit; BCP forces the UIP to TRUE.
-                        // Without this backjump, add_clause for an all-false binary clause
-                        // would set empty_clause, incorrectly bypassing conflict analysis.
+                        // so the highest-level literal becomes UNDEF and the conflict
+                        // clause is unit after backjump.
+                        //
+                        // Critical: when all conflict literals are at the same level
+                        // (second_lv == max_lv), second_lv is NOT below max_lv, so
+                        // add_clause would receive an all-false clause → set_empty_clause
+                        // → false UNSAT. We cap at max_lv-1 to force at least one UNDEF.
                         self.conflicts += 1;
                         let cur_level = self.assignment.current_level();
                         let backjump_level = if cur_level > self.base_level
@@ -635,7 +638,9 @@ impl CdclSolver {
                                     second_lv = lv;
                                 }
                             }
-                            second_lv.max(self.base_level)
+                            // Cap at max_lv-1: ensures backjump is strictly below the
+                            // highest conflict level so that literal becomes UNDEF.
+                            second_lv.min(max_lv.saturating_sub(1)).max(self.base_level)
                         } else {
                             self.base_level
                         };
