@@ -340,13 +340,15 @@ fn parse_smtlib_decls(exprs: &[rm_syntax::SExpr]) -> SmtLibDecls {
                         _ => 0,
                     };
                     let result_sort = items.get(3).and_then(|e| sexpr_symbol(e)).unwrap_or("");
-                    if result_sort == "Int" || result_sort == "Real" {
+                    if (result_sort == "Int" || result_sort == "Real") && arity == 0 {
+                        // 0-arity Int/Real → arithmetic variable tracked by DL solver
                         dl_vars.entry(name.clone()).or_insert_with(|| {
                             let id = next_dl_id;
                             next_dl_id += 1;
                             id
                         });
                     } else {
+                        // n-arity function (including Int→Int) → uninterpreted function
                         uf_funcs.insert(name.clone(), arity);
                     }
                 }
@@ -1549,6 +1551,12 @@ fn intern_uf_term_cdclt(
         }
         SExpr::List(items) => {
             let fname = items.first().and_then(|e| sexpr_symbol(e)).ok_or(())?;
+            // Only allow declared UF functions. Built-in arithmetic/conditional
+            // operators (+, -, *, ite, >, <, etc.) are not UF — silently treating
+            // them as UF would produce wrong-SAT by ignoring their semantics.
+            if !_uf_funcs.contains_key(fname) {
+                return Err(());
+            }
             let args: Vec<ENodeId> = items
                 .iter()
                 .skip(1)
