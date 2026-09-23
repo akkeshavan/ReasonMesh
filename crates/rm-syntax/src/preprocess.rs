@@ -25,6 +25,13 @@ pub fn preprocess_bounded(expr: &SExpr, max_nodes: usize) -> Option<SExpr> {
     preprocess_env(expr, &HashMap::new(), &mut count, max_nodes)
 }
 
+fn node_count(expr: &SExpr) -> usize {
+    match expr {
+        SExpr::List(items) => 1 + items.iter().map(node_count).sum::<usize>(),
+        _ => 1,
+    }
+}
+
 fn preprocess_env(
     expr: &SExpr,
     env: &HashMap<String, SExpr>,
@@ -83,9 +90,11 @@ fn preprocess_env(
         }
         SExpr::Atom(Atom::Symbol(name)) => {
             if let Some(val) = env.get(name.as_str()) {
-                // Each clone of a let-bound value counts toward the limit
-                // so that repeated uses of large bindings are caught.
-                *count += 1;
+                // Count the actual size of the cloned subtree, not just 1.
+                // The original "+1 per reference" was wrong: a 10K-node let-value
+                // referenced 10K times produces 100M nodes but only 10K increments,
+                // completely bypassing the limit and causing multi-GB allocations.
+                *count = count.saturating_add(node_count(val));
                 if *count > limit {
                     return None;
                 }

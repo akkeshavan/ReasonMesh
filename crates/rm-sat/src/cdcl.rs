@@ -153,6 +153,9 @@ pub struct CdclSolver {
     // Clause deletion
     learnt_limit: usize,
     learnt_limit_inc: f64,
+    /// Hard ceiling on the learned-clause limit so long-running SMT timeouts
+    /// can't accumulate GB of clauses (limit × 1.1^N otherwise diverges).
+    learnt_limit_max: usize,
 
     // Statistics
     pub conflicts: u64,
@@ -248,6 +251,7 @@ impl CdclSolver {
             binaries: vec![Vec::new(); (num_vars * 2 + 2) as usize],
             learnt_limit: 5000,
             learnt_limit_inc: 1.1,
+            learnt_limit_max: 500_000,
             conflicts: 0,
             propagations: 0,
             restarts: 0,
@@ -1367,7 +1371,8 @@ impl CdclSolver {
         // Always rebuild watch lists from the compacted arena.
         self.db.rebuild_watches(&mut self.watches);
 
-        self.learnt_limit = (self.learnt_limit as f64 * self.learnt_limit_inc) as usize;
+        self.learnt_limit = ((self.learnt_limit as f64 * self.learnt_limit_inc) as usize)
+            .min(self.learnt_limit_max);
     }
 
     // -----------------------------------------------------------------------
