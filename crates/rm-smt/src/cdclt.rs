@@ -632,6 +632,23 @@ fn flatten_arith(
         } else {
             return Err(());
         }
+    } else if let Some(cn) = extract_int(lhs) {
+        // Numeral on LHS: (op cn y) — flip to variable-on-left form.
+        if let Some(yn) = sexpr_symbol(rhs) {
+            if let Some(&y) = dl_vars.get(yn) {
+                match op {
+                    "<=" => (0, y, -cn, false),
+                    "<"  => (0, y, -cn, true),
+                    ">=" => (y, 0, cn, false),
+                    ">"  => (y, 0, cn, true),
+                    _ => return Err(()),
+                }
+            } else {
+                return Err(());
+            }
+        } else {
+            return Err(());
+        }
     } else {
         return Err(());
     };
@@ -1462,6 +1479,24 @@ fn encode_arith_lit_cdclt(
                 ">=" => (0, x, -c, false),
                 ">" => (0, x, -c, true),
                 _ => return Err(()),
+            }
+        } else {
+            return Err(());
+        }
+    } else if let Some(cn) = extract_int(lhs) {
+        // Numeral on LHS: (op cn y) — flip to variable-on-left form.
+        // (<= cn y) ≡ (y >= cn) ≡ 0 - y ≤ -cn → (0, y_var, -cn, false)
+        if let Some(yn) = sexpr_symbol(rhs) {
+            if let Some(&y) = dl_vars.get(yn) {
+                match op {
+                    "<=" => (0, y, -cn, false),
+                    "<"  => (0, y, -cn, true),
+                    ">=" => (y, 0, cn, false),
+                    ">"  => (y, 0, cn, true),
+                    _ => return Err(()),
+                }
+            } else {
+                return Err(());
             }
         } else {
             return Err(());
