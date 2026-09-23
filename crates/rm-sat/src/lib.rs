@@ -17,7 +17,7 @@ pub mod xor;
 
 pub use amo::{amo_preprocess, AmoPreprocessResult};
 pub use big::{big_preprocess, substitute as big_substitute, BigPreprocessResult};
-pub use cdcl::{BcpStats, CdclSolver, SolveResult};
+pub use cdcl::{BcpStats, CdclSolver, SolveResult, TheorySolver};
 pub use classify::{analyse as analyse_cnf, DetectedClass, InstanceProfile};
 pub use dimacs::{parse_dimacs, DimacsCnf, DimacsError};
 pub use model::Model;

@@ -21,7 +21,7 @@
 //! for formulas that require more than `MAX_CDCLT_ITERS` SAT restarts.
 
 use rm_akx::literal::Literal;
-use rm_sat::{CdclSolver, SolveResult};
+use rm_sat::{CdclSolver, SolveResult, TheorySolver};
 use rm_theory_arith::{DiffLogicSolver, DlError};
 use rm_theory_euf::{CongruenceClosure, EGraph, ENodeId};
 use rustc_hash::FxHashMap;
@@ -916,59 +916,202 @@ impl CdclT {
     }
 
     fn solve(&mut self, max_conflicts: u64) -> NoResult {
+        if self.cancel.load(Ordering::Relaxed) {
+            return NoResult::Unknown;
+        }
         self.finalize();
-        let batch = 500_000u64;
-        let mut sat_conflicts = 0u64;
-        // Each theory-check iteration counts as one unit toward the budget even if
-        // the SAT solver finds a model without consuming SAT conflicts.  Without this,
-        // a formula whose theory keeps generating short unit-clause conflicts can loop
-        // forever because BudgetExceeded (and its `spent` increment) is never reached.
-        let mut theory_iters = 0u64;
-        // Cap theory iterations independently of the SAT conflict budget.
-        // aodv6-class problems have ~1200 literals/conflict-clause, so 200K iters
-        // → ~1.9 GB; 10K iters → ~95 MB — enough for correct termination on
-        // solvable problems while bounding memory on hard/unsolvable ones.
-        const THEORY_ITER_CAP: u64 = 10_000;
-        loop {
-            if self.cancel.load(Ordering::Relaxed) {
-                return NoResult::Unknown;
-            }
-            let budget_ok = sat_conflicts < max_conflicts
-                && theory_iters < max_conflicts.min(THEORY_ITER_CAP).saturating_add(100);
-            if !budget_ok {
-                return NoResult::Unknown;
-            }
-            // Scope the sat borrow so we can call self.theory_check after.
-            let sat_result = {
-                let sat = self.sat.as_mut().unwrap();
-                let remaining = max_conflicts.saturating_sub(sat_conflicts);
-                let this_batch = batch.min(remaining.max(1));
-                let r = sat.solve(&[], this_batch);
-                match r {
-                    SolveResult::Unsat => return NoResult::Unsat,
-                    SolveResult::BudgetExceeded => {
-                        sat_conflicts += this_batch;
-                        None
-                    }
-                    SolveResult::Unknown => return NoResult::Unknown,
-                    SolveResult::Sat(ref model) => Some(model.clone()),
-                }
+        // Take the SAT solver out of self so we can pass `self` as the theory.
+        let mut sat = match self.sat.take() {
+            Some(s) => s,
+            None => return NoResult::Unknown,
+        };
+        let result = sat.solve_with_theory(max_conflicts, self);
+        self.sat = Some(sat);
+        match result {
+            SolveResult::Sat(_) => NoResult::Sat,
+            SolveResult::Unsat => NoResult::Unsat,
+            SolveResult::BudgetExceeded | SolveResult::Unknown => NoResult::Unknown,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// TheorySolver implementation for CdclT (DPLL(T) integration)
+// ---------------------------------------------------------------------------
+
+impl TheorySolver for CdclT {
+    fn theory_propagate(
+        &mut self,
+        level: u32,
+        trail: &[Literal],
+        prev_trail_len: usize,
+    ) -> Result<Vec<Vec<Literal>>, Vec<Literal>> {
+        if self.cancel.load(Ordering::Relaxed) {
+            // Signal timeout as BudgetExceeded via returning empty Ok so SAT's
+            // own budget check terminates the search naturally.
+            return Ok(Vec::new());
+        }
+
+        // Sync EUF/DL decision levels to match the SAT level.
+        while self.cc.current_level() < level {
+            self.cc.new_decision_level();
+            self.dl.new_decision_level();
+        }
+
+        // Process newly assigned theory atoms from trail[prev_trail_len..].
+        for &lit in &trail[prev_trail_len..] {
+            let var = lit.var();
+            let val = lit.is_positive();
+            let sat_raw = lit.raw();
+
+            let atom = match self.atoms.get(&var) {
+                Some(a) => a.clone(),
+                None => continue, // Not a theory atom — pure SAT variable
             };
-            if let Some(model) = sat_result {
-                theory_iters += 1;
-                if let Some(conflict) = self.theory_check(&model) {
-                    if std::env::var("CDCLT_DEBUG").is_ok() {
-                        eprintln!("[CDCLT iter={theory_iters}] conflict len={}: {:?}", conflict.len(), conflict);
+            match atom {
+                BackboneAtom::Eq { lhs, rhs } => {
+                    if val {
+                        if let Err(e) = self.cc.assert_eq(&self.egraph, lhs, rhs, sat_raw) {
+                            if let Some(conflict) = mk_conflict_euf(e) {
+                                return Err(conflict);
+                            }
+                        }
+                    } else if let Err(e) = self.cc.assert_neq(&self.egraph, lhs, rhs, sat_raw) {
+                        if let Some(conflict) = mk_conflict_euf(e) {
+                            return Err(conflict);
+                        }
                     }
-                    if conflict.is_empty() {
-                        return NoResult::Unsat;
+                }
+                BackboneAtom::Leq { x, y, c } => {
+                    let res = if val {
+                        self.dl.assert_leq(x, y, c, sat_raw)
+                    } else {
+                        self.dl.assert_leq(y, x, -c - 1, sat_raw)
+                    };
+                    if let Err(e) = res {
+                        return Err(mk_conflict_dl(e));
                     }
-                    self.sat.as_mut().unwrap().add_clause(&conflict);
-                } else {
-                    return NoResult::Sat;
+                }
+                BackboneAtom::Lt { x, y, c } => {
+                    let res = if val {
+                        self.dl.assert_leq(x, y, c - 1, sat_raw)
+                    } else {
+                        self.dl.assert_leq(y, x, -c, sat_raw)
+                    };
+                    if let Err(e) = res {
+                        return Err(mk_conflict_dl(e));
+                    }
                 }
             }
         }
+
+        // Check DL consistency after all new DL assertions.
+        if let Err(e) = self.dl.check() {
+            return Err(mk_conflict_dl(e));
+        }
+
+        // Nelson-Oppen: DL tight bounds → EUF equalities.
+        for i in 0..self.dl_uf_pairs.len() {
+            for j in (i + 1)..self.dl_uf_pairs.len() {
+                let (xi, xuid) = self.dl_uf_pairs[i];
+                let (yi, yuid) = self.dl_uf_pairs[j];
+                let xy = self.dl.bound_between(yi, xi).map(|b| b <= 0).unwrap_or(false);
+                let yx = self.dl.bound_between(xi, yi).map(|b| b <= 0).unwrap_or(false);
+                if xy && yx && !self.cc.are_equal(xuid, yuid) {
+                    let mut dl_lits: Vec<u32> = Vec::new();
+                    if let Some(p) = self.dl.path_explanation(yi, xi) { dl_lits.extend(p); }
+                    if let Some(p) = self.dl.path_explanation(xi, yi) { dl_lits.extend(p); }
+                    let tag = dl_lits.first().copied().unwrap_or(0);
+                    if let Err(e) = self.cc.assert_eq(&self.egraph, xuid, yuid, tag) {
+                        if let Some(mut conflict) = mk_conflict_euf(e) {
+                            conflict.extend(dl_lits.iter().map(|&r| Literal::from_raw(r).negate()));
+                            conflict.sort_unstable();
+                            conflict.dedup();
+                            return Err(conflict);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Bool predicate congruence check (same as theory_check).
+        let mut canon_map: rustc_hash::FxHashMap<
+            (String, Vec<ENodeId>),
+            (u32, Vec<ENodeId>, bool),
+        > = rustc_hash::FxHashMap::default();
+        // Build a quick lookup: var → polarity in current trail.
+        let assigned: rustc_hash::FxHashMap<u32, bool> = trail
+            .iter()
+            .map(|l| (l.var(), l.is_positive()))
+            .collect();
+
+        for (&v, (fname, ids)) in &self.bool_pred_nodes {
+            let val = match assigned.get(&v) {
+                Some(&b) => b,
+                None => continue, // Not yet assigned
+            };
+            let canon: Vec<ENodeId> = ids.iter().map(|&id| self.cc.find(id)).collect();
+            let key = (fname.clone(), canon);
+            if let Some(&(other_v, ref other_ids, other_val)) = canon_map.get(&key) {
+                let other_ids = other_ids.clone();
+                if val != other_val {
+                    let lit_v = if val { Literal::positive(v) } else { Literal::negative(v) };
+                    let lit_o = if other_val {
+                        Literal::positive(other_v)
+                    } else {
+                        Literal::negative(other_v)
+                    };
+                    let mut conflict = vec![lit_v.negate(), lit_o.negate()];
+                    for (&ai, &aj) in ids.iter().zip(other_ids.iter()) {
+                        if ai != aj {
+                            let expl = self.cc.explain_equality(&self.egraph, ai, aj);
+                            for premise in expl.sat_lits() {
+                                conflict.push(Literal::from_raw(premise).negate());
+                            }
+                        }
+                    }
+                    conflict.sort_unstable();
+                    conflict.dedup();
+                    return Err(conflict);
+                }
+            } else {
+                canon_map.insert(key, (v, ids.clone(), val));
+            }
+        }
+
+        // T-propagation: scan unassigned equality atoms to find EUF-implied equalities.
+        // For each unassigned atom (lhs = rhs) where EUF now considers lhs=rhs, emit
+        // a theory lemma: [v_eq, ¬expl_lit1, ¬expl_lit2, ...].
+        // Adding this clause to SAT forces v_eq TRUE (since all expl_lits are TRUE).
+        let mut lemmas: Vec<Vec<Literal>> = Vec::new();
+        for (&var, atom) in &self.atoms {
+            if let BackboneAtom::Eq { lhs, rhs } = atom {
+                if assigned.contains_key(&var) {
+                    continue; // Already assigned by SAT
+                }
+                if self.cc.are_equal(*lhs, *rhs) {
+                    let expl = self.cc.explain_equality(&self.egraph, *lhs, *rhs);
+                    let sat_lits = expl.sat_lits();
+                    if sat_lits.is_empty() {
+                        // Trivially equal (same node or reflexivity) — add unit clause.
+                        lemmas.push(vec![Literal::positive(var)]);
+                    } else {
+                        let mut lemma = vec![Literal::positive(var)];
+                        for raw in sat_lits {
+                            lemma.push(Literal::from_raw(raw).negate());
+                        }
+                        lemmas.push(lemma);
+                    }
+                }
+            }
+        }
+
+        Ok(lemmas)
+    }
+
+    fn theory_backtrack(&mut self, target_level: u32) {
+        self.cc.backtrack_to(target_level);
+        self.dl.backtrack_to(target_level);
     }
 }
 

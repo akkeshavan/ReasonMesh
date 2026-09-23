@@ -16,6 +16,35 @@
 // Raising to 30 restricts chrono BT to very deep jumps where it genuinely helps.
 const CHRONO_BT_MIN_GAP: u32 = 30;
 
+// ---------------------------------------------------------------------------
+// Theory integration trait (DPLL(T) / CDCL(T))
+// ---------------------------------------------------------------------------
+
+/// Trait implemented by SMT theory solvers for DPLL(T) integration.
+///
+/// `solve_with_theory` calls `theory_propagate` after each BCP fixed point.
+/// The theory can:
+///   - Return `Ok(lemmas)`: add `lemmas` as new clauses; empty means no new information.
+///   - Return `Err(conflict)`: the conflict clause is added to the SAT solver which
+///     detects the conflict on the next propagation pass.
+///
+/// `theory_backtrack` is called before every backtrack so the theory can undo
+/// assertions made at levels above `target_level`.
+pub trait TheorySolver {
+    /// Called after each BCP fixed point at decision `level`.
+    /// `trail` is the full current assignment trail (all literals in order).
+    /// `prev_trail_len` is the trail length at the previous theory call.
+    fn theory_propagate(
+        &mut self,
+        level: u32,
+        trail: &[Literal],
+        prev_trail_len: usize,
+    ) -> Result<Vec<Vec<Literal>>, Vec<Literal>>;
+
+    /// Called before the SAT solver backtracks to `target_level`.
+    fn theory_backtrack(&mut self, target_level: u32);
+}
+
 use crate::{
     assignment::{Assignment, Value},
     bve::ElimEntry,
@@ -454,6 +483,205 @@ impl CdclSolver {
     /// `max_conflicts` conflicts (use `u64::MAX` for unlimited).
     pub fn solve(&mut self, assumptions: &[Literal], max_conflicts: u64) -> SolveResult {
         self.solve_inner(assumptions, max_conflicts, None)
+    }
+
+    /// DPLL(T) solve: interleave SAT search with a theory solver.
+    ///
+    /// After each BCP fixed point, calls `theory.theory_propagate(level, trail, prev)`.
+    /// Returned lemmas are added as clauses; a returned conflict triggers backtracking.
+    /// The theory is notified before every backtrack via `theory.theory_backtrack`.
+    ///
+    /// Does not use SAT assumptions (base_level = 0).
+    pub fn solve_with_theory(
+        &mut self,
+        max_conflicts: u64,
+        theory: &mut dyn TheorySolver,
+    ) -> SolveResult {
+        if self.db.has_empty_clause() {
+            self.log_proof_empty();
+            return SolveResult::Unsat;
+        }
+
+        if !self.bve_done && self.assignment.current_level() == 0 && self.conflicts == 0 {
+            self.run_bve();
+            if self.db.has_empty_clause() {
+                return SolveResult::Unsat;
+            }
+        }
+
+        if !self.xor_init_done {
+            self.xor_init_done = true;
+            self.init_xor_reasoning();
+        }
+
+        self.base_level = 0;
+        self.assumption_floor = 0;
+
+        if self.settle_root_propagations() {
+            self.log_proof_empty();
+            self.backtrack_and_reschedule(0);
+            return SolveResult::Unsat;
+        }
+
+        // Initial theory call at level 0 before any decisions.
+        {
+            let trail_snap: Vec<Literal> = self.assignment.trail().to_vec();
+            match theory.theory_propagate(0, &trail_snap, 0) {
+                Err(conflict) => {
+                    self.add_clause(&conflict);
+                }
+                Ok(lemmas) => {
+                    for lemma in lemmas {
+                        self.add_clause(&lemma);
+                    }
+                }
+            }
+        }
+
+        let conflicts_at_entry = self.conflicts;
+        let mut prev_trail_len = self.assignment.trail().len();
+
+        let result = loop {
+            if self.db.has_empty_clause() {
+                self.log_proof_empty();
+                break SolveResult::Unsat;
+            }
+
+            if let Some(conflict_cr) = self.propagate() {
+                // ---- SAT conflict ----
+                if self.assignment.current_level() == self.base_level {
+                    self.log_proof_empty();
+                    break SolveResult::Unsat;
+                }
+                self.conflicts += 1;
+
+                let current_level = self.assignment.current_level();
+                let (learnt, mut backjump_level) = self.analyze(conflict_cr);
+                if backjump_level < self.assumption_floor {
+                    backjump_level = self.assumption_floor;
+                }
+
+                let effective = if current_level > backjump_level + CHRONO_BT_MIN_GAP
+                    && current_level.saturating_sub(1) >= self.assumption_floor
+                {
+                    self.chrono_bts += 1;
+                    current_level - 1
+                } else {
+                    backjump_level
+                };
+
+                // Theory backtrack before SAT backtrack.
+                theory.theory_backtrack(effective);
+                self.backtrack_and_reschedule(effective);
+                self.decay_activities();
+                prev_trail_len = self.assignment.trail().len();
+
+                match self.assignment.literal_value(learnt[0]) {
+                    Value::True => {}
+                    Value::False => {
+                        self.log_proof_empty();
+                        break SolveResult::Unsat;
+                    }
+                    Value::Undef => {
+                        self.log_proof_clause(&learnt);
+                        if learnt.len() == 1 {
+                            self.learned_outbox.push((learnt.to_vec(), 1));
+                            self.assignment.assign(
+                                learnt[0],
+                                effective,
+                                ClauseRef::DECISION.0,
+                            );
+                        } else {
+                            let cr = self.add_learned_clause(&learnt);
+                            self.assignment.assign(learnt[0], effective, cr.0);
+                        }
+                    }
+                }
+
+                // Restart if scheduled — notify theory first.
+                if self.should_restart() {
+                    theory.theory_backtrack(self.base_level);
+                    self.do_restart();
+                    prev_trail_len = self.assignment.trail().len();
+                }
+                self.maybe_reduce_db();
+
+            } else {
+                // ---- BCP fixed point — query theory ----
+                let level = self.assignment.current_level();
+                let trail_snap: Vec<Literal> = self.assignment.trail().to_vec();
+                let snap_len = trail_snap.len();
+
+                match theory.theory_propagate(level, &trail_snap, prev_trail_len) {
+                    Err(conflict) => {
+                        // Theory conflict: backjump to the second-highest literal level
+                        // so the highest-level literal (1-UIP) becomes UNDEF.
+                        // This makes the conflict clause unit; BCP forces the UIP to TRUE.
+                        // Without this backjump, add_clause for an all-false binary clause
+                        // would set empty_clause, incorrectly bypassing conflict analysis.
+                        self.conflicts += 1;
+                        let cur_level = self.assignment.current_level();
+                        let backjump_level = if cur_level > self.base_level
+                            && !conflict.is_empty()
+                        {
+                            let mut max_lv = self.base_level;
+                            let mut second_lv = self.base_level;
+                            for &lit in &conflict {
+                                let lv = self.assignment.level_of(lit.var());
+                                if lv >= max_lv {
+                                    second_lv = max_lv;
+                                    max_lv = lv;
+                                } else if lv > second_lv {
+                                    second_lv = lv;
+                                }
+                            }
+                            second_lv.max(self.base_level)
+                        } else {
+                            self.base_level
+                        };
+                        if cur_level > backjump_level {
+                            theory.theory_backtrack(backjump_level);
+                            self.backtrack_and_reschedule(backjump_level);
+                            self.decay_activities();
+                            prev_trail_len = self.assignment.trail().len();
+                            self.maybe_reduce_db();
+                        }
+                        // Add the (now unit or partially-assigned) conflict clause.
+                        // Do NOT update prev_trail_len here: the literal forced by
+                        // add_clause (the UIP) must be seen by the next theory_propagate.
+                        self.add_clause(&conflict);
+                    }
+                    Ok(lemmas) => {
+                        prev_trail_len = snap_len;
+                        if lemmas.is_empty() {
+                            // No new theory information — branch or finish.
+                            let trail_before = self.assignment.trail().len();
+                            if let Some(r) = self.branch_or_finish() {
+                                break r;
+                            }
+                            // Detect restart inside branch_or_finish.
+                            if self.assignment.trail().len() < trail_before {
+                                theory.theory_backtrack(self.base_level);
+                                prev_trail_len = self.assignment.trail().len();
+                            }
+                        } else {
+                            // Add theory lemmas and re-run BCP before branching.
+                            for lemma in lemmas {
+                                self.add_clause(&lemma);
+                            }
+                        }
+                    }
+                }
+            }
+
+            if self.conflicts - conflicts_at_entry > max_conflicts {
+                break SolveResult::BudgetExceeded;
+            }
+        };
+
+        theory.theory_backtrack(self.base_level);
+        self.backtrack_and_reschedule(self.base_level);
+        result
     }
 
     /// Solve bounded by both a conflict budget and a wall-clock deadline.
