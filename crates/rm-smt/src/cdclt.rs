@@ -693,6 +693,9 @@ struct CdclT {
     /// Bool-sorted function applications (e.g. `(f a)` used as assertions) →
     /// SAT variable. These have no theory constraint; the SAT backbone handles them.
     bool_prop_atoms: FxHashMap<String, u32>,
+    /// Congruence tracking for Bool-sorted predicates: sat_var → (func_name, arg_enodes).
+    /// Used to detect and block models where f(a) ≠ f(b) but EUF says a = b (congr. viol.).
+    bool_pred_nodes: FxHashMap<u32, (String, Vec<ENodeId>)>,
     /// Reverse cache: (lhs, rhs) → sat_var for Eq atoms; avoids duplicating SAT
     /// variables when the same equality appears multiple times (e.g. after let expansion).
     eq_atom_cache: FxHashMap<(ENodeId, ENodeId), u32>,
@@ -717,6 +720,7 @@ impl CdclT {
             pending_clauses: Vec::new(),
             sat: None,
             bool_prop_atoms: FxHashMap::default(),
+            bool_pred_nodes: FxHashMap::default(),
             eq_atom_cache: FxHashMap::default(),
             arith_atom_cache: FxHashMap::default(),
             cancel,
@@ -861,6 +865,50 @@ impl CdclT {
                         }
                     }
                 }
+            }
+        }
+
+        // Congruence check for Bool-sorted predicates.
+        // Group atoms by canonical key (fname, rep_args): atoms with the same key
+        // must have the same SAT value. If two conflict, emit a congruence lemma.
+        // O(N) per call using a hash map, not O(N²).
+        let mut canon_map: rustc_hash::FxHashMap<
+            (String, Vec<ENodeId>),   // (fname, canonical arg reps)
+            (u32, Vec<ENodeId>, bool) // (sat_var, original arg ids, val)
+        > = rustc_hash::FxHashMap::default();
+        for (&v, (fname, ids)) in &self.bool_pred_nodes {
+            if v as usize > model.num_vars() as usize {
+                continue;
+            }
+            let val = model.value_of(v);
+            let canon: Vec<ENodeId> = ids.iter().map(|&id| self.cc.find(id)).collect();
+            let key = (fname.clone(), canon);
+            if let Some(&(other_v, ref other_ids, other_val)) = canon_map.get(&key) {
+                let other_ids = other_ids.clone();
+                if val != other_val {
+                    // Congruence violation: same canonical args, different Bool values.
+                    let lit_v = if val { Literal::positive(v) } else { Literal::negative(v) };
+                    let lit_o = if other_val {
+                        Literal::positive(other_v)
+                    } else {
+                        Literal::negative(other_v)
+                    };
+                    let mut conflict = vec![lit_v.negate(), lit_o.negate()];
+                    // Add EUF justification for why the args are equal.
+                    for (&ai, &aj) in ids.iter().zip(other_ids.iter()) {
+                        if ai != aj {
+                            let expl = self.cc.explain_equality(&self.egraph, ai, aj);
+                            for premise in expl.sat_lits() {
+                                conflict.push(Literal::from_raw(premise).negate());
+                            }
+                        }
+                    }
+                    conflict.sort_unstable();
+                    conflict.dedup();
+                    return Some(conflict);
+                }
+            } else {
+                canon_map.insert(key, (v, ids.clone(), val));
             }
         }
 
@@ -1085,6 +1133,69 @@ fn encode_bool_cdclt(
                     }
                     Ok(z)
                 }
+                "=>" => {
+                    // (=> a b) ≡ (or (not a) b) — Tseitin-encode as an or.
+                    let a = items.get(1).ok_or(())?;
+                    let b = items.get(2).ok_or(())?;
+                    let la = encode_bool_cdclt(a, cdclt, uf_cache, uf_funcs, dl_vars)?;
+                    let lb = encode_bool_cdclt(b, cdclt, uf_cache, uf_funcs, dl_vars)?;
+                    let subs = [la.negate(), lb];
+                    let v = cdclt.alloc_var();
+                    let z = Literal::positive(v);
+                    let mut cl = vec![z.negate()];
+                    cl.extend_from_slice(&subs);
+                    cdclt.add_clause(&cl);
+                    for &sl in &subs {
+                        cdclt.add_clause(&[sl.negate(), z]);
+                    }
+                    Ok(z)
+                }
+                "distinct" => {
+                    // (distinct a b c ...) ≡ ∧{¬(a_i = a_j) | i < j}
+                    let args: Vec<&rm_syntax::SExpr> = items.iter().skip(1).collect();
+                    if args.len() < 2 {
+                        let v = cdclt.alloc_var();
+                        cdclt.add_clause(&[Literal::positive(v)]);
+                        return Ok(Literal::positive(v));
+                    }
+                    let term_ids: Vec<ENodeId> = args
+                        .iter()
+                        .map(|arg| intern_uf_term_cdclt(arg, cdclt, uf_cache, uf_funcs))
+                        .collect::<Result<_, _>>()?;
+                    // Collect negated-equality literals for each pair.
+                    let mut neg_eq_lits: Vec<Literal> = Vec::new();
+                    for i in 0..term_ids.len() {
+                        for j in (i + 1)..term_ids.len() {
+                            let (li, lj) = (term_ids[i], term_ids[j]);
+                            let key = if li <= lj { (li, lj) } else { (lj, li) };
+                            let eq_v = if let Some(&cached) = cdclt.eq_atom_cache.get(&key) {
+                                cached
+                            } else {
+                                let eq_v = cdclt.alloc_var();
+                                cdclt.atoms.insert(
+                                    eq_v,
+                                    BackboneAtom::Eq { lhs: key.0, rhs: key.1 },
+                                );
+                                cdclt.eq_atom_cache.insert(key, eq_v);
+                                eq_v
+                            };
+                            neg_eq_lits.push(Literal::negative(eq_v)); // ¬(a_i = a_j)
+                        }
+                    }
+                    // z ↔ ∧neg_eq_lits
+                    let v = cdclt.alloc_var();
+                    let z = Literal::positive(v);
+                    // Forward: z → each ¬eq
+                    for &nl in &neg_eq_lits {
+                        cdclt.add_clause(&[z.negate(), nl]);
+                    }
+                    // Backward: (∧¬eq) → z  ≡  (∨eq) ∨ z
+                    let mut bwd: Vec<Literal> =
+                        neg_eq_lits.iter().map(|l| l.negate()).collect();
+                    bwd.push(z);
+                    cdclt.add_clause(&bwd);
+                    Ok(z)
+                }
                 "=" => {
                     let lhs = items.get(1).ok_or(())?;
                     let rhs = items.get(2).ok_or(())?;
@@ -1134,6 +1245,17 @@ fn encode_bool_cdclt(
                         } else {
                             let v = cdclt.alloc_var();
                             cdclt.bool_prop_atoms.insert(key, v);
+                            // Also intern non-Bool args as EUF nodes for congruence checking.
+                            // Skip if any arg fails to intern (e.g. nested Bool predicates).
+                            if !args.is_empty() {
+                                let arg_ids: Option<Vec<ENodeId>> = args
+                                    .iter()
+                                    .map(|a| intern_uf_term_cdclt(a, cdclt, uf_cache, uf_funcs).ok())
+                                    .collect();
+                                if let Some(ids) = arg_ids {
+                                    cdclt.bool_pred_nodes.insert(v, (fname.to_string(), ids));
+                                }
+                            }
                             v
                         };
                         Ok(Literal::positive(v))
