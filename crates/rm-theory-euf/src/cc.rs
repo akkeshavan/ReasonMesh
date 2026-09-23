@@ -74,8 +74,9 @@ enum UndoEntry {
     UseListPush { class: ENodeId },
     /// The child's use-list was cleared (items moved to root). Restore on backtrack.
     UseListClear { node: ENodeId, items: Vec<ENodeId> },
-    /// An explanation-forest edge was set.
-    ExplEdge { node: ENodeId },
+    /// An explanation-forest edge was changed (set or cleared during path reversal).
+    /// Stores the OLD value so backtrack can restore it exactly.
+    ExplEdgeChange { node: ENodeId, old: Option<(ENodeId, MergeReason)> },
 }
 
 // ---------------------------------------------------------------------------
@@ -225,8 +226,8 @@ impl CongruenceClosure {
                 UndoEntry::UseListClear { node, items } => {
                     self.use_list[node.0 as usize] = items;
                 }
-                UndoEntry::ExplEdge { node } => {
-                    self.explain_parent[node.0 as usize] = None;
+                UndoEntry::ExplEdgeChange { node, old } => {
+                    self.explain_parent[node.0 as usize] = old;
                 }
             }
         }
@@ -277,13 +278,14 @@ impl CongruenceClosure {
                 diseq_lit: sat_lit,
             });
         }
-        let (a, b) = if rep_l < rep_r {
-            (rep_l, rep_r)
-        } else {
-            (rep_r, rep_l)
-        };
-        self.diseqs.push((a, b, sat_lit));
-        self.undo.push(UndoEntry::Diseq { lhs: a, rhs: b });
+        // Store the ORIGINAL nodes (not their representatives) so that
+        // explain_equality called on a later conflict traces the full equality
+        // chain from lhs to rhs.  Using representatives would truncate the
+        // explanation to the last merge step only, producing unsound conflict
+        // clauses (too short → rule out more assignments than the conflict
+        // actually justifies → false UNSAT).
+        self.diseqs.push((lhs, rhs, sat_lit));
+        self.undo.push(UndoEntry::Diseq { lhs, rhs });
         Ok(())
     }
 
@@ -313,9 +315,28 @@ impl CongruenceClosure {
                 old_size_root: self.uf[root.0 as usize].size,
             });
 
-            let (expl_from, expl_to) = (child, root);
-            self.undo.push(UndoEntry::ExplEdge { node: expl_from });
-            self.explain_parent[expl_from.0 as usize] = Some((expl_to, reason));
+            // Redirect the explain forest using path reversal (standard DPLL(T) algorithm).
+            //
+            // Goal: after merging, explain_equality(any node in child's class, any node
+            // in root's class) must return ALL equalities in the derivation chain.
+            //
+            // Simple "explain_parent[child_rep] = (orig_other, reason)" is wrong when
+            // orig_child ≠ child_rep: the child rep's class already has an explain path
+            // child_rep→...→orig_child, and jumping directly to orig_other skips those
+            // edges in the explanation.
+            //
+            // Correct algorithm (Nieuwenhuis-Oliveras):
+            //   1. Walk from orig_child toward its explain root (child_rep), collecting
+            //      the path.
+            //   2. Reverse every edge on that path (so child_rep now leads toward orig_child).
+            //   3. Set explain_parent[orig_child] = (orig_other, reason) — the new edge.
+            //
+            // After this the path from child_rep is:
+            //   child_rep → ... → orig_child → orig_other → ... → root_rep
+            // which encodes the complete derivation.
+            let orig_child = if child == rep_a { a } else { b };
+            let orig_other = if child == rep_a { b } else { a };
+            self.redirect_explain_path(orig_child, orig_other, reason);
 
             self.uf[child.0 as usize].parent = root;
             self.uf[root.0 as usize].size += self.uf[child.0 as usize].size;
@@ -373,14 +394,16 @@ impl CongruenceClosure {
             // three words, avoiding an O(N) allocation on every merge.
             let n_diseqs = self.diseqs.len();
             for i in 0..n_diseqs {
-                let (a_rep, b_rep, diseq_sat_lit) = self.diseqs[i];
-                let cur_a = self.find(a_rep);
-                let cur_b = self.find(b_rep);
+                let (a_orig, b_orig, diseq_sat_lit) = self.diseqs[i];
+                let cur_a = self.find(a_orig);
+                let cur_b = self.find(b_orig);
                 if cur_a == cur_b {
-                    let expl = self.explain_equality(egraph, a_rep, b_rep);
+                    // Explain using original nodes — not their current representatives —
+                    // so the full equality chain (a_orig…root…b_orig) is reconstructed.
+                    let expl = self.explain_equality(egraph, a_orig, b_orig);
                     return Err(CcError::Conflict {
-                        lhs: a_rep,
-                        rhs: b_rep,
+                        lhs: a_orig,
+                        rhs: b_orig,
                         explanation: expl,
                         diseq_lit: diseq_sat_lit,
                     });
@@ -388,6 +411,61 @@ impl CongruenceClosure {
             }
         }
         Ok(())
+    }
+
+    // -----------------------------------------------------------------------
+    // Explain-forest path redirection
+    // -----------------------------------------------------------------------
+
+    /// Redirect the explain forest so that after the call, the explain path
+    /// from `from` leads to `to` via `reason`, with all prior edges from `from`
+    /// to the old explain root reversed.
+    ///
+    /// Called during merges instead of the naive `explain_parent[child_rep] = (orig_other, reason)`.
+    /// The naive version shortcuts across the within-class path and produces incomplete
+    /// conflict clauses; this version preserves all intermediate steps.
+    fn redirect_explain_path(&mut self, from: ENodeId, to: ENodeId, reason: MergeReason) {
+        // Collect the path from `from` to the current explain root of its class.
+        // (The root is the first node with explain_parent == None.)
+        let mut path: Vec<(ENodeId, Option<(ENodeId, MergeReason)>)> = Vec::new();
+        let mut cur = from;
+        loop {
+            let ep = self.explain_parent[cur.0 as usize].clone();
+            let done = ep.is_none();
+            path.push((cur, ep));
+            if done {
+                break;
+            }
+            let next = match &path.last().unwrap().1 {
+                Some((n, _)) => *n,
+                None => unreachable!(),
+            };
+            cur = next;
+        }
+
+        // path = [(from, ep_from), (p1, ep_p1), ..., (root, None)]
+        // where ep_from = (p1, r1), ep_p1 = (p2, r2), ..., ep_pn-1 = (root, rn).
+        //
+        // Reverse every edge: root→...→p1→from (same reason on each reversed edge).
+        // For i in 1..path.len(): path[i].node should now point to path[i-1].node.
+        for i in 1..path.len() {
+            let (parent_node, _parent_old_ep) = &path[i];
+            let (child_node, child_old_ep) = &path[i - 1];
+            // The original edge was child_node → parent_node with reason from child_old_ep.
+            // Reverse: parent_node → child_node with the same reason.
+            let rev_reason = match child_old_ep {
+                Some((_, r)) => r.clone(),
+                None => unreachable!("path[0] has no explain_parent but is not the root"),
+            };
+            let old = self.explain_parent[parent_node.0 as usize].take();
+            self.undo.push(UndoEntry::ExplEdgeChange { node: *parent_node, old });
+            self.explain_parent[parent_node.0 as usize] = Some((*child_node, rev_reason));
+        }
+
+        // Set the new edge: from → to.
+        let old = self.explain_parent[from.0 as usize].take();
+        self.undo.push(UndoEntry::ExplEdgeChange { node: from, old });
+        self.explain_parent[from.0 as usize] = Some((to, reason));
     }
 
     // -----------------------------------------------------------------------
