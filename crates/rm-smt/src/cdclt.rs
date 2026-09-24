@@ -1645,9 +1645,8 @@ fn encode_arith_lit_cdclt(
             ">" => (y, x, -c, true),
             _ => return Err(()),
         })
-    } else if let Some(xn) = sexpr_symbol(lhs) {
+    } else if let (Some(xn), Some(c)) = (sexpr_symbol(lhs), extract_int(rhs)) {
         if let Some(&x) = dl_vars.get(xn) {
-            let c = extract_int(rhs).ok_or(())?;
             Some(match op {
                 "<=" => (x, 0, c, false),
                 "<" => (x, 0, c, true),
@@ -1682,7 +1681,10 @@ fn encode_arith_lit_cdclt(
         tuple
     } else {
         // Fallback: resolve both sides via intern + uf_to_dl.
-        // Handles $arith_N / $ite_N variables created during term interning.
+        // Handles $arith_N / $ite_N variables created during term interning, and
+        // UF function applications appearing in arithmetic comparisons: these get
+        // a fresh DL variable (Nelson-Oppen purification), so that EUF equalities
+        // on the application can be propagated to the DL domain.
         let resolve = |expr: &rm_syntax::SExpr,
                        cdclt: &mut CdclT,
                        uf_cache: &mut FxHashMap<String, ENodeId>,
@@ -1701,7 +1703,18 @@ fn encode_arith_lit_cdclt(
                 return cdclt.uf_to_dl.get(&uid).copied();
             }
             let uid = intern_uf_term_cdclt(expr, cdclt, uf_cache, uf_funcs, dl_vars).ok()?;
-            cdclt.uf_to_dl.get(&uid).copied()
+            if let Some(&dl_id) = cdclt.uf_to_dl.get(&uid) {
+                return Some(dl_id);
+            }
+            // No DL variable yet — assign one (Nelson-Oppen purification for UF terms
+            // appearing in arithmetic comparisons).
+            let fresh_dl = cdclt.dl.add_var();
+            let n = cdclt.arith_count;
+            cdclt.arith_count += 1;
+            cdclt.dl_var_names.insert(fresh_dl, format!("$uf_{n}"));
+            cdclt.dl_uf_pairs.push((fresh_dl, uid));
+            cdclt.uf_to_dl.insert(uid, fresh_dl);
+            Some(fresh_dl)
         };
         let xdl = resolve(lhs, cdclt, uf_cache, uf_funcs).ok_or_else(|| {
             if std::env::var("CDCLT_DEBUG").is_ok() {
