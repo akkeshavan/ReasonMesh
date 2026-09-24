@@ -286,10 +286,12 @@ impl NoCombinedSolver {
 struct SmtLibDecls {
     uf_funcs: FxHashMap<String, u32>,
     dl_vars: FxHashMap<String, u32>,
+    /// Expanded assertions (let-free). May be shorter than raw_assertions if overflow happened.
     assertions: Vec<rm_syntax::SExpr>,
+    /// Raw assertions, kept when let-expansion overflows — used by the let-aware CDCL(T) encoder.
+    raw_assertions: Vec<rm_syntax::SExpr>,
     logic: Option<String>,
     /// True if any assertion exceeded the let-expansion node limit.
-    /// Callers should return Unknown rather than attempting to solve.
     expansion_overflow: bool,
 }
 
@@ -304,6 +306,7 @@ fn parse_smtlib_decls(exprs: &[rm_syntax::SExpr]) -> SmtLibDecls {
     let mut dl_vars: FxHashMap<String, u32> = FxHashMap::default();
     let mut next_dl_id: u32 = 1;
     let mut assertions = Vec::new();
+    let mut raw_assertions = Vec::new();
     let mut logic = None;
     let mut expansion_overflow = false;
 
@@ -355,6 +358,7 @@ fn parse_smtlib_decls(exprs: &[rm_syntax::SExpr]) -> SmtLibDecls {
             }
             "assert" => {
                 if let Some(body) = items.get(1) {
+                    raw_assertions.push(body.clone());
                     match rm_syntax::preprocess_bounded(body, MAX_EXPAND_NODES) {
                         Some(expanded) => assertions.push(expanded),
                         None => expansion_overflow = true,
@@ -369,6 +373,7 @@ fn parse_smtlib_decls(exprs: &[rm_syntax::SExpr]) -> SmtLibDecls {
         uf_funcs,
         dl_vars,
         assertions,
+        raw_assertions,
         logic,
         expansion_overflow,
     }
@@ -404,7 +409,6 @@ fn intern_no_declarations(
 /// Returns `(verdict, dl_model)` where `dl_model` maps var names to integer values on SAT.
 pub fn solve_qf_ufidl(text: &str, max_conflicts: u64, cancel: Arc<AtomicBool>) -> Result<(NoResult, Vec<(String, i64)>), String> {
     use rm_syntax::{lex, parse_program};
-
     let tokens = lex(text).map_err(|e| e.to_string())?;
     let exprs = parse_program(&tokens).map_err(|e| e.to_string())?;
     let decls = parse_smtlib_decls(&exprs);
@@ -415,7 +419,12 @@ pub fn solve_qf_ufidl(text: &str, max_conflicts: u64, cancel: Arc<AtomicBool>) -
     }
 
     if decls.expansion_overflow {
-        return Ok((NoResult::Unknown, Vec::new()));
+        // Let-expansion overflowed — fall through to the CDCL(T) path which handles
+        // let forms directly via encode_bool_cdclt without upfront expansion.
+        if std::env::var("CDCLT_DEBUG").is_ok() {
+            eprintln!("[cdclt] expansion overflow; using let-aware CDCL(T) path");
+        }
+        return solve_with_cdclt(text, max_conflicts, cancel);
     }
 
     if decls.assertions.is_empty() {
@@ -1252,9 +1261,13 @@ fn solve_with_cdclt(text: &str, max_conflicts: u64, cancel: Arc<AtomicBool>) -> 
     let exprs = parse_program(&tokens).map_err(|e| e.to_string())?;
     let decls = parse_smtlib_decls(&exprs);
 
-    if decls.expansion_overflow {
-        return Ok((NoResult::Unknown, Vec::new()));
-    }
+    // Use raw (unexpanded) assertions when let-expansion overflowed — the let-aware
+    // encoder in encode_bool_cdclt will process let forms directly without blowup.
+    let assertions_to_encode = if decls.expansion_overflow {
+        &decls.raw_assertions
+    } else {
+        &decls.assertions
+    };
 
     let num_arith = decls.dl_vars.values().copied().max().unwrap_or(0);
     let mut cdclt = CdclT::new(num_arith, cancel);
@@ -1279,7 +1292,7 @@ fn solve_with_cdclt(text: &str, max_conflicts: u64, cancel: Arc<AtomicBool>) -> 
         cdclt.uf_to_dl.insert(uid, dl_id);
     }
 
-    for assertion in &decls.assertions {
+    for assertion in assertions_to_encode {
         let lit = encode_bool_cdclt(
             assertion,
             &mut cdclt,
@@ -1288,8 +1301,18 @@ fn solve_with_cdclt(text: &str, max_conflicts: u64, cancel: Arc<AtomicBool>) -> 
             &decls.dl_vars,
         );
         match lit {
-            Ok(l) => cdclt.add_clause(&[l]),
-            Err(()) => return Ok((NoResult::Unknown, Vec::new())),
+            Ok(l) => {
+                if std::env::var("CDCLT_DEBUG").is_ok() {
+                    eprintln!("[cdclt] assertion encoded successfully, var={}", l.var());
+                }
+                cdclt.add_clause(&[l]);
+            }
+            Err(()) => {
+                if std::env::var("CDCLT_DEBUG").is_ok() {
+                    eprintln!("[cdclt] encode_bool_cdclt failed on assertion");
+                }
+                return Ok((NoResult::Unknown, Vec::new()));
+            }
         }
     }
 
@@ -1315,6 +1338,16 @@ fn encode_bool_cdclt(
     uf_funcs: &FxHashMap<String, u32>,
     dl_vars: &FxHashMap<String, u32>,
 ) -> Result<Literal, ()> {
+    encode_bool_cdclt_inner(expr, cdclt, uf_cache, uf_funcs, dl_vars)
+}
+
+fn encode_bool_cdclt_inner(
+    expr: &rm_syntax::SExpr,
+    cdclt: &mut CdclT,
+    uf_cache: &mut FxHashMap<String, ENodeId>,
+    uf_funcs: &FxHashMap<String, u32>,
+    dl_vars: &FxHashMap<String, u32>,
+) -> Result<Literal, ()> {
     use rm_syntax::{Atom, SExpr};
 
     match expr {
@@ -1331,6 +1364,44 @@ fn encode_bool_cdclt(
         SExpr::List(items) => {
             let op = items.first().and_then(|e| sexpr_symbol(e)).ok_or(())?;
             match op {
+                // Handle let-forms directly to avoid exponential pre-expansion blowup.
+                // For each binding (xi ei): intern as UF term and/or encode as Bool literal
+                // and register in the shared caches so body references resolve correctly.
+                "let" => {
+                    let bindings = match items.get(1) {
+                        Some(SExpr::List(b)) => b.as_slice(),
+                        _ => return Err(()),
+                    };
+                    let body = items.get(2).ok_or(())?;
+                    for binding in bindings {
+                        let SExpr::List(bv) = binding else { return Err(()); };
+                        let name = bv.first().and_then(sexpr_symbol).ok_or(())?;
+                        let val = bv.get(1).ok_or(())?;
+                        // Intern as a UF/arith term and register the name in uf_cache
+                        // so body references to `name` resolve to the same ENodeId as `val`.
+                        if let Ok(uid) = intern_uf_term_cdclt(val, cdclt, uf_cache, uf_funcs, dl_vars) {
+                            uf_cache.entry(name.to_string()).or_insert(uid);
+                        }
+                        // Encode as a Bool literal and register in bool_prop_atoms
+                        // so body references to `name` in Bool position resolve correctly.
+                        if !cdclt.bool_prop_atoms.contains_key(name) {
+                            if let Ok(lit) = encode_bool_cdclt(val, cdclt, uf_cache, uf_funcs, dl_vars) {
+                                let v = if lit.is_positive() {
+                                    lit.var()
+                                } else {
+                                    // Create a fresh var equivalent to lit (i.e., ¬lit.var()).
+                                    let v = cdclt.alloc_var();
+                                    let z = Literal::positive(v);
+                                    cdclt.add_clause(&[z.negate(), lit]);
+                                    cdclt.add_clause(&[z, lit.negate()]);
+                                    v
+                                };
+                                cdclt.bool_prop_atoms.insert(name.to_string(), v);
+                            }
+                        }
+                    }
+                    encode_bool_cdclt(body, cdclt, uf_cache, uf_funcs, dl_vars)
+                }
                 "not" => {
                     let inner = items.get(1).ok_or(())?;
                     let l = encode_bool_cdclt(inner, cdclt, uf_cache, uf_funcs, dl_vars)?;
@@ -1463,8 +1534,16 @@ fn encode_bool_cdclt(
                             return Ok(lv);
                         }
                     }
-                    let lid = intern_uf_term_cdclt(lhs, cdclt, uf_cache, uf_funcs, dl_vars)?;
-                    let rid = intern_uf_term_cdclt(rhs, cdclt, uf_cache, uf_funcs, dl_vars)?;
+                    let lid = intern_uf_term_cdclt(lhs, cdclt, uf_cache, uf_funcs, dl_vars).map_err(|_| {
+                        if std::env::var("CDCLT_DEBUG").is_ok() {
+                            eprintln!("[eq] intern lhs failed: {}", &sexpr_key(lhs)[..sexpr_key(lhs).len().min(80)]);
+                        }
+                    })?;
+                    let rid = intern_uf_term_cdclt(rhs, cdclt, uf_cache, uf_funcs, dl_vars).map_err(|_| {
+                        if std::env::var("CDCLT_DEBUG").is_ok() {
+                            eprintln!("[eq] intern rhs failed: {}", &sexpr_key(rhs)[..sexpr_key(rhs).len().min(80)]);
+                        }
+                    })?;
                     let key = if lid <= rid { (lid, rid) } else { (rid, lid) };
                     let v = if let Some(&cached) = cdclt.eq_atom_cache.get(&key) {
                         cached
@@ -1476,7 +1555,14 @@ fn encode_bool_cdclt(
                     };
                     Ok(Literal::positive(v))
                 }
-                "<=" | "<" | ">=" | ">" => encode_arith_lit_cdclt(items, op, cdclt, dl_vars),
+                "<=" | "<" | ">=" | ">" => {
+                    let r = encode_arith_lit_cdclt(items, op, cdclt, dl_vars, uf_cache, uf_funcs);
+                    if r.is_err() && std::env::var("CDCLT_DEBUG").is_ok() {
+                        let key = sexpr_key(expr);
+                        eprintln!("[encode_bool] arith lit failed: {}", &key[..key.len().min(120)]);
+                    }
+                    r
+                }
                 // Bool-sorted function application used as a propositional atom.
                 // We only admit it if the arity matches a declared UF function.
                 fname => {
@@ -1505,6 +1591,9 @@ fn encode_bool_cdclt(
                         };
                         Ok(Literal::positive(v))
                     } else {
+                        if std::env::var("CDCLT_DEBUG").is_ok() {
+                            eprintln!("[fname] arity mismatch or unknown: fname={fname} args={} declared={:?}", args.len(), uf_funcs.get(fname));
+                        }
                         Err(())
                     }
                 }
@@ -1522,6 +1611,14 @@ fn encode_bool_cdclt(
             };
             Ok(Literal::positive(v))
         }
+        // A bare symbol that was registered as a Bool literal by a let binding.
+        SExpr::Atom(Atom::Symbol(name)) => {
+            if let Some(&v) = cdclt.bool_prop_atoms.get(name.as_str()) {
+                Ok(Literal::positive(v))
+            } else {
+                Err(())
+            }
+        }
         _ => Err(()),
     }
 }
@@ -1531,54 +1628,98 @@ fn encode_arith_lit_cdclt(
     op: &str,
     cdclt: &mut CdclT,
     dl_vars: &FxHashMap<String, u32>,
+    uf_cache: &mut FxHashMap<String, ENodeId>,
+    uf_funcs: &FxHashMap<String, u32>,
 ) -> Result<Literal, ()> {
     let lhs = items.get(1).ok_or(())?;
     let rhs = items.get(2).ok_or(())?;
 
-    let (x, y, c, is_lt) = if let Some((xn, yn)) = extract_diff(lhs) {
+    let maybe = if let Some((xn, yn)) = extract_diff(lhs) {
         let c = extract_int(rhs).ok_or(())?;
         let x = *dl_vars.get(xn).ok_or(())?;
         let y = *dl_vars.get(yn).ok_or(())?;
-        match op {
+        Some(match op {
             "<=" => (x, y, c, false),
             "<" => (x, y, c, true),
             ">=" => (y, x, -c, false),
             ">" => (y, x, -c, true),
             _ => return Err(()),
-        }
+        })
     } else if let Some(xn) = sexpr_symbol(lhs) {
         if let Some(&x) = dl_vars.get(xn) {
             let c = extract_int(rhs).ok_or(())?;
-            match op {
+            Some(match op {
                 "<=" => (x, 0, c, false),
                 "<" => (x, 0, c, true),
                 ">=" => (0, x, -c, false),
                 ">" => (0, x, -c, true),
                 _ => return Err(()),
-            }
+            })
         } else {
-            return Err(());
+            None
         }
     } else if let Some(cn) = extract_int(lhs) {
-        // Numeral on LHS: (op cn y) — flip to variable-on-left form.
-        // (<= cn y) ≡ (y >= cn) ≡ 0 - y ≤ -cn → (0, y_var, -cn, false)
         if let Some(yn) = sexpr_symbol(rhs) {
             if let Some(&y) = dl_vars.get(yn) {
-                match op {
+                Some(match op {
                     "<=" => (0, y, -cn, false),
                     "<"  => (0, y, -cn, true),
                     ">=" => (y, 0, cn, false),
                     ">"  => (y, 0, cn, true),
                     _ => return Err(()),
-                }
+                })
             } else {
-                return Err(());
+                None
             }
         } else {
-            return Err(());
+            None
         }
     } else {
-        return Err(());
+        None
+    };
+
+    let (x, y, c, is_lt) = if let Some(tuple) = maybe {
+        tuple
+    } else {
+        // Fallback: resolve both sides via intern + uf_to_dl.
+        // Handles $arith_N / $ite_N variables created during term interning.
+        let resolve = |expr: &rm_syntax::SExpr,
+                       cdclt: &mut CdclT,
+                       uf_cache: &mut FxHashMap<String, ENodeId>,
+                       uf_funcs: &FxHashMap<String, u32>|
+         -> Option<u32> {
+            if let Some(name) = sexpr_symbol(expr) {
+                if let Some(&dl_id) = dl_vars.get(name) {
+                    return Some(dl_id);
+                }
+            }
+            if let Some(cn) = extract_int(expr) {
+                // Inline literal — look up its DL representative (#int_N).
+                let ikey = format!("#int_{cn}");
+                let uid = uf_cache.get(&ikey).copied()
+                    .or_else(|| { intern_uf_term_cdclt(expr, cdclt, uf_cache, uf_funcs, dl_vars).ok() })?;
+                return cdclt.uf_to_dl.get(&uid).copied();
+            }
+            let uid = intern_uf_term_cdclt(expr, cdclt, uf_cache, uf_funcs, dl_vars).ok()?;
+            cdclt.uf_to_dl.get(&uid).copied()
+        };
+        let xdl = resolve(lhs, cdclt, uf_cache, uf_funcs).ok_or_else(|| {
+            if std::env::var("CDCLT_DEBUG").is_ok() {
+                eprintln!("[arith_lit] lhs no DL: {}", &sexpr_key(lhs)[..sexpr_key(lhs).len().min(80)]);
+            }
+        })?;
+        let ydl = resolve(rhs, cdclt, uf_cache, uf_funcs).ok_or_else(|| {
+            if std::env::var("CDCLT_DEBUG").is_ok() {
+                eprintln!("[arith_lit] rhs no DL: {}", &sexpr_key(rhs)[..sexpr_key(rhs).len().min(80)]);
+            }
+        })?;
+        match op {
+            "<=" => (xdl, ydl, 0i64, false),
+            "<"  => (xdl, ydl, 0i64, true),
+            ">=" => (ydl, xdl, 0i64, false),
+            ">"  => (ydl, xdl, 0i64, true),
+            _ => return Err(()),
+        }
     };
 
     let cache_key = (x, y, c, is_lt);
@@ -1629,29 +1770,76 @@ fn intern_uf_term_cdclt(
             match fname {
                 // ite: introduce a fresh UF constant and add conditional equality lemmas.
                 // (ite cond t f) → fresh z, with clause [¬cond ∨ z=t] and [cond ∨ z=f].
+                // If both branches have DL variables, also create a DL variable for z
+                // with SAT-guarded Leq atoms encoding the same conditional equality in DL.
                 "ite" => {
                     let cond_expr = items.get(1).ok_or(())?;
                     let then_expr = items.get(2).ok_or(())?;
                     let else_expr = items.get(3).ok_or(())?;
-                    let cond_lit = encode_bool_cdclt(cond_expr, cdclt, uf_cache, uf_funcs, dl_vars)?;
-                    let then_id = intern_uf_term_cdclt(then_expr, cdclt, uf_cache, uf_funcs, dl_vars)?;
-                    let else_id = intern_uf_term_cdclt(else_expr, cdclt, uf_cache, uf_funcs, dl_vars)?;
+                    let cond_lit = encode_bool_cdclt(cond_expr, cdclt, uf_cache, uf_funcs, dl_vars).map_err(|_| {
+                        if std::env::var("CDCLT_DEBUG").is_ok() {
+                            eprintln!("[ite] cond Bool failed: {}", &sexpr_key(cond_expr)[..sexpr_key(cond_expr).len().min(80)]);
+                        }
+                    })?;
+                    let then_id = intern_uf_term_cdclt(then_expr, cdclt, uf_cache, uf_funcs, dl_vars).map_err(|_| {
+                        if std::env::var("CDCLT_DEBUG").is_ok() {
+                            eprintln!("[ite] then intern failed: {}", &sexpr_key(then_expr)[..sexpr_key(then_expr).len().min(80)]);
+                        }
+                    })?;
+                    let else_id = intern_uf_term_cdclt(else_expr, cdclt, uf_cache, uf_funcs, dl_vars).map_err(|_| {
+                        if std::env::var("CDCLT_DEBUG").is_ok() {
+                            eprintln!("[ite] else intern failed: {}", &sexpr_key(else_expr)[..sexpr_key(else_expr).len().min(80)]);
+                        }
+                    })?;
                     let n = cdclt.arith_count;
                     cdclt.arith_count += 1;
                     let fresh_name = format!("$ite_{n}");
                     let ite_id = cdclt.intern_const(&fresh_name);
-                    // cond → ite_id = then_id
+                    // EUF conditional equalities.
                     let eq_then = intern_eq_atom(cdclt, ite_id, then_id);
-                    // ¬cond → ite_id = else_id
                     let eq_else = intern_eq_atom(cdclt, ite_id, else_id);
                     cdclt.add_clause(&[cond_lit.negate(), Literal::positive(eq_then)]);
                     cdclt.add_clause(&[cond_lit, Literal::positive(eq_else)]);
+                    // DL extension: if both branches have DL variables, create a DL
+                    // variable for the ite result with guarded Leq atoms.
+                    // cond → fresh_dl = dl_then:  [¬cond ∨ Leq(f,t,0)] ∧ [¬cond ∨ Leq(t,f,0)]
+                    // ¬cond → fresh_dl = dl_else: [cond ∨ Leq(f,e,0)] ∧ [cond ∨ Leq(e,f,0)]
+                    if let (Some(dl_then), Some(dl_else)) = (
+                        cdclt.uf_to_dl.get(&then_id).copied(),
+                        cdclt.uf_to_dl.get(&else_id).copied(),
+                    ) {
+                        let fresh_dl = cdclt.dl.add_var();
+                        cdclt.dl_var_names.insert(fresh_dl, fresh_name.clone());
+                        cdclt.dl_uf_pairs.push((fresh_dl, ite_id));
+                        cdclt.uf_to_dl.insert(ite_id, fresh_dl);
+                        // Helper: look up or create a Leq atom for two DL vars.
+                        macro_rules! leq_atom {
+                            ($a:expr, $b:expr) => {{
+                                let k = ($a, $b, 0i64, false);
+                                if let Some(&v) = cdclt.arith_atom_cache.get(&k) {
+                                    v
+                                } else {
+                                    let v = cdclt.alloc_var();
+                                    cdclt.atoms.insert(v, BackboneAtom::Leq { x: $a, y: $b, c: 0 });
+                                    cdclt.arith_atom_cache.insert(k, v);
+                                    v
+                                }
+                            }};
+                        }
+                        let va = leq_atom!(fresh_dl, dl_then);
+                        let vb = leq_atom!(dl_then, fresh_dl);
+                        let vc = leq_atom!(fresh_dl, dl_else);
+                        let vd = leq_atom!(dl_else, fresh_dl);
+                        cdclt.add_clause(&[cond_lit.negate(), Literal::positive(va)]);
+                        cdclt.add_clause(&[cond_lit.negate(), Literal::positive(vb)]);
+                        cdclt.add_clause(&[cond_lit, Literal::positive(vc)]);
+                        cdclt.add_clause(&[cond_lit, Literal::positive(vd)]);
+                    }
                     uf_cache.insert(key, ite_id);
                     Ok(ite_id)
                 }
                 // (+ c x) or (+ x c): encode as fresh DL variable z = x + c.
-                // The non-numeral argument may be a declared DL symbol or a
-                // previously interned arithmetic sub-expression ($arith_N).
+                // Returns Err if the base has no DL representation (propagates UNKNOWN).
                 "+" => {
                     let a = items.get(1).ok_or(())?;
                     let b = items.get(2).ok_or(())?;
@@ -1662,16 +1850,40 @@ fn intern_uf_term_cdclt(
                     } else {
                         return Err(());
                     };
-                    let base_dl = resolve_dl_base(base_uid_or_name, cdclt, uf_cache, uf_funcs, dl_vars)?;
-                    intern_arith_offset(cdclt, uf_cache, key, base_dl, c)
+                    if let Ok(base_dl) = resolve_dl_base(base_uid_or_name, cdclt, uf_cache, uf_funcs, dl_vars) {
+                        intern_arith_offset(cdclt, uf_cache, key, base_dl, c)
+                    } else {
+                        Err(())
+                    }
                 }
-                // (- x c): encode as fresh DL variable z = x - c (= x + (-c)).
                 "-" => {
                     let a = items.get(1).ok_or(())?;
                     let b = items.get(2).ok_or(())?;
                     let c = extract_int(b).ok_or(())?;
-                    let base_dl = resolve_dl_base(a, cdclt, uf_cache, uf_funcs, dl_vars)?;
-                    intern_arith_offset(cdclt, uf_cache, key, base_dl, -c)
+                    if let Ok(base_dl) = resolve_dl_base(a, cdclt, uf_cache, uf_funcs, dl_vars) {
+                        intern_arith_offset(cdclt, uf_cache, key, base_dl, -c)
+                    } else {
+                        Err(())
+                    }
+                }
+                // Handle let-forms when processing term expressions (e.g., inside
+                // arithmetic or UF contexts). Bindings are added to uf_cache so
+                // references in the body resolve via the symbol lookup path.
+                "let" => {
+                    let bindings = match items.get(1) {
+                        Some(SExpr::List(b)) => b.as_slice(),
+                        _ => return Err(()),
+                    };
+                    let body = items.get(2).ok_or(())?;
+                    for binding in bindings {
+                        let SExpr::List(bv) = binding else { return Err(()); };
+                        let name = bv.first().and_then(sexpr_symbol).ok_or(())?;
+                        let val = bv.get(1).ok_or(())?;
+                        if let Ok(uid) = intern_uf_term_cdclt(val, cdclt, uf_cache, uf_funcs, dl_vars) {
+                            uf_cache.entry(name.to_string()).or_insert(uid);
+                        }
+                    }
+                    intern_uf_term_cdclt(body, cdclt, uf_cache, uf_funcs, dl_vars)
                 }
                 // Only allow declared UF functions. Other built-ins (*, /, >, <, etc.)
                 // are not UF — silently treating them as UF would produce wrong-SAT.
