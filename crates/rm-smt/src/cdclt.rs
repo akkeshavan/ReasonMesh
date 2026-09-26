@@ -24,7 +24,7 @@ use rm_akx::literal::Literal;
 use rm_sat::{CdclSolver, SolveResult, TheorySolver};
 use rm_theory_arith::{DiffLogicSolver, DlError};
 use rm_theory_euf::{CongruenceClosure, EGraph, ENodeId};
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -719,8 +719,15 @@ struct CdclT {
     next_var: u32,
     /// dl_var_id → variable name (for model extraction after SAT)
     dl_var_names: FxHashMap<u32, String>,
-    /// (dl_var_id, uf_node_id) for Nelson-Oppen shared variables
+    /// (dl_var_id, uf_node_id) for Nelson-Oppen shared variables.
+    /// Used for EUF→DL propagation (all DL-linked nodes, including ite intermediates).
     dl_uf_pairs: Vec<(u32, ENodeId)>,
+    /// Subset of dl_uf_pairs restricted to nodes that appear in formula-level EQ atoms.
+    /// Used for the expensive DL→EUF N-O check (Bellman-Ford per pair); keeping this
+    /// small avoids O(n²) Bellman-Ford blowup from intermediate ite DL variables.
+    dl_no_check_pairs: Vec<(u32, ENodeId)>,
+    /// Set of ENodeIds already in dl_no_check_pairs (for dedup).
+    dl_no_check_nodes: FxHashSet<ENodeId>,
     /// Buffered Tseitin clauses, added to `sat` during `finalize()`.
     pending_clauses: Vec<Vec<Literal>>,
     /// The SAT backbone — None until `finalize()` is called.
@@ -742,6 +749,10 @@ struct CdclT {
     /// fresh DL variable is created for an arithmetic sub-expression so that
     /// nested arithmetic like (+ (- x 1) 9) can find the base DL var.
     uf_to_dl: FxHashMap<ENodeId, u32>,
+    /// Full DL literal justification for N-O DL→EUF merges.
+    /// Keyed by canonical (min_id, max_id) ENode pair. T-propagation consults this
+    /// to emit complete theory lemmas rather than the truncated single-lit CC tag.
+    no_dl_expl: FxHashMap<(ENodeId, ENodeId), Vec<u32>>,
     /// Shared cancellation flag. The benchmark runner (or any timeout wrapper)
     /// sets this to true after the wall-clock deadline fires; the solve loop
     /// checks it once per iteration and returns Unknown promptly.
@@ -758,6 +769,8 @@ impl CdclT {
             next_var: 1,
             dl_var_names: FxHashMap::default(),
             dl_uf_pairs: Vec::new(),
+            dl_no_check_pairs: Vec::new(),
+            dl_no_check_nodes: FxHashSet::default(),
             pending_clauses: Vec::new(),
             sat: None,
             bool_prop_atoms: FxHashMap::default(),
@@ -766,6 +779,7 @@ impl CdclT {
             arith_atom_cache: FxHashMap::default(),
             arith_count: 0,
             uf_to_dl: FxHashMap::default(),
+            no_dl_expl: FxHashMap::default(),
             cancel,
         }
     }
@@ -822,6 +836,7 @@ impl CdclT {
         self.dl.new_decision_level();
 
         let vars: Vec<u32> = self.atoms.keys().copied().collect();
+
         for v in vars {
             if v as usize > model.num_vars() as usize {
                 continue;
@@ -835,20 +850,16 @@ impl CdclT {
                 Literal::negative(v).raw()
             };
             let atom = self.atoms[&v].clone();
-            let dbg = std::env::var("CDCLT_DEBUG").is_ok();
             match atom {
                 BackboneAtom::Eq { lhs, rhs } => {
-                    if dbg { eprintln!("  atom x{v} = Eq({lhs:?},{rhs:?}) val={val}"); }
                     if val {
                         if let Err(e) = self.cc.assert_eq(&self.egraph, lhs, rhs, sat_raw) {
                             if let Some(c) = mk_conflict_euf(e) {
-                                if dbg { eprintln!("  -> conflict on assert_eq: {:?}", c); }
                                 return Some(c);
                             }
                         }
                     } else if let Err(e) = self.cc.assert_neq(&self.egraph, lhs, rhs, sat_raw) {
                         if let Some(c) = mk_conflict_euf(e) {
-                            if dbg { eprintln!("  -> conflict on assert_neq: {:?}", c); }
                             return Some(c);
                         }
                     }
@@ -876,43 +887,51 @@ impl CdclT {
             }
         }
 
-        // Nelson-Oppen EUF → DL: if EUF merged two arith variables, assert DL equality.
-        if let Some(conflict) = no_euf_to_dl(&self.dl_uf_pairs, &mut self.cc, &mut self.dl, &self.egraph) {
-            return Some(conflict);
-        }
-
-        if let Err(e) = self.dl.check() {
-            return Some(mk_conflict_dl(e));
-        }
-
-        // Nelson-Oppen: propagate DL-derived equalities to EUF.
-        // If DL has tight bounds x-y≤0 and y-x≤0, assert x=y to EUF.
-        for i in 0..self.dl_uf_pairs.len() {
-            for j in (i + 1)..self.dl_uf_pairs.len() {
-                let (xi, xuid) = self.dl_uf_pairs[i];
-                let (yi, yuid) = self.dl_uf_pairs[j];
-                let xy_tight = self.dl.bound_between(yi, xi).map(|b| b <= 0).unwrap_or(false);
-                let yx_tight = self.dl.bound_between(xi, yi).map(|b| b <= 0).unwrap_or(false);
-                if xy_tight && yx_tight && !self.cc.are_equal(xuid, yuid) {
-                    // DL says xi = yi; collect the edge lits that justify both paths
+        // Nelson-Oppen fixed-point: cycle EUF↔DL until no new merges appear.
+        // A single pass misses chains where DL derives x=y, CC congruence propagates,
+        // and the updated CC lets DL close off further equalities.
+        self.no_dl_expl.clear();
+        loop {
+            // EUF → DL: assert DL equalities for all CC-merged pairs.
+            if let Some(conflict) = no_euf_to_dl(&self.dl_uf_pairs, &mut self.cc, &mut self.dl, &self.egraph) {
+                return Some(conflict);
+            }
+            // Check DL consistency.
+            if let Err(e) = self.dl.check() {
+                return Some(mk_conflict_dl(e));
+            }
+            // DL → EUF: find tight-bound pairs and merge in CC.
+            // O(E) union-find over tight bidirectional edges, then O(N_f × N_all)
+            // pair scan — no per-pair BF calls.
+            let tight_classes = self.dl.tight_equality_classes();
+            let mut any_new = false;
+            for i in 0..self.dl_no_check_pairs.len() {
+                let (xi, xuid) = self.dl_no_check_pairs[i];
+                for j in 0..self.dl_uf_pairs.len() {
+                    let (yi, yuid) = self.dl_uf_pairs[j];
+                    if xi == yi { continue; }
+                    if tight_classes[xi as usize] != tight_classes[yi as usize] { continue; }
+                    if self.cc.are_equal(xuid, yuid) { continue; }
                     let mut dl_lits: Vec<u32> = Vec::new();
-                    if let Some(p) = self.dl.path_explanation(yi, xi) {
-                        dl_lits.extend(p);
-                    }
-                    if let Some(p) = self.dl.path_explanation(xi, yi) {
-                        dl_lits.extend(p);
-                    }
+                    if let Some(p) = self.dl.path_explanation(yi, xi) { dl_lits.extend(p); }
+                    if let Some(p) = self.dl.path_explanation(xi, yi) { dl_lits.extend(p); }
                     let tag = dl_lits.first().copied().unwrap_or(0);
+                    let key = (xuid.min(yuid), xuid.max(yuid));
+                    self.no_dl_expl.insert(key, dl_lits.clone());
                     if let Err(e) = self.cc.assert_eq(&self.egraph, xuid, yuid, tag) {
                         if let Some(mut conflict) = mk_conflict_euf(e) {
-                            // dl_lits are raw literals; negate to form blocking clause
                             conflict.extend(dl_lits.iter().map(|&raw| Literal::from_raw(raw).negate()));
                             conflict.sort_unstable();
                             conflict.dedup();
                             return Some(conflict);
                         }
+                    } else {
+                        any_new = true;
                     }
                 }
+            }
+            if !any_new {
+                break;
             }
         }
 
@@ -1053,28 +1072,29 @@ impl TheorySolver for CdclT {
             }
         }
 
-        // Nelson-Oppen EUF → DL: if EUF merged two arith variables, assert DL equality.
-        if let Some(conflict) = no_euf_to_dl(&self.dl_uf_pairs, &mut self.cc, &mut self.dl, &self.egraph) {
-            return Err(conflict);
-        }
-
-        // Check DL consistency after all new DL assertions.
-        if let Err(e) = self.dl.check() {
-            return Err(mk_conflict_dl(e));
-        }
-
-        // Nelson-Oppen: DL tight bounds → EUF equalities.
-        for i in 0..self.dl_uf_pairs.len() {
-            for j in (i + 1)..self.dl_uf_pairs.len() {
-                let (xi, xuid) = self.dl_uf_pairs[i];
-                let (yi, yuid) = self.dl_uf_pairs[j];
-                let xy = self.dl.bound_between(yi, xi).map(|b| b <= 0).unwrap_or(false);
-                let yx = self.dl.bound_between(xi, yi).map(|b| b <= 0).unwrap_or(false);
-                if xy && yx && !self.cc.are_equal(xuid, yuid) {
+        // Nelson-Oppen fixed-point: cycle EUF↔DL until no new merges appear.
+        loop {
+            if let Some(conflict) = no_euf_to_dl(&self.dl_uf_pairs, &mut self.cc, &mut self.dl, &self.egraph) {
+                return Err(conflict);
+            }
+            if let Err(e) = self.dl.check() {
+                return Err(mk_conflict_dl(e));
+            }
+            let tight_classes = self.dl.tight_equality_classes();
+            let mut any_new = false;
+            for i in 0..self.dl_no_check_pairs.len() {
+                let (xi, xuid) = self.dl_no_check_pairs[i];
+                for j in 0..self.dl_uf_pairs.len() {
+                    let (yi, yuid) = self.dl_uf_pairs[j];
+                    if xi == yi { continue; }
+                    if tight_classes[xi as usize] != tight_classes[yi as usize] { continue; }
+                    if self.cc.are_equal(xuid, yuid) { continue; }
                     let mut dl_lits: Vec<u32> = Vec::new();
                     if let Some(p) = self.dl.path_explanation(yi, xi) { dl_lits.extend(p); }
                     if let Some(p) = self.dl.path_explanation(xi, yi) { dl_lits.extend(p); }
                     let tag = dl_lits.first().copied().unwrap_or(0);
+                    let key = (xuid.min(yuid), xuid.max(yuid));
+                    self.no_dl_expl.insert(key, dl_lits.clone());
                     if let Err(e) = self.cc.assert_eq(&self.egraph, xuid, yuid, tag) {
                         if let Some(mut conflict) = mk_conflict_euf(e) {
                             conflict.extend(dl_lits.iter().map(|&r| Literal::from_raw(r).negate()));
@@ -1082,8 +1102,13 @@ impl TheorySolver for CdclT {
                             conflict.dedup();
                             return Err(conflict);
                         }
+                    } else {
+                        any_new = true;
                     }
                 }
+            }
+            if !any_new {
+                break;
             }
         }
 
@@ -1135,7 +1160,8 @@ impl TheorySolver for CdclT {
         // T-propagation: scan unassigned equality atoms to find EUF-implied equalities.
         // For each unassigned atom (lhs = rhs) where EUF now considers lhs=rhs, emit
         // a theory lemma: [v_eq, ¬expl_lit1, ¬expl_lit2, ...].
-        // Adding this clause to SAT forces v_eq TRUE (since all expl_lits are TRUE).
+        // For N-O-derived equalities, use no_dl_expl for the full DL lit list rather
+        // than the truncated single-lit CC tag stored by explain_equality.
         let mut lemmas: Vec<Vec<Literal>> = Vec::new();
         for (&var, atom) in &self.atoms {
             if let BackboneAtom::Eq { lhs, rhs } = atom {
@@ -1143,13 +1169,14 @@ impl TheorySolver for CdclT {
                     continue; // Already assigned by SAT
                 }
                 if self.cc.are_equal(*lhs, *rhs) {
-                    let expl = self.cc.explain_equality(&self.egraph, *lhs, *rhs);
-                    let sat_lits = expl.sat_lits();
+                    // Prefer the full DL lit list for N-O-derived merges.
+                    let key = ((*lhs).min(*rhs), (*lhs).max(*rhs));
+                    let sat_lits: Vec<u32> = if let Some(dl_lits) = self.no_dl_expl.get(&key) {
+                        dl_lits.iter().copied().filter(|&r| r != 0).collect()
+                    } else {
+                        self.cc.explain_equality(&self.egraph, *lhs, *rhs).sat_lits()
+                    };
                     if sat_lits.is_empty() {
-                        // Only emit unit lemma when lhs == rhs (trivially reflexive).
-                        // Empty sat_lits for a non-trivial equality means the explain forest
-                        // had no LCA (a bug path that silently returns incomplete premises);
-                        // emitting an unconditional unit clause in that case is unsound.
                         if lhs == rhs {
                             lemmas.push(vec![Literal::positive(var)]);
                         }
@@ -1170,6 +1197,7 @@ impl TheorySolver for CdclT {
     fn theory_backtrack(&mut self, target_level: u32) {
         self.cc.backtrack_to(target_level);
         self.dl.backtrack_to(target_level);
+        self.no_dl_expl.clear();
     }
 
     fn theory_final_check(&mut self, model: &rm_sat::Model) -> Option<Vec<Literal>> {
@@ -1553,6 +1581,15 @@ fn encode_bool_cdclt_inner(
                         cdclt.eq_atom_cache.insert(key, v);
                         v
                     };
+                    // Track DL-linked nodes that appear in formula-level EQ atoms for the
+                    // DL→EUF N-O check. Only these need the expensive Bellman-Ford check.
+                    for &nid in &[lid, rid] {
+                        if let Some(&dl_var) = cdclt.uf_to_dl.get(&nid) {
+                            if cdclt.dl_no_check_nodes.insert(nid) {
+                                cdclt.dl_no_check_pairs.push((dl_var, nid));
+                            }
+                        }
+                    }
                     Ok(Literal::positive(v))
                 }
                 "<=" | "<" | ">=" | ">" => {
@@ -1645,8 +1682,9 @@ fn encode_arith_lit_cdclt(
             ">" => (y, x, -c, true),
             _ => return Err(()),
         })
-    } else if let (Some(xn), Some(c)) = (sexpr_symbol(lhs), extract_int(rhs)) {
+    } else if let Some(xn) = sexpr_symbol(lhs) {
         if let Some(&x) = dl_vars.get(xn) {
+            let c = extract_int(rhs).ok_or(())?;
             Some(match op {
                 "<=" => (x, 0, c, false),
                 "<" => (x, 0, c, true),
@@ -1681,10 +1719,10 @@ fn encode_arith_lit_cdclt(
         tuple
     } else {
         // Fallback: resolve both sides via intern + uf_to_dl.
-        // Handles $arith_N / $ite_N variables created during term interning, and
-        // UF function applications appearing in arithmetic comparisons: these get
-        // a fresh DL variable (Nelson-Oppen purification), so that EUF equalities
-        // on the application can be propagated to the DL domain.
+        // Handles $arith_N / $ite_N variables created during term interning.
+        // Only returns a DL variable if the term already has one (declared or
+        // created by intern_arith_offset); raw UF applications without an existing
+        // DL representation are rejected to avoid unsound purification.
         let resolve = |expr: &rm_syntax::SExpr,
                        cdclt: &mut CdclT,
                        uf_cache: &mut FxHashMap<String, ENodeId>,
@@ -1703,18 +1741,7 @@ fn encode_arith_lit_cdclt(
                 return cdclt.uf_to_dl.get(&uid).copied();
             }
             let uid = intern_uf_term_cdclt(expr, cdclt, uf_cache, uf_funcs, dl_vars).ok()?;
-            if let Some(&dl_id) = cdclt.uf_to_dl.get(&uid) {
-                return Some(dl_id);
-            }
-            // No DL variable yet — assign one (Nelson-Oppen purification for UF terms
-            // appearing in arithmetic comparisons).
-            let fresh_dl = cdclt.dl.add_var();
-            let n = cdclt.arith_count;
-            cdclt.arith_count += 1;
-            cdclt.dl_var_names.insert(fresh_dl, format!("$uf_{n}"));
-            cdclt.dl_uf_pairs.push((fresh_dl, uid));
-            cdclt.uf_to_dl.insert(uid, fresh_dl);
-            Some(fresh_dl)
+            cdclt.uf_to_dl.get(&uid).copied()
         };
         let xdl = resolve(lhs, cdclt, uf_cache, uf_funcs).ok_or_else(|| {
             if std::env::var("CDCLT_DEBUG").is_ok() {
@@ -1813,19 +1840,20 @@ fn intern_uf_term_cdclt(
                     let eq_else = intern_eq_atom(cdclt, ite_id, else_id);
                     cdclt.add_clause(&[cond_lit.negate(), Literal::positive(eq_then)]);
                     cdclt.add_clause(&[cond_lit, Literal::positive(eq_else)]);
-                    // DL extension: if both branches have DL variables, create a DL
-                    // variable for the ite result with guarded Leq atoms.
-                    // cond → fresh_dl = dl_then:  [¬cond ∨ Leq(f,t,0)] ∧ [¬cond ∨ Leq(t,f,0)]
-                    // ¬cond → fresh_dl = dl_else: [cond ∨ Leq(f,e,0)] ∧ [cond ∨ Leq(e,f,0)]
-                    if let (Some(dl_then), Some(dl_else)) = (
-                        cdclt.uf_to_dl.get(&then_id).copied(),
-                        cdclt.uf_to_dl.get(&else_id).copied(),
-                    ) {
+                    // DL extension: if at least one branch has a DL variable, create a
+                    // DL variable for the ite result with guarded Leq atoms for each
+                    // branch that has DL.  Branches without DL leave fresh_dl
+                    // unconstrained for that case — sound because we only rely on the
+                    // DL relationship when the DL branch is actually taken.
+                    // cond  → fresh_dl = dl_then  (only if then has DL)
+                    // ¬cond → fresh_dl = dl_else  (only if else has DL)
+                    let dl_then = cdclt.uf_to_dl.get(&then_id).copied();
+                    let dl_else = cdclt.uf_to_dl.get(&else_id).copied();
+                    if dl_then.is_some() || dl_else.is_some() {
                         let fresh_dl = cdclt.dl.add_var();
                         cdclt.dl_var_names.insert(fresh_dl, fresh_name.clone());
                         cdclt.dl_uf_pairs.push((fresh_dl, ite_id));
                         cdclt.uf_to_dl.insert(ite_id, fresh_dl);
-                        // Helper: look up or create a Leq atom for two DL vars.
                         macro_rules! leq_atom {
                             ($a:expr, $b:expr) => {{
                                 let k = ($a, $b, 0i64, false);
@@ -1839,20 +1867,30 @@ fn intern_uf_term_cdclt(
                                 }
                             }};
                         }
-                        let va = leq_atom!(fresh_dl, dl_then);
-                        let vb = leq_atom!(dl_then, fresh_dl);
-                        let vc = leq_atom!(fresh_dl, dl_else);
-                        let vd = leq_atom!(dl_else, fresh_dl);
-                        cdclt.add_clause(&[cond_lit.negate(), Literal::positive(va)]);
-                        cdclt.add_clause(&[cond_lit.negate(), Literal::positive(vb)]);
-                        cdclt.add_clause(&[cond_lit, Literal::positive(vc)]);
-                        cdclt.add_clause(&[cond_lit, Literal::positive(vd)]);
+                        if let Some(dl_t) = dl_then {
+                            let va = leq_atom!(fresh_dl, dl_t);
+                            let vb = leq_atom!(dl_t, fresh_dl);
+                            cdclt.add_clause(&[cond_lit.negate(), Literal::positive(va)]);
+                            cdclt.add_clause(&[cond_lit.negate(), Literal::positive(vb)]);
+                        }
+                        if let Some(dl_e) = dl_else {
+                            let vc = leq_atom!(fresh_dl, dl_e);
+                            let vd = leq_atom!(dl_e, fresh_dl);
+                            cdclt.add_clause(&[cond_lit, Literal::positive(vc)]);
+                            cdclt.add_clause(&[cond_lit, Literal::positive(vd)]);
+                        }
                     }
                     uf_cache.insert(key, ite_id);
                     Ok(ite_id)
                 }
-                // (+ c x) or (+ x c): encode as fresh DL variable z = x + c.
-                // Returns Err if the base has no DL representation (propagates UNKNOWN).
+                // (+ c x) or (+ x c): encode as fresh DL variable z = x + c when
+                // the base has a DL representation; otherwise intern as an opaque UF
+                // constant.  The opaque constant has a consistent identity (keyed by
+                // the full expression text) so all uses share the same ENodeId and EUF
+                // equality chains involving it are correctly tracked.  The arithmetic
+                // relationship z = base + c is NOT asserted to the DL solver, so
+                // formulas that depend on that relationship will return UNKNOWN rather
+                // than wrong-SAT.
                 "+" => {
                     let a = items.get(1).ok_or(())?;
                     let b = items.get(2).ok_or(())?;
@@ -1866,7 +1904,14 @@ fn intern_uf_term_cdclt(
                     if let Ok(base_dl) = resolve_dl_base(base_uid_or_name, cdclt, uf_cache, uf_funcs, dl_vars) {
                         intern_arith_offset(cdclt, uf_cache, key, base_dl, c)
                     } else {
-                        Err(())
+                        // Base has no DL rep — intern as an opaque UF constant so
+                        // containing ite/let expressions still get consistent EUF IDs.
+                        let n = cdclt.arith_count;
+                        cdclt.arith_count += 1;
+                        let fresh_name = format!("$arith_opaque_{n}");
+                        let uid = cdclt.intern_const(&fresh_name);
+                        uf_cache.insert(key, uid);
+                        Ok(uid)
                     }
                 }
                 "-" => {
@@ -1876,7 +1921,13 @@ fn intern_uf_term_cdclt(
                     if let Ok(base_dl) = resolve_dl_base(a, cdclt, uf_cache, uf_funcs, dl_vars) {
                         intern_arith_offset(cdclt, uf_cache, key, base_dl, -c)
                     } else {
-                        Err(())
+                        // Base has no DL rep — intern as an opaque UF constant.
+                        let n = cdclt.arith_count;
+                        cdclt.arith_count += 1;
+                        let fresh_name = format!("$arith_opaque_{n}");
+                        let uid = cdclt.intern_const(&fresh_name);
+                        uf_cache.insert(key, uid);
+                        Ok(uid)
                     }
                 }
                 // Handle let-forms when processing term expressions (e.g., inside

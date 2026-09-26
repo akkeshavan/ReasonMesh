@@ -16,7 +16,6 @@
 //! CAV 2004; Dutertre & de Moura, "A Fast Linear-Arithmetic Solver for DPLL(T)",
 //! CAV 2006 (for the more efficient variant).
 
-use smallvec::SmallVec;
 use thiserror::Error;
 
 // ---------------------------------------------------------------------------
@@ -76,6 +75,7 @@ pub struct DiffLogicSolver {
     /// Adjacency list (from→[(to, edge_idx)]) for Bellman-Ford relaxation.
     adj: Vec<Vec<(VarId, usize)>>,
 }
+
 
 impl DiffLogicSolver {
     /// Create a solver for `num_vars` variables (1-indexed; 0 = zero constant).
@@ -220,11 +220,10 @@ impl DiffLogicSolver {
             self.dist[to] = self.dist[from] + w;
             self.pred_edge[to] = Some(new_edge_idx);
 
-            let mut queue: SmallVec<[usize; 16]> = SmallVec::new();
-            queue.push(to);
+            let mut queue: std::collections::VecDeque<usize> = std::collections::VecDeque::new();
+            queue.push_back(to);
 
-            while let Some(v) = queue.first().cloned() {
-                queue.remove(0);
+            while let Some(v) = queue.pop_front() {
 
                 if self.detect_negative_cycle_through(v) {
                     return Err(DlError::Conflict(self.extract_cycle_from(v)));
@@ -237,7 +236,7 @@ impl DiffLogicSolver {
                     if new_d < self.dist[succ as usize] {
                         self.dist[succ as usize] = new_d;
                         self.pred_edge[succ as usize] = Some(edge_idx);
-                        queue.push(succ as usize);
+                        queue.push_back(succ as usize);
                     }
                 }
             }
@@ -379,6 +378,104 @@ impl DiffLogicSolver {
     /// Number of asserted edges.
     pub fn num_edges(&self) -> usize {
         self.edges.len()
+    }
+
+    /// Return the current potential (distance from zero) for variable `v`.
+    /// Updated by `check()` and incrementally by `relax_from_edge`.
+    /// Two variables with equal potential are candidates for DL-equality.
+    pub fn get_dist(&self, v: VarId) -> i64 {
+        if v as usize >= self.dist.len() { return 0; }
+        self.dist[v as usize]
+    }
+
+    /// Compute DL-equality class IDs for all variables (indices 0..=num_vars).
+    ///
+    /// Two variables u and v with `result[u] == result[v]` are DL-equal:
+    /// tight bounds exist in both directions (d[u→v] ≤ 0 and d[v→u] ≤ 0).
+    ///
+    /// An edge is tight when `dist[to] == dist[from] + weight`.  A tight path
+    /// from u to v has total weight `dist[v] − dist[u]`, so DL-equality
+    /// requires (a) the same `dist` value AND (b) mutual reachability via
+    /// tight edges (same SCC of the tight-edge subgraph).
+    ///
+    /// Algorithm: Kosaraju's SCC on the tight-edge subgraph, then label each
+    /// variable with `(scc_id, dist[v])`.  O(V + E) per call.
+    pub fn tight_equality_classes(&self) -> Vec<u32> {
+        let n = self.num_vars as usize + 1;
+
+        // Build tight-edge forward and reverse adjacency lists.
+        let mut fwd: Vec<Vec<usize>> = vec![Vec::new(); n];
+        let mut rev: Vec<Vec<usize>> = vec![Vec::new(); n];
+        for edge in &self.edges {
+            let tight = self.dist[edge.from as usize]
+                .saturating_add(edge.weight)
+                == self.dist[edge.to as usize];
+            if tight {
+                fwd[edge.from as usize].push(edge.to as usize);
+                rev[edge.to as usize].push(edge.from as usize);
+            }
+        }
+
+        // Kosaraju pass 1: iterative DFS, record finish order.
+        let mut visited = vec![false; n];
+        let mut finish: Vec<usize> = Vec::with_capacity(n);
+        for start in 0..n {
+            if visited[start] {
+                continue;
+            }
+            let mut stack: Vec<(usize, usize)> = vec![(start, 0)];
+            visited[start] = true;
+            while let Some((v, i)) = stack.last_mut() {
+                let v = *v;
+                if *i < fwd[v].len() {
+                    let w = fwd[v][*i];
+                    *i += 1;
+                    if !visited[w] {
+                        visited[w] = true;
+                        stack.push((w, 0));
+                    }
+                } else {
+                    stack.pop();
+                    finish.push(v);
+                }
+            }
+        }
+
+        // Kosaraju pass 2: assign SCC ids on reverse graph in reverse finish order.
+        let mut scc: Vec<u32> = vec![u32::MAX; n];
+        let mut scc_id: u32 = 0;
+        for &start in finish.iter().rev() {
+            if scc[start] != u32::MAX {
+                continue;
+            }
+            let c = scc_id;
+            scc_id += 1;
+            let mut stack = vec![start];
+            scc[start] = c;
+            while let Some(v) = stack.pop() {
+                for &w in &rev[v] {
+                    if scc[w] == u32::MAX {
+                        scc[w] = c;
+                        stack.push(w);
+                    }
+                }
+            }
+        }
+
+        // DL-equality class = (scc_id, dist[v]).  Assign sequential class IDs.
+        let mut class_map: rustc_hash::FxHashMap<(u32, i64), u32> =
+            rustc_hash::FxHashMap::default();
+        let mut next_cls: u32 = 0;
+        (0..n)
+            .map(|v| {
+                let key = (scc[v], self.dist[v]);
+                *class_map.entry(key).or_insert_with(|| {
+                    let c = next_cls;
+                    next_cls += 1;
+                    c
+                })
+            })
+            .collect()
     }
 
     /// Returns the SAT literals on the shortest path from `source` to `target`
