@@ -306,7 +306,63 @@ impl TheorySolver for LiaCdclT {
         self.simplex_level = target_level;
     }
 
-    fn theory_final_check(&mut self, _model: &rm_sat::Model) -> Option<Vec<Literal>> {
+    fn theory_final_check(&mut self, model: &rm_sat::Model) -> Option<Vec<Literal>> {
+        // Full rational feasibility check.
+        // theory_propagate is incremental and can miss infeasibilities when atoms
+        // aren't re-asserted after backjumps. Push a scratch Simplex level, assert
+        // ALL model atoms, check, then roll back — leaving incremental state intact.
+        let saved_level = self.simplex_level;
+        self.simplex.new_decision_level();
+
+        let atoms_snapshot: Vec<(u32, SimplexAtom)> = self
+            .atoms
+            .iter()
+            .filter(|(&sv, _)| sv <= model.num_vars())
+            .map(|(&sv, atom)| (sv, atom.clone()))
+            .collect();
+
+        let rat_conflict: Option<Vec<Literal>> = 'rat: {
+            for (sat_var, atom) in &atoms_snapshot {
+                let val = model.value_of(*sat_var);
+                let sat_raw = if val {
+                    Literal::positive(*sat_var).raw()
+                } else {
+                    Literal::negative(*sat_var).raw()
+                };
+                let res = match *atom {
+                    SimplexAtom::Upper { var, bound } => {
+                        if val {
+                            self.simplex.assert_upper(var, Rational::from_int(bound), sat_raw)
+                        } else {
+                            self.simplex.assert_lower(var, Rational::from_int(bound + 1), sat_raw)
+                        }
+                    }
+                    SimplexAtom::Lower { var, bound } => {
+                        if val {
+                            self.simplex.assert_lower(var, Rational::from_int(bound), sat_raw)
+                        } else {
+                            self.simplex.assert_upper(var, Rational::from_int(bound - 1), sat_raw)
+                        }
+                    }
+                };
+                if let Err(e) = res {
+                    break 'rat Some(mk_conflict_simplex(&e.lits));
+                }
+            }
+            match self.simplex.check() {
+                Ok(_) => None,
+                Err(e) => Some(mk_conflict_simplex(&e.lits)),
+            }
+        };
+
+        // Roll back scratch level — restore Simplex to pre-check state.
+        self.simplex.backtrack_to(saved_level);
+        self.simplex_level = saved_level;
+
+        if let Some(conflict) = rat_conflict {
+            return Some(conflict);
+        }
+
         // Integer feasibility: if any Int-sorted variable has a fractional value,
         // emit a branch-and-bound disjunction x ≤ floor(v) ∨ x ≥ ceil(v).
         let mut frac_var: Option<u32> = None;
