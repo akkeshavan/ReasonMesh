@@ -16,7 +16,7 @@
 //! disjunction: `x ≤ floor(v) ∨ x ≥ ceil(v)` as a SAT clause, and continue.
 
 use rm_akx::literal::Literal;
-use rm_sat::{CdclSolver, SolveResult};
+use rm_sat::{CdclSolver, SolveResult, TheorySolver};
 use rm_syntax::ast::{ArithCmpKind, ArithOpKind, Term, TermInner};
 use rm_syntax::{Script, SortExpr};
 use rm_theory_arith::{Rational, SimplexSolver};
@@ -134,10 +134,15 @@ struct LiaCdclT {
     /// Simplex variable permanently fixed to 1, used to represent constant offsets
     /// in linear forms as `k * one_var` so the Simplex row stays exact.
     one_var: u32,
+    /// Current Simplex decision level, synced with the SAT solver's level in
+    /// theory_propagate via new_decision_level() calls.
+    simplex_level: u32,
+    /// Cancellation flag; set by the benchmark harness when the timeout fires.
+    cancel: Arc<AtomicBool>,
 }
 
 impl LiaCdclT {
-    fn new(max_simplex_vars: u32) -> Self {
+    fn new(max_simplex_vars: u32, cancel: Arc<AtomicBool>) -> Self {
         LiaCdclT {
             next_sat_var: 1,
             simplex: SimplexSolver::new(max_simplex_vars),
@@ -154,6 +159,8 @@ impl LiaCdclT {
             uf_app_cache: FxHashMap::default(),
             form_to_var_cache: FxHashMap::default(),
             one_var: 0,
+            simplex_level: 0,
+            cancel,
         }
     }
 
@@ -208,68 +215,100 @@ impl LiaCdclT {
         }
     }
 
-    // -----------------------------------------------------------------------
-    // Theory check
-    // -----------------------------------------------------------------------
+    fn solve(&mut self) -> LiaStatus {
+        // Reserve 64 B&B cut variables per Int-sorted variable (user + UF results).
+        // Count only actual user-declared Int vars, not the entire pre-allocated is_int
+        // array (which is all-true and much larger than the real variable count).
+        let int_count = self.var_ids.values()
+            .filter(|&&id| (id as usize) < self.is_int.len() && self.is_int[id as usize])
+            .count() as u32;
+        let uf_count = self.uf_apps.len() as u32;
+        let bb_budget = (int_count + uf_count + 1) * 64;
+        self.finalize_with_bb(bb_budget);
+        // Take the SAT solver out of self so we can pass `self` as the theory.
+        let mut sat = match self.sat.take() {
+            Some(s) => s,
+            None => return LiaStatus::Unknown,
+        };
+        let result = sat.solve_with_theory(u64::MAX, self);
+        self.sat = Some(sat);
+        // If cancelled, return Unknown even if solve_with_theory thinks it's Sat.
+        if self.cancel.load(Ordering::Relaxed) {
+            return LiaStatus::Unknown;
+        }
+        match result {
+            SolveResult::Sat(_) => LiaStatus::Sat,
+            SolveResult::Unsat => LiaStatus::Unsat,
+            SolveResult::BudgetExceeded | SolveResult::Unknown => LiaStatus::Unknown,
+        }
+    }
+}
 
-    /// Returns:
-    /// - `Ok(None)`       — theory is feasible given the SAT model (no conflict).
-    /// - `Ok(Some(lits))` — theory conflict; `lits` is the blocking clause.
-    /// - `Err(())`        — simplex iteration limit exhausted; feasibility unknown.
-    fn theory_check(&mut self, model: &rm_sat::Model) -> Result<Option<Vec<Literal>>, ()> {
-        self.simplex.backtrack_to(0);
+// ---------------------------------------------------------------------------
+// TheorySolver implementation — incremental Simplex integration
+// ---------------------------------------------------------------------------
 
-        let vars: Vec<u32> = self.atoms.keys().copied().collect();
-        for v in vars {
-            if v as usize > model.num_vars() as usize {
-                continue;
-            }
-            let val_bool = model.value_of(v);
-            let sat_raw = if val_bool {
-                Literal::positive(v).raw()
-            } else {
-                Literal::negative(v).raw()
+impl TheorySolver for LiaCdclT {
+    fn theory_propagate(
+        &mut self,
+        level: u32,
+        trail: &[Literal],
+        prev_trail_len: usize,
+    ) -> Result<Vec<Vec<Literal>>, Vec<Literal>> {
+        if self.cancel.load(Ordering::Relaxed) {
+            return Ok(Vec::new());
+        }
+        // Sync Simplex decision level with the SAT level.
+        while self.simplex_level < level {
+            self.simplex.new_decision_level();
+            self.simplex_level += 1;
+        }
+        // Assert only the newly assigned theory atoms.
+        for &lit in &trail[prev_trail_len..] {
+            let var = lit.var();
+            let val = lit.is_positive();
+            let sat_raw = lit.raw();
+            let atom = match self.atoms.get(&var) {
+                Some(a) => a.clone(),
+                None => continue,
             };
-            let atom = self.atoms[&v].clone();
-            match atom {
+            let res = match atom {
                 SimplexAtom::Upper { var, bound } => {
-                    let res = if val_bool {
-                        // atom is true: assert upper bound
-                        self.simplex
-                            .assert_upper(var, Rational::from_int(bound), sat_raw)
+                    if val {
+                        self.simplex.assert_upper(var, Rational::from_int(bound), sat_raw)
                     } else {
-                        // atom is false: assert lower bound (negation of ≤ is ≥ + 1 for integers)
-                        self.simplex
-                            .assert_lower(var, Rational::from_int(bound + 1), sat_raw)
-                    };
-                    if let Err(e) = res {
-                        return Ok(Some(mk_conflict_simplex(&e.lits)));
+                        // ¬(x ≤ bound) ↔ x ≥ bound+1
+                        self.simplex.assert_lower(var, Rational::from_int(bound + 1), sat_raw)
                     }
                 }
                 SimplexAtom::Lower { var, bound } => {
-                    let res = if val_bool {
-                        self.simplex
-                            .assert_lower(var, Rational::from_int(bound), sat_raw)
+                    if val {
+                        self.simplex.assert_lower(var, Rational::from_int(bound), sat_raw)
                     } else {
-                        // negation of ≥ c is ≤ c - 1
-                        self.simplex
-                            .assert_upper(var, Rational::from_int(bound - 1), sat_raw)
-                    };
-                    if let Err(e) = res {
-                        return Ok(Some(mk_conflict_simplex(&e.lits)));
+                        // ¬(x ≥ bound) ↔ x ≤ bound-1
+                        self.simplex.assert_upper(var, Rational::from_int(bound - 1), sat_raw)
                     }
                 }
+            };
+            if let Err(e) = res {
+                return Err(mk_conflict_simplex(&e.lits));
             }
         }
-
+        // Run Simplex to detect infeasibility from the new bounds.
         match self.simplex.check() {
-            Ok(true) => {}
-            Ok(false) => return Err(()),  // iteration limit — feasibility unknown
-            Err(e) => return Ok(Some(mk_conflict_simplex(&e.lits))),
+            Ok(_) => Ok(Vec::new()),
+            Err(e) => Err(mk_conflict_simplex(&e.lits)),
         }
+    }
 
-        // Integer feasibility check: if any Int-sorted user variable or UF result
-        // variable has a fractional value, emit a branch-and-bound disjunction.
+    fn theory_backtrack(&mut self, target_level: u32) {
+        self.simplex.backtrack_to(target_level);
+        self.simplex_level = target_level;
+    }
+
+    fn theory_final_check(&mut self, _model: &rm_sat::Model) -> Option<Vec<Literal>> {
+        // Integer feasibility: if any Int-sorted variable has a fractional value,
+        // emit a branch-and-bound disjunction x ≤ floor(v) ∨ x ≥ ceil(v).
         let mut frac_var: Option<u32> = None;
         'outer: for (_, &simplex_var) in &self.var_ids {
             if simplex_var as usize >= self.is_int.len() || !self.is_int[simplex_var as usize] {
@@ -294,48 +333,13 @@ impl LiaCdclT {
             let ceil_v = v.ceil_int();
             let (sv, sv2) = match (self.alloc_bb_var(), self.alloc_bb_var()) {
                 (Some(a), Some(b)) => (a, b),
-                _ => return Ok(None),
+                _ => return None,
             };
             self.atoms.insert(sv, SimplexAtom::Upper { var: simplex_var, bound: floor_v });
             self.atoms.insert(sv2, SimplexAtom::Lower { var: simplex_var, bound: ceil_v });
-            return Ok(Some(vec![Literal::positive(sv), Literal::positive(sv2)]));
-        }
-
-        Ok(None)
-    }
-
-    fn solve(&mut self, cancel: &AtomicBool) -> LiaStatus {
-        // Reserve 64 B&B cut variables per Int-sorted variable (user + UF results).
-        // Count only actual user-declared Int vars, not the entire pre-allocated is_int
-        // array (which is all-true and much larger than the real variable count).
-        let int_count = self.var_ids.values()
-            .filter(|&&id| (id as usize) < self.is_int.len() && self.is_int[id as usize])
-            .count() as u32;
-        let uf_count = self.uf_apps.len() as u32;
-        let bb_budget = (int_count + uf_count + 1) * 64;
-        self.finalize_with_bb(bb_budget);
-        loop {
-            if cancel.load(Ordering::Relaxed) {
-                return LiaStatus::Unknown;
-            }
-            let sat_result = {
-                let sat = self.sat.as_mut().unwrap();
-                match sat.solve(&[], 500_000) {
-                    SolveResult::Unsat => return LiaStatus::Unsat,
-                    SolveResult::BudgetExceeded => None,
-                    SolveResult::Unknown => return LiaStatus::Unknown,
-                    SolveResult::Sat(ref m) => Some(m.clone()),
-                }
-            };
-            if let Some(model) = sat_result {
-                match self.theory_check(&model) {
-                    Err(()) => return LiaStatus::Unknown,
-                    Ok(Some(clause)) => {
-                        self.sat.as_mut().unwrap().add_clause(&clause);
-                    }
-                    Ok(None) => return LiaStatus::Sat,
-                }
-            }
+            Some(vec![Literal::positive(sv), Literal::positive(sv2)])
+        } else {
+            None
         }
     }
 }
@@ -788,7 +792,7 @@ pub fn solve_qf_lia(text: &str, cancel: Arc<AtomicBool>) -> Result<LiaResult, St
     let max_atoms = count_assertions(&script);
     let max_simplex = user_count + max_atoms * 8 + 64;
 
-    let mut solver = LiaCdclT::new(max_simplex);
+    let mut solver = LiaCdclT::new(max_simplex, cancel.clone());
     solver.next_simplex_var = user_count;
 
     for (i, (name, sort)) in var_names.iter().enumerate() {
@@ -831,7 +835,7 @@ pub fn solve_qf_lia(text: &str, cancel: Arc<AtomicBool>) -> Result<LiaResult, St
     // with the same function symbol before handing off to the SAT/B&B loop.
     add_ackermann_constraints(&mut solver);
 
-    let status = solver.solve(&cancel);
+    let status = solver.solve();
     let model = if status == LiaStatus::Sat {
         solver
             .var_ids
