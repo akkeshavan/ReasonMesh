@@ -216,7 +216,7 @@ impl SmtSolver {
                 }
             }
             Some("QF_LIA") | Some("QF_LRA") | Some("QF_UFLIA") | Some("QF_UFLRA") => {
-                match solve_qf_lia(&self.raw).map_err(SmtError::Internal)? {
+                match solve_qf_lia(&self.raw, self.cancel.clone()).map_err(SmtError::Internal)? {
                     r if r.status == LiaStatus::Sat => Ok(SmtResult {
                         status: SmtStatus::Sat,
                         model: None,

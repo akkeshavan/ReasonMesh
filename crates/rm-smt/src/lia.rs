@@ -20,6 +20,7 @@ use rm_sat::{CdclSolver, SolveResult};
 use rm_syntax::ast::{ArithCmpKind, ArithOpKind, Term, TermInner};
 use rm_syntax::{Script, SortExpr};
 use rm_theory_arith::{Rational, SimplexSolver};
+use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use rustc_hash::FxHashMap;
 
 // ---------------------------------------------------------------------------
@@ -299,13 +300,16 @@ impl LiaCdclT {
         Ok(None)
     }
 
-    fn solve(&mut self) -> LiaStatus {
+    fn solve(&mut self, cancel: &AtomicBool) -> LiaStatus {
         // Reserve 64 B&B cut variables per Int-sorted variable (user + UF results).
         let int_count = self.is_int.iter().filter(|&&b| b).count() as u32;
         let uf_count = self.uf_apps.len() as u32;
         let bb_budget = (int_count + uf_count + 1) * 64;
         self.finalize_with_bb(bb_budget);
         loop {
+            if cancel.load(Ordering::Relaxed) {
+                return LiaStatus::Unknown;
+            }
             let sat_result = {
                 let sat = self.sat.as_mut().unwrap();
                 match sat.solve(&[], 500_000) {
@@ -734,7 +738,8 @@ fn encode_arith_cmp(
 // ---------------------------------------------------------------------------
 
 /// Solve a QF_LIA / QF_LRA problem given the raw SMT-LIB text.
-pub fn solve_qf_lia(text: &str) -> Result<LiaResult, String> {
+/// `cancel` is set to `true` by the benchmark harness when the timeout fires.
+pub fn solve_qf_lia(text: &str, cancel: Arc<AtomicBool>) -> Result<LiaResult, String> {
     let script = Script::parse(text).map_err(|e| e.to_string())?;
     if script.assertions().is_empty() {
         return Ok(LiaResult { status: LiaStatus::Sat, model: vec![] });
@@ -789,7 +794,7 @@ pub fn solve_qf_lia(text: &str) -> Result<LiaResult, String> {
     // with the same function symbol before handing off to the SAT/B&B loop.
     add_ackermann_constraints(&mut solver);
 
-    let status = solver.solve();
+    let status = solver.solve(&cancel);
     let model = if status == LiaStatus::Sat {
         solver
             .var_ids
@@ -816,7 +821,7 @@ mod tests {
     use super::*;
 
     fn run(text: &str) -> LiaResult {
-        solve_qf_lia(text).expect("parse error")
+        solve_qf_lia(text, Arc::new(AtomicBool::new(false))).expect("parse error")
     }
 
     fn sat(text: &str) -> bool {
