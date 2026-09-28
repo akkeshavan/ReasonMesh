@@ -268,57 +268,40 @@ impl LiaCdclT {
             Err(e) => return Ok(Some(mk_conflict_simplex(&e.lits))),
         }
 
-        // Integer feasibility check: collect ALL fractional Int-sorted variables and
-        // emit B&B disjunctions for all of them at once.  Adding all cuts in a single
-        // theory_check call reduces the number of SAT restart cycles from O(N) to O(1)
-        // per B&B depth level, significantly speeding up integer programming steps.
-        let frac_vars: Vec<(u32, i64, i64)> = {
-            let mut vars = Vec::new();
-            for (_, &simplex_var) in &self.var_ids {
-                if simplex_var as usize >= self.is_int.len()
-                    || !self.is_int[simplex_var as usize]
-                {
-                    continue;
-                }
-                let v = self.simplex.model_value(simplex_var);
-                if !v.is_integer() {
-                    vars.push((simplex_var, v.floor_int(), v.ceil_int()));
-                }
+        // Integer feasibility check: if any Int-sorted user variable or UF result
+        // variable has a fractional value, emit a branch-and-bound disjunction.
+        let mut frac_var: Option<u32> = None;
+        'outer: for (_, &simplex_var) in &self.var_ids {
+            if simplex_var as usize >= self.is_int.len() || !self.is_int[simplex_var as usize] {
+                continue;
             }
-            for app in &self.uf_apps {
-                let v = self.simplex.model_value(app.result_var);
-                if !v.is_integer() {
-                    vars.push((app.result_var, v.floor_int(), v.ceil_int()));
-                }
+            if !self.simplex.model_value(simplex_var).is_integer() {
+                frac_var = Some(simplex_var);
+                break 'outer;
             }
-            vars
-        };
-
-        if frac_vars.is_empty() {
-            return Ok(None);
         }
-
-        // Allocate B&B SAT variables and build disjunctive clauses.
-        let mut clauses: Vec<Vec<Literal>> = Vec::new();
-        for (simplex_var, floor_v, ceil_v) in frac_vars {
+        if frac_var.is_none() {
+            for app in &self.uf_apps {
+                if !self.simplex.model_value(app.result_var).is_integer() {
+                    frac_var = Some(app.result_var);
+                    break;
+                }
+            }
+        }
+        if let Some(simplex_var) = frac_var {
+            let v = self.simplex.model_value(simplex_var);
+            let floor_v = v.floor_int();
+            let ceil_v = v.ceil_int();
             let (sv, sv2) = match (self.alloc_bb_var(), self.alloc_bb_var()) {
                 (Some(a), Some(b)) => (a, b),
-                _ => break, // budget exhausted — emit what we have so far
+                _ => return Ok(None),
             };
             self.atoms.insert(sv, SimplexAtom::Upper { var: simplex_var, bound: floor_v });
             self.atoms.insert(sv2, SimplexAtom::Lower { var: simplex_var, bound: ceil_v });
-            clauses.push(vec![Literal::positive(sv), Literal::positive(sv2)]);
+            return Ok(Some(vec![Literal::positive(sv), Literal::positive(sv2)]));
         }
-        if clauses.is_empty() {
-            return Ok(None); // all budget was gone before any clause
-        }
-        // Add all clauses except the last directly to the SAT solver; return the
-        // last so the caller's add_clause path is exercised (no structural change needed).
-        let last = clauses.pop().unwrap();
-        for clause in clauses {
-            self.sat.as_mut().unwrap().add_clause(&clause);
-        }
-        Ok(Some(last))
+
+        Ok(None)
     }
 
     fn solve(&mut self, cancel: &AtomicBool) -> LiaStatus {
