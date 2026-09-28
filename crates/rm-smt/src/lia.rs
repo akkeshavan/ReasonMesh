@@ -131,6 +131,9 @@ struct LiaCdclT {
     /// Canonical form → simplex_var, so the same linear expression always maps
     /// to the same variable when used as a UF argument.
     form_to_var_cache: FxHashMap<(Vec<(u32, i64)>, i64), u32>,
+    /// Simplex variable permanently fixed to 1, used to represent constant offsets
+    /// in linear forms as `k * one_var` so the Simplex row stays exact.
+    one_var: u32,
 }
 
 impl LiaCdclT {
@@ -150,6 +153,7 @@ impl LiaCdclT {
             uf_apps: Vec::new(),
             uf_app_cache: FxHashMap::default(),
             form_to_var_cache: FxHashMap::default(),
+            one_var: 0,
         }
     }
 
@@ -561,13 +565,18 @@ fn get_or_create_slack(
     solver: &mut LiaCdclT,
 ) -> u32 {
     let slack = solver.alloc_simplex();
-    let coeffs: Vec<(u32, Rational)> = form
+    let mut coeffs: Vec<(u32, Rational)> = form
         .coeffs
         .iter()
         .filter(|(_, &c)| c != 0)
         .map(|(&v, &c)| (v, Rational::from_int(c)))
         .collect();
     if !coeffs.is_empty() {
+        if form.constant != 0 {
+            // Encode the constant offset as `k * one_var` so the Simplex row
+            // represents the full linear form, not just the variable part.
+            coeffs.push((solver.one_var, Rational::from_int(form.constant)));
+        }
         solver.simplex.add_row(slack, coeffs);
     } else {
         // Constant-only form: pin the slack to its exact integer value via
@@ -784,6 +793,20 @@ pub fn solve_qf_lia(text: &str, cancel: Arc<AtomicBool>) -> Result<LiaResult, St
         if i < solver.is_int.len() {
             solver.is_int[i] = *sort == SortExpr::Int;
         }
+    }
+
+    // Allocate the "one variable": always fixed to 1 so constant offsets in
+    // linear forms can be encoded as `k * one_var` in Simplex rows.
+    {
+        let ov = solver.alloc_simplex();
+        solver.one_var = ov;
+        solver.is_int[ov as usize] = false;
+        let ov_le = solver.alloc_sat();
+        solver.atoms.insert(ov_le, SimplexAtom::Upper { var: ov, bound: 1 });
+        solver.add_clause(&[Literal::positive(ov_le)]);
+        let ov_ge = solver.alloc_sat();
+        solver.atoms.insert(ov_ge, SimplexAtom::Lower { var: ov, bound: 1 });
+        solver.add_clause(&[Literal::positive(ov_ge)]);
     }
 
     // Encode assertions.
@@ -1078,5 +1101,35 @@ mod tests {
              (assert (>= (f y) 2))\n\
              (check-sat)\n"
         )));
+    }
+
+    /// f(x+1)=5, f(y)=3, y=x+1 → UNSAT: args are equal so Ackermann forces f(x+1)=f(y).
+    /// Tests that constant offsets in linear UF args are correctly encoded.
+    #[test]
+    fn uf_constant_offset_arg_unsat() {
+        assert!(unsat(
+            "(set-logic QF_UFLIA)\n\
+             (declare-fun x () Int)\n\
+             (declare-fun y () Int)\n\
+             (declare-fun f (Int) Int)\n\
+             (assert (= y (+ x 1)))\n\
+             (assert (= (f (+ x 1)) 5))\n\
+             (assert (= (f y) 3))\n\
+             (check-sat)\n"
+        ));
+    }
+
+    /// f(x+2) = 5 and f(x+2) = 3 → UNSAT.
+    /// Same arg via different paths; congruence must agree.
+    #[test]
+    fn uf_constant_offset_same_arg_unsat() {
+        assert!(unsat(
+            "(set-logic QF_UFLIA)\n\
+             (declare-fun x () Int)\n\
+             (declare-fun f (Int) Int)\n\
+             (assert (= (f (+ x 2)) 5))\n\
+             (assert (= (f (+ x 2)) 3))\n\
+             (check-sat)\n"
+        ));
     }
 }
