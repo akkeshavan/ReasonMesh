@@ -40,6 +40,21 @@ pub struct LiaResult {
 }
 
 // ---------------------------------------------------------------------------
+// UF application record (for Ackermann encoding)
+// ---------------------------------------------------------------------------
+
+/// One uninterpreted-function application site, used to generate Ackermann
+/// congruence constraints between pairs of applications of the same function.
+struct UfApp {
+    func: String,
+    /// Simplex var IDs for each argument (after reducing any linear form to a
+    /// single variable; complex forms get a dedicated slack).
+    arg_vars: Vec<u32>,
+    /// Simplex var ID for the application result.
+    result_var: u32,
+}
+
+// ---------------------------------------------------------------------------
 // Linear form
 // ---------------------------------------------------------------------------
 
@@ -108,6 +123,13 @@ struct LiaCdclT {
     /// `theory_check` without needing to grow the solver.
     bb_next: u32,
     bb_end: u32,
+    /// All UF application sites, in order of first encounter.
+    uf_apps: Vec<UfApp>,
+    /// (func_name, [arg_simplex_var_ids]) → result_simplex_var, for deduplication.
+    uf_app_cache: FxHashMap<(String, Vec<u32>), u32>,
+    /// Canonical form → simplex_var, so the same linear expression always maps
+    /// to the same variable when used as a UF argument.
+    form_to_var_cache: FxHashMap<(Vec<(u32, i64)>, i64), u32>,
 }
 
 impl LiaCdclT {
@@ -124,6 +146,9 @@ impl LiaCdclT {
             sat: None,
             bb_next: 0,
             bb_end: 0,
+            uf_apps: Vec::new(),
+            uf_app_cache: FxHashMap::default(),
+            form_to_var_cache: FxHashMap::default(),
         }
     }
 
@@ -136,6 +161,13 @@ impl LiaCdclT {
     fn alloc_simplex(&mut self) -> u32 {
         let v = self.next_simplex_var;
         self.next_simplex_var += 1;
+        // Grow Simplex capacity and is_int if needed.
+        if self.next_simplex_var as usize > self.simplex.num_vars() as usize {
+            self.simplex.grow_to(self.next_simplex_var + 64);
+        }
+        while self.is_int.len() < self.next_simplex_var as usize {
+            self.is_int.push(true);
+        }
         v
     }
 
@@ -231,39 +263,47 @@ impl LiaCdclT {
             Err(e) => return Ok(Some(mk_conflict_simplex(&e.lits))),
         }
 
-        // Integer feasibility check: if any Int-sorted user variable has a
-        // fractional value, emit a branch-and-bound disjunction.
-        for (_, &simplex_var) in &self.var_ids {
+        // Integer feasibility check: if any Int-sorted user variable or UF result
+        // variable has a fractional value, emit a branch-and-bound disjunction.
+        let mut frac_var: Option<u32> = None;
+        'outer: for (_, &simplex_var) in &self.var_ids {
             if simplex_var as usize >= self.is_int.len() || !self.is_int[simplex_var as usize] {
                 continue;
             }
-            let v = self.simplex.model_value(simplex_var);
-            if !v.is_integer() {
-                let floor_v = v.floor_int();
-                let ceil_v = v.ceil_int();
-                // Emit: (x ≤ floor_v) ∨ (x ≥ ceil_v) — a valid tautology for integers.
-                // Use pre-allocated B&B SAT variables so the solver already knows them.
-                let (sv, sv2) = match (self.alloc_bb_var(), self.alloc_bb_var()) {
-                    (Some(a), Some(b)) => (a, b),
-                    // B&B budget exhausted; return SAT (may be unsound for integers —
-                    // the budget (64 cuts per Int var) should never be hit in practice).
-                    _ => return Ok(None),
-                };
-                self.atoms
-                    .insert(sv, SimplexAtom::Upper { var: simplex_var, bound: floor_v });
-                self.atoms
-                    .insert(sv2, SimplexAtom::Lower { var: simplex_var, bound: ceil_v });
-                return Ok(Some(vec![Literal::positive(sv), Literal::positive(sv2)]));
+            if !self.simplex.model_value(simplex_var).is_integer() {
+                frac_var = Some(simplex_var);
+                break 'outer;
             }
+        }
+        if frac_var.is_none() {
+            for app in &self.uf_apps {
+                if !self.simplex.model_value(app.result_var).is_integer() {
+                    frac_var = Some(app.result_var);
+                    break;
+                }
+            }
+        }
+        if let Some(simplex_var) = frac_var {
+            let v = self.simplex.model_value(simplex_var);
+            let floor_v = v.floor_int();
+            let ceil_v = v.ceil_int();
+            let (sv, sv2) = match (self.alloc_bb_var(), self.alloc_bb_var()) {
+                (Some(a), Some(b)) => (a, b),
+                _ => return Ok(None),
+            };
+            self.atoms.insert(sv, SimplexAtom::Upper { var: simplex_var, bound: floor_v });
+            self.atoms.insert(sv2, SimplexAtom::Lower { var: simplex_var, bound: ceil_v });
+            return Ok(Some(vec![Literal::positive(sv), Literal::positive(sv2)]));
         }
 
         Ok(None)
     }
 
     fn solve(&mut self) -> LiaStatus {
-        // Reserve 64 B&B cut variables per Int-sorted user variable.
+        // Reserve 64 B&B cut variables per Int-sorted variable (user + UF results).
         let int_count = self.is_int.iter().filter(|&&b| b).count() as u32;
-        let bb_budget = (int_count + 1) * 64;
+        let uf_count = self.uf_apps.len() as u32;
+        let bb_budget = (int_count + uf_count + 1) * 64;
         self.finalize_with_bb(bb_budget);
         loop {
             let sat_result = {
@@ -294,12 +334,104 @@ fn mk_conflict_simplex(lits: &[u32]) -> Vec<Literal> {
         .collect()
 }
 
+/// Encode "simplex_var_a = simplex_var_b" as a SAT literal using two Simplex
+/// bound atoms: `a ≤ b` and `a ≥ b`, Tseitin-combined into one AND variable.
+fn encode_var_eq(a: u32, b: u32, solver: &mut LiaCdclT) -> Literal {
+    // diff = a - b.  We want: diff ≤ 0 ∧ diff ≥ 0.
+    let mut diff = LinearForm::default();
+    diff.coeffs.insert(a, 1);
+    diff.coeffs.insert(b, -1);
+    // Handle the trivial case (a == b means always true).
+    if a == b {
+        let v = solver.alloc_sat();
+        solver.add_clause(&[Literal::positive(v)]);
+        return Literal::positive(v);
+    }
+    let slack = get_or_create_slack(&diff, solver);
+    let le_sat = solver.alloc_sat();
+    solver.atoms.insert(le_sat, SimplexAtom::Upper { var: slack, bound: 0 });
+    let ge_sat = solver.alloc_sat();
+    solver.atoms.insert(ge_sat, SimplexAtom::Lower { var: slack, bound: 0 });
+    // Tseitin AND: z ↔ (le ∧ ge)
+    let v = solver.alloc_sat();
+    let z = Literal::positive(v);
+    let le = Literal::positive(le_sat);
+    let ge = Literal::positive(ge_sat);
+    solver.add_clause(&[z.negate(), le]);
+    solver.add_clause(&[z.negate(), ge]);
+    solver.add_clause(&[z, le.negate(), ge.negate()]);
+    z
+}
+
+/// Add Ackermann congruence constraints for all pairs of UF applications with
+/// the same function symbol.  For each such pair (i, j):
+///   (∀k: arg_i[k] = arg_j[k]) → result_i = result_j
+/// encoded as a SAT clause.
+fn add_ackermann_constraints(solver: &mut LiaCdclT) {
+    // Collect pairs first to avoid borrow conflict on solver.uf_apps during encoding.
+    let n = solver.uf_apps.len();
+    let mut pairs: Vec<(String, Vec<u32>, Vec<u32>, u32, u32)> = Vec::new();
+    for i in 0..n {
+        for j in (i + 1)..n {
+            if solver.uf_apps[i].func != solver.uf_apps[j].func {
+                continue;
+            }
+            if solver.uf_apps[i].arg_vars.len() != solver.uf_apps[j].arg_vars.len() {
+                continue;
+            }
+            pairs.push((
+                solver.uf_apps[i].func.clone(),
+                solver.uf_apps[i].arg_vars.clone(),
+                solver.uf_apps[j].arg_vars.clone(),
+                solver.uf_apps[i].result_var,
+                solver.uf_apps[j].result_var,
+            ));
+        }
+    }
+    for (_func, args_i, args_j, ri, rj) in pairs {
+        // Encode arg equalities.
+        let arg_lits: Vec<Literal> =
+            args_i.iter().zip(args_j.iter()).map(|(&a, &b)| encode_var_eq(a, b, solver)).collect();
+        // Encode result equality.
+        let res_eq = encode_var_eq(ri, rj, solver);
+        // Ackermann clause: ¬eq_0 ∨ ¬eq_1 ∨ ... ∨ res_eq
+        let mut clause: Vec<Literal> = arg_lits.iter().map(|l| l.negate()).collect();
+        clause.push(res_eq);
+        solver.add_clause(&clause);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Term encoding
 // ---------------------------------------------------------------------------
 
+/// Reduce a LinearForm to a single Simplex variable, creating a slack row if
+/// necessary. The same canonical form always maps to the same variable.
+fn form_to_var(form: LinearForm, solver: &mut LiaCdclT) -> u32 {
+    // Fast path: form is already a single variable with coefficient 1.
+    if form.constant == 0 && form.coeffs.len() == 1 {
+        let (&v, &c) = form.coeffs.iter().next().unwrap();
+        if c == 1 {
+            return v;
+        }
+    }
+    // Build a canonical sorted key for the cache.
+    let mut key_pairs: Vec<(u32, i64)> =
+        form.coeffs.iter().filter(|(_, &c)| c != 0).map(|(&v, &c)| (v, c)).collect();
+    key_pairs.sort_unstable();
+    let cache_key = (key_pairs, form.constant);
+    if let Some(&v) = solver.form_to_var_cache.get(&cache_key) {
+        return v;
+    }
+    let slack = get_or_create_slack(&form, solver);
+    solver.form_to_var_cache.insert(cache_key, slack);
+    slack
+}
+
 /// Extract a linear form from a term, mapping variable names to Simplex var ids.
-fn extract_linear(term: &Term, var_ids: &FxHashMap<String, u32>) -> Option<LinearForm> {
+/// For UF applications with arithmetic sort, creates (or retrieves cached)
+/// Simplex variables and registers Ackermann app records on first encounter.
+fn extract_linear(term: &Term, solver: &mut LiaCdclT) -> Option<LinearForm> {
     match &term.inner {
         TermInner::IntLiteral(n) => {
             let mut f = LinearForm::default();
@@ -307,7 +439,7 @@ fn extract_linear(term: &Term, var_ids: &FxHashMap<String, u32>) -> Option<Linea
             Some(f)
         }
         TermInner::Variable(name) if term.sort.is_arithmetic() => {
-            let &v = var_ids.get(name)?;
+            let v = *solver.var_ids.get(name.as_str())?;
             let mut f = LinearForm::default();
             f.coeffs.insert(v, 1);
             Some(f)
@@ -315,20 +447,20 @@ fn extract_linear(term: &Term, var_ids: &FxHashMap<String, u32>) -> Option<Linea
         TermInner::ArithOp(ArithOpKind::Add, args) => {
             let mut acc = LinearForm::default();
             for a in args {
-                let f = extract_linear(a, var_ids)?;
+                let f = extract_linear(a, solver)?;
                 acc.add_scaled(&f, 1);
             }
             Some(acc)
         }
         TermInner::ArithOp(ArithOpKind::Sub, args) => match args.len() {
             1 => {
-                let mut f = extract_linear(&args[0], var_ids)?;
+                let mut f = extract_linear(&args[0], solver)?;
                 f.negate();
                 Some(f)
             }
             2 => {
-                let f0 = extract_linear(&args[0], var_ids)?;
-                let f1 = extract_linear(&args[1], var_ids)?;
+                let f0 = extract_linear(&args[0], solver)?;
+                let f1 = extract_linear(&args[1], solver)?;
                 let mut acc = LinearForm::default();
                 acc.add_scaled(&f0, 1);
                 acc.add_scaled(&f1, -1);
@@ -337,12 +469,11 @@ fn extract_linear(term: &Term, var_ids: &FxHashMap<String, u32>) -> Option<Linea
             _ => None,
         },
         TermInner::ArithOp(ArithOpKind::Mul, args) => {
-            // One arg must be a constant, the other a linear form.
             if args.len() != 2 {
                 return None;
             }
-            let f0 = extract_linear(&args[0], var_ids)?;
-            let f1 = extract_linear(&args[1], var_ids)?;
+            let f0 = extract_linear(&args[0], solver)?;
+            let f1 = extract_linear(&args[1], solver)?;
             if f0.is_constant() {
                 let scale = f0.constant;
                 let mut acc = LinearForm::default();
@@ -357,26 +488,64 @@ fn extract_linear(term: &Term, var_ids: &FxHashMap<String, u32>) -> Option<Linea
                 None // non-linear
             }
         }
+        TermInner::Ite(cond, t_then, t_else) if term.sort.is_arithmetic() => {
+            // Encode integer ite: result = if cond { t_then } else { t_else }.
+            // Create a fresh Simplex variable r, then add:
+            //   cond → r = t_then   (¬cond_lit ∨ rt_eq)
+            //   ¬cond → r = t_else  (cond_lit ∨ re_eq)
+            let t_form = extract_linear(t_then, solver)?;
+            let e_form = extract_linear(t_else, solver)?;
+            let tv = form_to_var(t_form, solver);
+            let ev = form_to_var(e_form, solver);
+            let c_lit = encode_bool(cond, solver).ok()?;
+            let r = solver.alloc_simplex();
+            let rt_eq = encode_var_eq(r, tv, solver);
+            let re_eq = encode_var_eq(r, ev, solver);
+            solver.add_clause(&[c_lit.negate(), rt_eq]);
+            solver.add_clause(&[c_lit, re_eq]);
+            let mut f = LinearForm::default();
+            f.coeffs.insert(r, 1);
+            Some(f)
+        }
+        TermInner::FunCall(name, args) if term.sort.is_arithmetic() => {
+            // Encode a UF application as a fresh Simplex variable via Ackermann
+            // flattening.  Each arg is reduced to a single Simplex variable; the
+            // cache key (func_name, arg_var_ids) deduplicates repeated occurrences.
+            let mut arg_vars: Vec<u32> = Vec::with_capacity(args.len());
+            for arg in args {
+                let form = extract_linear(arg, solver)?;
+                let v = form_to_var(form, solver);
+                arg_vars.push(v);
+            }
+            let cache_key = (name.clone(), arg_vars.clone());
+            if let Some(&result_var) = solver.uf_app_cache.get(&cache_key) {
+                let mut f = LinearForm::default();
+                f.coeffs.insert(result_var, 1);
+                return Some(f);
+            }
+            let result_var = solver.alloc_simplex();
+            solver.uf_app_cache.insert(cache_key, result_var);
+            solver.uf_apps.push(UfApp { func: name.clone(), arg_vars, result_var });
+            let mut f = LinearForm::default();
+            f.coeffs.insert(result_var, 1);
+            Some(f)
+        }
         _ => None,
     }
 }
 
 /// Introduce a slack variable for a linear form (lhs - rhs).
-/// Returns (slack_id, constant) where: slack = lhs_form - rhs_form - constant.
-/// The comparison `slack ≤ 0` corresponds to the original inequality.
+/// Returns (diff_form, rhs_constant) where diff_form has zero constant term.
 fn normalize_cmp(
     lhs: &Term,
     rhs: &Term,
-    var_ids: &FxHashMap<String, u32>,
+    solver: &mut LiaCdclT,
 ) -> Option<(LinearForm, i64)> {
-    let f_lhs = extract_linear(lhs, var_ids)?;
-    let f_rhs = extract_linear(rhs, var_ids)?;
+    let f_lhs = extract_linear(lhs, solver)?;
+    let f_rhs = extract_linear(rhs, solver)?;
     let mut diff = LinearForm::default();
     diff.add_scaled(&f_lhs, 1);
     diff.add_scaled(&f_rhs, -1);
-    // diff = (lhs - rhs). The "lhs ≤ rhs" comparison becomes "diff ≤ 0".
-    // But diff has a constant part: diff = vars_part + diff.constant.
-    // So "diff ≤ 0" → "vars_part ≤ -diff.constant".
     let rhs_const = -diff.constant;
     diff.constant = 0;
     Some((diff, rhs_const))
@@ -469,6 +638,19 @@ fn encode_bool(term: &Term, solver: &mut LiaCdclT) -> Result<Literal, ()> {
             }
             Ok(z)
         }
+        TermInner::Ite(cond, t, e) if term.sort == SortExpr::Bool => {
+            let c = encode_bool(cond, solver)?;
+            let tl = encode_bool(t, solver)?;
+            let el = encode_bool(e, solver)?;
+            let v = solver.alloc_sat();
+            let z = Literal::positive(v);
+            // z ↔ ite(c, tl, el): standard Tseitin for mux
+            solver.add_clause(&[z.negate(), c.negate(), tl]);
+            solver.add_clause(&[z.negate(), c, el]);
+            solver.add_clause(&[c.negate(), tl.negate(), z]);
+            solver.add_clause(&[c, el.negate(), z]);
+            Ok(z)
+        }
         TermInner::ArithCmp(kind, lhs, rhs) => {
             encode_arith_cmp(*kind, lhs, rhs, solver)
         }
@@ -505,9 +687,7 @@ fn encode_arith_cmp(
     rhs: &Term,
     solver: &mut LiaCdclT,
 ) -> Result<Literal, ()> {
-    // Normalize: diff = lhs - rhs, and compare diff ≤ 0 (or similar).
-    let var_ids = solver.var_ids.clone();
-    let (form, rhs_const) = normalize_cmp(lhs, rhs, &var_ids).ok_or(())?;
+    let (form, rhs_const) = normalize_cmp(lhs, rhs, solver).ok_or(())?;
 
     // If the form is purely constant (no variables), evaluate statically.
     if form.is_constant() {
@@ -519,11 +699,14 @@ fn encode_arith_cmp(
         };
         let v = solver.alloc_sat();
         if holds {
+            // v is always true: the comparison is a tautology.
             solver.add_clause(&[Literal::positive(v)]);
             return Ok(Literal::positive(v));
         } else {
+            // v must be false: the comparison is a contradiction.
+            // Add unit clause ¬v (forces v=false) and return v as the FALSE literal.
             solver.add_clause(&[Literal::negative(v)]);
-            return Ok(Literal::negative(v));
+            return Ok(Literal::positive(v));
         }
     }
 
@@ -572,9 +755,10 @@ pub fn solve_qf_lia(text: &str) -> Result<LiaResult, String> {
     // Pre-allocate enough space. We'll conservatively use 2x user vars as
     // initial capacity; slacks are added dynamically.
     let user_count = var_names.len() as u32;
-    // Rough upper bound: each comparison can introduce one slack.
+    // Rough upper bound: each comparison can introduce one slack; UF applications
+    // each get a result var plus additional slacks for Ackermann constraints.
     let max_atoms = count_assertions(&script);
-    let max_simplex = user_count + max_atoms + 10;
+    let max_simplex = user_count + max_atoms * 8 + 64;
 
     let mut solver = LiaCdclT::new(max_simplex);
     solver.next_simplex_var = user_count;
@@ -600,6 +784,10 @@ pub fn solve_qf_lia(text: &str) -> Result<LiaResult, String> {
             }
         }
     }
+
+    // Add Ackermann congruence constraints for all pairs of UF applications
+    // with the same function symbol before handing off to the SAT/B&B loop.
+    add_ackermann_constraints(&mut solver);
 
     let status = solver.solve();
     let model = if status == LiaStatus::Sat {
@@ -796,5 +984,84 @@ mod tests {
         assert!(x + y <= 5, "x+y={}", x + y);
         assert!(x >= 2, "x={}", x);
         assert!(y >= 1, "y={}", y);
+    }
+
+    // -----------------------------------------------------------------------
+    // QF_UFLIA tests
+    // -----------------------------------------------------------------------
+
+    const UF_PREAMBLE: &str = "(set-logic QF_UFLIA)\n\
+                                (declare-fun x () Int)\n\
+                                (declare-fun y () Int)\n\
+                                (declare-fun f (Int) Int)\n";
+
+    /// f(x) = 5, same term appears twice → SAT
+    #[test]
+    fn uf_trivial_sat() {
+        assert!(sat(&format!(
+            "{UF_PREAMBLE}\
+             (assert (= (f x) 5))\n\
+             (check-sat)\n"
+        )));
+    }
+
+    /// f(x) = 3 ∧ f(x) = 5 → UNSAT (same application, conflicting bounds)
+    #[test]
+    fn uf_same_app_conflict() {
+        assert!(unsat(&format!(
+            "{UF_PREAMBLE}\
+             (assert (= (f x) 3))\n\
+             (assert (= (f x) 5))\n\
+             (check-sat)\n"
+        )));
+    }
+
+    /// x = y ∧ f(x) = 3 ∧ f(y) ≠ 3 → UNSAT by congruence
+    #[test]
+    fn uf_congruence_unsat() {
+        assert!(unsat(&format!(
+            "{UF_PREAMBLE}\
+             (assert (= x y))\n\
+             (assert (= (f x) 3))\n\
+             (assert (not (= (f y) 3)))\n\
+             (check-sat)\n"
+        )));
+    }
+
+    /// x ≠ y allows f(x) ≠ f(y) → SAT
+    #[test]
+    fn uf_distinct_args_sat() {
+        assert!(sat(&format!(
+            "{UF_PREAMBLE}\
+             (assert (not (= x y)))\n\
+             (assert (= (f x) 1))\n\
+             (assert (= (f y) 2))\n\
+             (check-sat)\n"
+        )));
+    }
+
+    /// 2-arity UF: g(x,y) = g(x,y) + 1 → UNSAT
+    #[test]
+    fn uf_arity2_unsat() {
+        assert!(unsat(
+            "(set-logic QF_UFLIA)\n\
+             (declare-fun x () Int)\n\
+             (declare-fun y () Int)\n\
+             (declare-fun g (Int Int) Int)\n\
+             (assert (= (g x y) (+ (g x y) 1)))\n\
+             (check-sat)\n"
+        ));
+    }
+
+    /// Arithmetic on UF result: f(x) + f(y) ≤ 3, f(x) ≥ 2, f(y) ≥ 2 → UNSAT
+    #[test]
+    fn uf_arith_on_results_unsat() {
+        assert!(unsat(&format!(
+            "{UF_PREAMBLE}\
+             (assert (<= (+ (f x) (f y)) 3))\n\
+             (assert (>= (f x) 2))\n\
+             (assert (>= (f y) 2))\n\
+             (check-sat)\n"
+        )));
     }
 }

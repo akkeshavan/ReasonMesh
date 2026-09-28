@@ -188,6 +188,26 @@ impl SimplexSolver {
         }
     }
 
+    /// Current number of allocated variables.
+    pub fn num_vars(&self) -> u32 {
+        self.num_vars
+    }
+
+    /// Grow the variable capacity to at least `new_min` variables if needed.
+    pub fn grow_to(&mut self, new_min: u32) {
+        if new_min <= self.num_vars {
+            return;
+        }
+        let extra = (new_min as usize) - (self.num_vars as usize);
+        self.assignment.extend(std::iter::repeat(Rational::zero()).take(extra));
+        self.lower.extend(std::iter::repeat(None).take(extra));
+        self.upper.extend(std::iter::repeat(None).take(extra));
+        self.rows.extend((0..extra).map(|_| None));
+        self.is_basic.extend(std::iter::repeat(false).take(extra));
+        self.columns.extend((0..extra).map(|_| FxHashSet::default()));
+        self.num_vars = new_min;
+    }
+
     pub fn new_decision_level(&mut self) {
         self.level_lim.push(self.undo_log.len());
     }

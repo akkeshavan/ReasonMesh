@@ -1,6 +1,7 @@
 //! SMT-LIB 2.7 command and term parser (QF_BV fragment).
 
 use super::ast::{ArithCmpKind, ArithOpKind, BvOp, Term, TermInner};
+use super::preprocess::preprocess_bounded;
 use super::s_expr::{Atom, SExpr};
 use super::sort::SortExpr;
 use super::ParseError;
@@ -38,6 +39,8 @@ pub struct Script {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Symbols {
     pub constants: std::collections::HashMap<String, SortExpr>,
+    /// Return sort for all declared function symbols (including non-0-arity).
+    pub fun_sorts: std::collections::HashMap<String, SortExpr>,
 }
 
 impl Script {
@@ -52,14 +55,17 @@ impl Script {
         }
         let mut constants: std::collections::HashMap<String, SortExpr> =
             std::collections::HashMap::new();
+        let mut fun_sorts: std::collections::HashMap<String, SortExpr> =
+            std::collections::HashMap::new();
         for cmd in &commands {
             if let Command::DeclareFun { name, args, result } = cmd {
                 if args.is_empty() {
                     constants.entry(name.clone()).or_insert(result.clone());
                 }
+                fun_sorts.entry(name.clone()).or_insert(result.clone());
             }
         }
-        let symbols = Symbols { constants };
+        let symbols = Symbols { constants, fun_sorts };
         let mut resolved = Vec::with_capacity(commands.len());
         for (expr, cmd) in exprs.iter().zip(&commands) {
             resolved.push(parse_command_body(expr, cmd, &symbols)?);
@@ -187,7 +193,11 @@ fn parse_command_body(
                 SExpr::List(items) => items,
                 _ => unreachable!(),
             };
-            Ok(Command::Assert(parse_term(&items[1], symbols)?))
+            // Expand `let` bindings and strip `!` annotations before parsing.
+            // Limit expansion to 2M nodes to avoid OOM on adversarial inputs.
+            let expanded = preprocess_bounded(&items[1], 2_000_000)
+                .ok_or_else(|| ParseError::UnexpectedToken { offset: 0, message: "let expansion too large".into() })?;
+            Ok(Command::Assert(parse_term(&expanded, symbols)?))
         }
         other => Ok(other.clone()),
     }
@@ -563,8 +573,9 @@ fn parse_term(expr: &SExpr, symbols: &Symbols) -> Result<Term, ParseError> {
                 .iter()
                 .map(|t| parse_term(t, symbols))
                 .collect::<Result<_, _>>()?;
+            let sort = symbols.fun_sorts.get(h).cloned().unwrap_or(SortExpr::Bool);
             Ok(Term {
-                sort: SortExpr::Bool,
+                sort,
                 inner: TermInner::FunCall(h.to_string(), args),
             })
         }
