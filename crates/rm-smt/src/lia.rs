@@ -306,7 +306,11 @@ impl LiaCdclT {
 
     fn solve(&mut self, cancel: &AtomicBool) -> LiaStatus {
         // Reserve 64 B&B cut variables per Int-sorted variable (user + UF results).
-        let int_count = self.is_int.iter().filter(|&&b| b).count() as u32;
+        // Count only actual user-declared Int vars, not the entire pre-allocated is_int
+        // array (which is all-true and much larger than the real variable count).
+        let int_count = self.var_ids.values()
+            .filter(|&&id| (id as usize) < self.is_int.len() && self.is_int[id as usize])
+            .count() as u32;
         let uf_count = self.uf_apps.len() as u32;
         let bb_budget = (int_count + uf_count + 1) * 64;
         self.finalize_with_bb(bb_budget);
