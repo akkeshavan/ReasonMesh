@@ -560,8 +560,6 @@ fn get_or_create_slack(
     form: &LinearForm,
     solver: &mut LiaCdclT,
 ) -> u32 {
-    // For simplicity, always create a fresh slack.
-    // A production solver would canonicalize and cache.
     let slack = solver.alloc_simplex();
     let coeffs: Vec<(u32, Rational)> = form
         .coeffs
@@ -571,6 +569,18 @@ fn get_or_create_slack(
         .collect();
     if !coeffs.is_empty() {
         solver.simplex.add_row(slack, coeffs);
+    } else {
+        // Constant-only form: pin the slack to its exact integer value via
+        // SAT-forced bounds. Without bounds the Simplex treats the variable as
+        // free, which makes every Ackermann arg-equality premise trivially
+        // satisfiable and forces spurious UF congruences.
+        let k = form.constant;
+        let le_sat = solver.alloc_sat();
+        solver.atoms.insert(le_sat, SimplexAtom::Upper { var: slack, bound: k });
+        solver.add_clause(&[Literal::positive(le_sat)]);
+        let ge_sat = solver.alloc_sat();
+        solver.atoms.insert(ge_sat, SimplexAtom::Lower { var: slack, bound: k });
+        solver.add_clause(&[Literal::positive(ge_sat)]);
     }
     slack
 }
