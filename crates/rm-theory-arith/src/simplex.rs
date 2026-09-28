@@ -233,24 +233,44 @@ impl SimplexSolver {
 
     /// Introduce a basic variable whose value is a linear combination of non-basics.
     /// `basic_var` must not already be basic.
-    /// `coeffs`: (non_basic_var, coefficient) pairs; zero coefficients are ignored.
+    /// `coeffs`: (var, coefficient) pairs — basic vars are automatically expanded
+    /// to their non-basic definitions so the stored row only references non-basics.
     pub fn add_row(&mut self, basic_var: VarId, coeffs: Vec<(VarId, Rational)>) {
         let bv = basic_var as usize;
         assert!(!self.is_basic[bv], "variable {basic_var} is already basic");
+        // Compute the assignment value from current assignments (before expansion).
         let val = coeffs
             .iter()
             .fold(Rational::zero(), |acc, &(xj, a)| {
                 acc + a * self.assignment[xj as usize]
             });
         self.assignment[bv] = val;
-        let row: FxHashMap<VarId, Rational> = coeffs
-            .into_iter()
-            .filter(|(_, a)| *a != Rational::zero())
-            .collect();
-        for &xj in row.keys() {
+        // Expand any basic variables so the row only references non-basics.
+        let mut expanded: FxHashMap<VarId, Rational> = FxHashMap::default();
+        for (v, c) in coeffs {
+            if c == Rational::zero() {
+                continue;
+            }
+            if self.is_basic[v as usize] {
+                // Substitute v's row definition into the new row.
+                if let Some(row_v) = &self.rows[v as usize] {
+                    for (&xk, &a) in row_v {
+                        let entry = expanded.entry(xk).or_insert(Rational::zero());
+                        *entry = *entry + c * a;
+                    }
+                }
+                // If v has no row (should not happen if is_basic is set), skip.
+            } else {
+                let entry = expanded.entry(v).or_insert(Rational::zero());
+                *entry = *entry + c;
+            }
+        }
+        // Remove zero coefficients.
+        expanded.retain(|_, v| *v != Rational::zero());
+        for &xj in expanded.keys() {
             self.columns[xj as usize].insert(basic_var);
         }
-        self.rows[bv] = Some(row);
+        self.rows[bv] = Some(expanded);
         self.is_basic[bv] = true;
     }
 
