@@ -14,6 +14,9 @@ pub enum SortExpr {
     Real,
     /// `(_ BitVec n)` — an `n`-bit bit-vector sort.
     BitVec(u32),
+    /// User-declared uninterpreted sort (e.g. `(declare-sort S 0)`).
+    /// Treated as an opaque sort for UF constants; not arithmetic.
+    Uninterpreted(String),
 }
 
 impl SortExpr {
@@ -43,8 +46,12 @@ impl SortExpr {
                     })
                 }
             }
+            super::SExpr::Atom(super::Atom::Symbol(s)) => {
+                // Any unrecognized symbol is treated as a user-declared uninterpreted sort.
+                Ok(SortExpr::Uninterpreted(s.clone()))
+            }
             _ => Err(super::ParseError::InvalidSort {
-                text: "expected Bool or (_ BitVec n)".into(),
+                text: "expected a sort name or (_ BitVec n)".into(),
             }),
         }
     }
@@ -69,6 +76,7 @@ impl fmt::Display for SortExpr {
             SortExpr::Int => write!(f, "Int"),
             SortExpr::Real => write!(f, "Real"),
             SortExpr::BitVec(n) => write!(f, "(_ BitVec {n})"),
+            SortExpr::Uninterpreted(s) => write!(f, "{s}"),
         }
     }
 }
@@ -95,7 +103,13 @@ mod tests {
     fn reject_malformed() {
         assert!(parse_sort("(_ BitVec)").is_err());
         assert!(parse_sort("(_ BitVec big)").is_err());
-        assert!(parse_sort("Nat").is_err());
+    }
+
+    #[test]
+    fn parse_uninterpreted() {
+        assert_eq!(parse_sort("Nat").unwrap(), SortExpr::Uninterpreted("Nat".into()));
+        assert_eq!(parse_sort("MySort").unwrap(), SortExpr::Uninterpreted("MySort".into()));
+        assert!(!SortExpr::Uninterpreted("S".into()).is_arithmetic());
     }
 
     #[test]
