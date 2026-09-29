@@ -1716,14 +1716,17 @@ fn encode_arith_lit_cdclt(
         })
     } else if let Some(xn) = sexpr_symbol(lhs) {
         if let Some(&x) = dl_vars.get(xn) {
-            let c = extract_int(rhs).ok_or(())?;
-            Some(match op {
-                "<=" => (x, 0, c, false),
-                "<" => (x, 0, c, true),
-                ">=" => (0, x, -c, false),
-                ">" => (0, x, -c, true),
-                _ => return Err(()),
-            })
+            if let Some(c) = extract_int(rhs) {
+                Some(match op {
+                    "<=" => (x, 0, c, false),
+                    "<" => (x, 0, c, true),
+                    ">=" => (0, x, -c, false),
+                    ">" => (0, x, -c, true),
+                    _ => return Err(()),
+                })
+            } else {
+                None // rhs is another variable; fall through to the resolve fallback
+            }
         } else {
             None
         }
@@ -1752,9 +1755,10 @@ fn encode_arith_lit_cdclt(
     } else {
         // Fallback: resolve both sides via intern + uf_to_dl.
         // Handles $arith_N / $ite_N variables created during term interning.
-        // Only returns a DL variable if the term already has one (declared or
-        // created by intern_arith_offset); raw UF applications without an existing
-        // DL representation are rejected to avoid unsound purification.
+        // For UF applications (e.g. `(f x)`) that appear directly in IDL
+        // comparisons and have no DL variable yet, we allocate a fresh one and
+        // register it in dl_uf_pairs so the Nelson-Oppen loop can propagate EUF
+        // equalities involving it back into DL at theory-check time.
         let resolve = |expr: &rm_syntax::SExpr,
                        cdclt: &mut CdclT,
                        uf_cache: &mut FxHashMap<String, ENodeId>,
@@ -1773,7 +1777,18 @@ fn encode_arith_lit_cdclt(
                 return cdclt.uf_to_dl.get(&uid).copied();
             }
             let uid = intern_uf_term_cdclt(expr, cdclt, uf_cache, uf_funcs, dl_vars).ok()?;
-            cdclt.uf_to_dl.get(&uid).copied()
+            if let Some(&dl_id) = cdclt.uf_to_dl.get(&uid) {
+                return Some(dl_id);
+            }
+            // UF application with no DL variable: allocate one for IDL comparisons.
+            let n = cdclt.arith_count;
+            cdclt.arith_count += 1;
+            let fresh_name = format!("$uf_dl_{n}");
+            let fresh_dl = cdclt.dl.add_var();
+            cdclt.dl_var_names.insert(fresh_dl, fresh_name);
+            cdclt.dl_uf_pairs.push((fresh_dl, uid));
+            cdclt.uf_to_dl.insert(uid, fresh_dl);
+            Some(fresh_dl)
         };
         let xdl = resolve(lhs, cdclt, uf_cache, uf_funcs).ok_or_else(|| {
             if std::env::var("CDCLT_DEBUG").is_ok() {
