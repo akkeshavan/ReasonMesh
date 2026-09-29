@@ -730,6 +730,16 @@ impl CdclSolver {
                                             self.maybe_reduce_db();
                                         }
                                         self.add_clause(&conflict);
+                                        // Allow the Luby/EMA restart schedule to fire after
+                                        // TFC conflicts. Without this, rapid TFC chains
+                                        // starve restarts: learned clauses never become unit
+                                        // at level 0, blocking UNSAT derivation on hard
+                                        // problems.
+                                        if self.should_restart() {
+                                            theory.theory_backtrack(self.base_level);
+                                            self.do_restart();
+                                            prev_trail_len = self.assignment.trail().len();
+                                        }
                                     } else {
                                         break r;
                                     }
