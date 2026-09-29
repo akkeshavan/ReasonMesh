@@ -676,8 +676,39 @@ impl CdclSolver {
                                 // causes some atoms to not be re-asserted after backjumps.
                                 if let SolveResult::Sat(ref model) = r {
                                     if let Some(conflict) = theory.theory_final_check(model) {
-                                        // Theory rejected the model — add conflict clause and
-                                        // continue the search (don't break).
+                                        // Theory rejected the model — backjump first so the
+                                        // conflict clause is not all-False (which would set
+                                        // the empty clause and return false UNSAT), then add
+                                        // the clause and continue search.
+                                        self.conflicts += 1;
+                                        let cur_level = self.assignment.current_level();
+                                        let backjump_level = if cur_level > self.base_level
+                                            && !conflict.is_empty()
+                                        {
+                                            let mut max_lv = self.base_level;
+                                            let mut second_lv = self.base_level;
+                                            for &lit in &conflict {
+                                                let lv = self.assignment.level_of(lit.var());
+                                                if lv >= max_lv {
+                                                    second_lv = max_lv;
+                                                    max_lv = lv;
+                                                } else if lv > second_lv {
+                                                    second_lv = lv;
+                                                }
+                                            }
+                                            second_lv
+                                                .min(max_lv.saturating_sub(1))
+                                                .max(self.base_level)
+                                        } else {
+                                            self.base_level
+                                        };
+                                        if cur_level > backjump_level {
+                                            theory.theory_backtrack(backjump_level);
+                                            self.backtrack_and_reschedule(backjump_level);
+                                            self.decay_activities();
+                                            prev_trail_len = self.assignment.trail().len();
+                                            self.maybe_reduce_db();
+                                        }
                                         self.add_clause(&conflict);
                                     } else {
                                         break r;

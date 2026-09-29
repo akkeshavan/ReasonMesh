@@ -139,7 +139,7 @@ struct BoundEntry {
     sat_lit: u32,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 enum UndoEntry {
     Lower {
         var: VarId,
@@ -155,6 +155,7 @@ enum UndoEntry {
 // SimplexSolver
 // ---------------------------------------------------------------------------
 
+#[derive(Clone)]
 pub struct SimplexSolver {
     num_vars: u32,
     /// Current assignment for every variable.

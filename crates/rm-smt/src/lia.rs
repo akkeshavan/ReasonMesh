@@ -137,6 +137,9 @@ struct LiaCdclT {
     /// Current Simplex decision level, synced with the SAT solver's level in
     /// theory_propagate via new_decision_level() calls.
     simplex_level: u32,
+    /// Snapshot of the Simplex after encoding (rows only, no bounds).
+    /// Used by theory_final_check to get a clean scratch for the rational check.
+    initial_simplex: Option<SimplexSolver>,
     /// Cancellation flag; set by the benchmark harness when the timeout fires.
     cancel: Arc<AtomicBool>,
 }
@@ -160,6 +163,7 @@ impl LiaCdclT {
             form_to_var_cache: FxHashMap::default(),
             one_var: 0,
             simplex_level: 0,
+            initial_simplex: None,
             cancel,
         }
     }
@@ -307,57 +311,57 @@ impl TheorySolver for LiaCdclT {
     }
 
     fn theory_final_check(&mut self, model: &rm_sat::Model) -> Option<Vec<Literal>> {
-        // Full rational feasibility check.
+        // Full rational feasibility check on a fresh Simplex clone.
+        //
         // theory_propagate is incremental and can miss infeasibilities when atoms
-        // aren't re-asserted after backjumps. Push a scratch Simplex level, assert
-        // ALL model atoms, check, then roll back — leaving incremental state intact.
-        let saved_level = self.simplex_level;
-        self.simplex.new_decision_level();
-
-        let atoms_snapshot: Vec<(u32, SimplexAtom)> = self
-            .atoms
-            .iter()
-            .filter(|(&sv, _)| sv <= model.num_vars())
-            .map(|(&sv, atom)| (sv, atom.clone()))
-            .collect();
-
-        let rat_conflict: Option<Vec<Literal>> = 'rat: {
-            for (sat_var, atom) in &atoms_snapshot {
-                let val = model.value_of(*sat_var);
-                let sat_raw = if val {
-                    Literal::positive(*sat_var).raw()
-                } else {
-                    Literal::negative(*sat_var).raw()
-                };
-                let res = match *atom {
-                    SimplexAtom::Upper { var, bound } => {
-                        if val {
-                            self.simplex.assert_upper(var, Rational::from_int(bound), sat_raw)
-                        } else {
-                            self.simplex.assert_lower(var, Rational::from_int(bound + 1), sat_raw)
+        // weren't re-asserted after backjumps (e.g., the final decision made by
+        // branch_or_finish is never seen by theory_propagate). We check the complete
+        // model by cloning the post-encoding Simplex (rows only, no bounds) and
+        // asserting all model atoms fresh — no stale incremental bounds.
+        let rat_conflict: Option<Vec<Literal>> = {
+            let mut scratch = self.initial_simplex.as_ref().unwrap().clone();
+            let atoms_snapshot: Vec<(u32, SimplexAtom)> = self
+                .atoms
+                .iter()
+                .filter(|(&sv, _)| sv <= model.num_vars())
+                .map(|(&sv, atom)| (sv, atom.clone()))
+                .collect();
+            'rat: {
+                for (sat_var, atom) in &atoms_snapshot {
+                    let val = model.value_of(*sat_var);
+                    let res = match *atom {
+                        SimplexAtom::Upper { var, bound } => {
+                            if val {
+                                let sat_raw = Literal::positive(*sat_var).raw();
+                                scratch.assert_upper(var, Rational::from_int(bound), sat_raw)
+                            } else {
+                                // ¬(x ≤ bound) ↔ x ≥ bound+1
+                                let sat_raw = Literal::negative(*sat_var).raw();
+                                scratch.assert_lower(var, Rational::from_int(bound + 1), sat_raw)
+                            }
                         }
-                    }
-                    SimplexAtom::Lower { var, bound } => {
-                        if val {
-                            self.simplex.assert_lower(var, Rational::from_int(bound), sat_raw)
-                        } else {
-                            self.simplex.assert_upper(var, Rational::from_int(bound - 1), sat_raw)
+                        SimplexAtom::Lower { var, bound } => {
+                            if val {
+                                let sat_raw = Literal::positive(*sat_var).raw();
+                                scratch.assert_lower(var, Rational::from_int(bound), sat_raw)
+                            } else {
+                                // ¬(x ≥ bound) ↔ x ≤ bound-1
+                                let sat_raw = Literal::negative(*sat_var).raw();
+                                scratch.assert_upper(var, Rational::from_int(bound - 1), sat_raw)
+                            }
                         }
+                    };
+                    if let Err(e) = res {
+                        let c = mk_conflict_simplex(&e.lits);
+                        break 'rat Some(c);
                     }
-                };
-                if let Err(e) = res {
-                    break 'rat Some(mk_conflict_simplex(&e.lits));
+                }
+                match scratch.check() {
+                    Ok(_) => None,
+                    Err(e) => Some(mk_conflict_simplex(&e.lits)),
                 }
             }
-            match self.simplex.check() {
-                Ok(_) => None,
-                Err(e) => Some(mk_conflict_simplex(&e.lits)),
-            }
         };
-
-        // Roll back scratch level — restore Simplex to pre-check state.
-        self.simplex.backtrack_to(saved_level);
-        self.simplex_level = saved_level;
 
         if let Some(conflict) = rat_conflict {
             return Some(conflict);
@@ -878,7 +882,6 @@ pub fn solve_qf_lia(text: &str, cancel: Arc<AtomicBool>) -> Result<LiaResult, St
         match encode_bool(assertion, &mut solver) {
             Ok(lit) => solver.add_clause(&[lit]),
             Err(()) => {
-                // Fall back: unsupported construct → Unknown.
                 return Ok(LiaResult {
                     status: LiaStatus::Unknown,
                     model: Vec::new(),
@@ -890,6 +893,11 @@ pub fn solve_qf_lia(text: &str, cancel: Arc<AtomicBool>) -> Result<LiaResult, St
     // Add Ackermann congruence constraints for all pairs of UF applications
     // with the same function symbol before handing off to the SAT/B&B loop.
     add_ackermann_constraints(&mut solver);
+
+    // Save the Simplex state after encoding (rows only, no bounds).
+    // theory_final_check clones this for each full-model rational check so it
+    // starts from a clean state rather than an incremental state with stale bounds.
+    solver.initial_simplex = Some(solver.simplex.clone());
 
     let status = solver.solve();
     let model = if status == LiaStatus::Sat {
