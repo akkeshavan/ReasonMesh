@@ -51,6 +51,15 @@ pub trait TheorySolver {
         let _ = model;
         None
     }
+
+    /// Whether `theory_final_check` leaves the incremental theory state intact.
+    /// When true, the CDCL loop may backjump to the UIP level after a TFC conflict
+    /// (the theory state at that level is valid). When false, TFC has reset internal
+    /// theory state (e.g. CC wiped by a fresh check), so the CDCL loop must backjump
+    /// to base level and let `theory_propagate` rebuild state from scratch.
+    fn theory_final_check_preserves_state(&self) -> bool {
+        false
+    }
 }
 
 use crate::{
@@ -680,28 +689,39 @@ impl CdclSolver {
                                         // conflict clause is not all-False (which would set
                                         // the empty clause and return false UNSAT), then add
                                         // the clause and continue search.
+                                        //
+                                        // When TFC preserves incremental state (e.g. LiaCdclT
+                                        // uses a fresh clone), backjump to the UIP level so the
+                                        // theory state at that level remains valid.
+                                        //
+                                        // When TFC resets incremental state (e.g. CdclT's
+                                        // theory_check wipes CC to a scratch level), backjump
+                                        // to base level so theory_propagate can rebuild state
+                                        // from scratch without inheriting stale CC merges.
                                         self.conflicts += 1;
                                         let cur_level = self.assignment.current_level();
-                                        let backjump_level = if cur_level > self.base_level
-                                            && !conflict.is_empty()
-                                        {
-                                            let mut max_lv = self.base_level;
-                                            let mut second_lv = self.base_level;
-                                            for &lit in &conflict {
-                                                let lv = self.assignment.level_of(lit.var());
-                                                if lv >= max_lv {
-                                                    second_lv = max_lv;
-                                                    max_lv = lv;
-                                                } else if lv > second_lv {
-                                                    second_lv = lv;
+                                        let backjump_level =
+                                            if theory.theory_final_check_preserves_state()
+                                                && cur_level > self.base_level
+                                                && !conflict.is_empty()
+                                            {
+                                                let mut max_lv = self.base_level;
+                                                let mut second_lv = self.base_level;
+                                                for &lit in &conflict {
+                                                    let lv = self.assignment.level_of(lit.var());
+                                                    if lv >= max_lv {
+                                                        second_lv = max_lv;
+                                                        max_lv = lv;
+                                                    } else if lv > second_lv {
+                                                        second_lv = lv;
+                                                    }
                                                 }
-                                            }
-                                            second_lv
-                                                .min(max_lv.saturating_sub(1))
-                                                .max(self.base_level)
-                                        } else {
-                                            self.base_level
-                                        };
+                                                second_lv
+                                                    .min(max_lv.saturating_sub(1))
+                                                    .max(self.base_level)
+                                            } else {
+                                                self.base_level
+                                            };
                                         if cur_level > backjump_level {
                                             theory.theory_backtrack(backjump_level);
                                             self.backtrack_and_reschedule(backjump_level);

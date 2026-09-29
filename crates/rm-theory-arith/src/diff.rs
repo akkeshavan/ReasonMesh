@@ -60,6 +60,7 @@ pub struct ConflictCore {
 /// Incremental difference-logic consistency checker.
 ///
 /// Variables are 1-indexed; variable 0 is the "zero" constant.
+#[derive(Clone)]
 pub struct DiffLogicSolver {
     /// Number of theory variables (not counting the zero node at index 0).
     num_vars: u32,

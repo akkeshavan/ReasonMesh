@@ -3,8 +3,8 @@ name = "smtlib-real"
 description = "SMT-LIB 2025 benchmarks: 600 problems across QF_UF, QF_UFIDL, QF_UFLIA. rm-sat vs Z3."
 
 [solver]
-timeout_secs = 30
-parallel_problems = 4
+timeout_secs = 60
+parallel_problems = 8
 
 [[baselines]]
 name = "z3"

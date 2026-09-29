@@ -99,6 +99,7 @@ enum MergeReason {
 // Congruence closure
 // ---------------------------------------------------------------------------
 
+#[derive(Clone)]
 pub struct CongruenceClosure {
     /// E-graph (term storage).  CC takes shared ownership via borrow.
     uf: Vec<UfNode>,

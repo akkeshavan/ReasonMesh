@@ -310,6 +310,12 @@ impl TheorySolver for LiaCdclT {
         self.simplex_level = target_level;
     }
 
+    fn theory_final_check_preserves_state(&self) -> bool {
+        // TFC uses a fresh Simplex clone; self.simplex is never touched, so
+        // the incremental bounds at the UIP level remain valid after TFC.
+        true
+    }
+
     fn theory_final_check(&mut self, model: &rm_sat::Model) -> Option<Vec<Literal>> {
         // Full rational feasibility check on a fresh Simplex clone.
         //
@@ -318,48 +324,49 @@ impl TheorySolver for LiaCdclT {
         // branch_or_finish is never seen by theory_propagate). We check the complete
         // model by cloning the post-encoding Simplex (rows only, no bounds) and
         // asserting all model atoms fresh — no stale incremental bounds.
-        let rat_conflict: Option<Vec<Literal>> = {
-            let mut scratch = self.initial_simplex.as_ref().unwrap().clone();
-            let atoms_snapshot: Vec<(u32, SimplexAtom)> = self
-                .atoms
-                .iter()
-                .filter(|(&sv, _)| sv <= model.num_vars())
-                .map(|(&sv, atom)| (sv, atom.clone()))
-                .collect();
-            'rat: {
-                for (sat_var, atom) in &atoms_snapshot {
-                    let val = model.value_of(*sat_var);
-                    let res = match *atom {
-                        SimplexAtom::Upper { var, bound } => {
-                            if val {
-                                let sat_raw = Literal::positive(*sat_var).raw();
-                                scratch.assert_upper(var, Rational::from_int(bound), sat_raw)
-                            } else {
-                                // ¬(x ≤ bound) ↔ x ≥ bound+1
-                                let sat_raw = Literal::negative(*sat_var).raw();
-                                scratch.assert_lower(var, Rational::from_int(bound + 1), sat_raw)
-                            }
+        // Build a fresh Simplex clone for the complete-model check. Keeping `scratch`
+        // alive past the rational check so the B&B section reads correct model values —
+        // self.simplex only has incremental bounds and its assignment may differ.
+        let mut scratch = self.initial_simplex.as_ref().unwrap().clone();
+        let atoms_snapshot: Vec<(u32, SimplexAtom)> = self
+            .atoms
+            .iter()
+            .filter(|(&sv, _)| sv <= model.num_vars())
+            .map(|(&sv, atom)| (sv, atom.clone()))
+            .collect();
+
+        let rat_conflict: Option<Vec<Literal>> = 'rat: {
+            for (sat_var, atom) in &atoms_snapshot {
+                let val = model.value_of(*sat_var);
+                let res = match *atom {
+                    SimplexAtom::Upper { var, bound } => {
+                        if val {
+                            let sat_raw = Literal::positive(*sat_var).raw();
+                            scratch.assert_upper(var, Rational::from_int(bound), sat_raw)
+                        } else {
+                            // ¬(x ≤ bound) ↔ x ≥ bound+1
+                            let sat_raw = Literal::negative(*sat_var).raw();
+                            scratch.assert_lower(var, Rational::from_int(bound + 1), sat_raw)
                         }
-                        SimplexAtom::Lower { var, bound } => {
-                            if val {
-                                let sat_raw = Literal::positive(*sat_var).raw();
-                                scratch.assert_lower(var, Rational::from_int(bound), sat_raw)
-                            } else {
-                                // ¬(x ≥ bound) ↔ x ≤ bound-1
-                                let sat_raw = Literal::negative(*sat_var).raw();
-                                scratch.assert_upper(var, Rational::from_int(bound - 1), sat_raw)
-                            }
-                        }
-                    };
-                    if let Err(e) = res {
-                        let c = mk_conflict_simplex(&e.lits);
-                        break 'rat Some(c);
                     }
+                    SimplexAtom::Lower { var, bound } => {
+                        if val {
+                            let sat_raw = Literal::positive(*sat_var).raw();
+                            scratch.assert_lower(var, Rational::from_int(bound), sat_raw)
+                        } else {
+                            // ¬(x ≥ bound) ↔ x ≤ bound-1
+                            let sat_raw = Literal::negative(*sat_var).raw();
+                            scratch.assert_upper(var, Rational::from_int(bound - 1), sat_raw)
+                        }
+                    }
+                };
+                if let Err(e) = res {
+                    break 'rat Some(mk_conflict_simplex(&e.lits));
                 }
-                match scratch.check() {
-                    Ok(_) => None,
-                    Err(e) => Some(mk_conflict_simplex(&e.lits)),
-                }
+            }
+            match scratch.check() {
+                Ok(_) => None,
+                Err(e) => Some(mk_conflict_simplex(&e.lits)),
             }
         };
 
@@ -369,26 +376,27 @@ impl TheorySolver for LiaCdclT {
 
         // Integer feasibility: if any Int-sorted variable has a fractional value,
         // emit a branch-and-bound disjunction x ≤ floor(v) ∨ x ≥ ceil(v).
+        // Use `scratch` (complete-model assignment) not `self.simplex` (incremental).
         let mut frac_var: Option<u32> = None;
         'outer: for (_, &simplex_var) in &self.var_ids {
             if simplex_var as usize >= self.is_int.len() || !self.is_int[simplex_var as usize] {
                 continue;
             }
-            if !self.simplex.model_value(simplex_var).is_integer() {
+            if !scratch.model_value(simplex_var).is_integer() {
                 frac_var = Some(simplex_var);
                 break 'outer;
             }
         }
         if frac_var.is_none() {
             for app in &self.uf_apps {
-                if !self.simplex.model_value(app.result_var).is_integer() {
+                if !scratch.model_value(app.result_var).is_integer() {
                     frac_var = Some(app.result_var);
                     break;
                 }
             }
         }
         if let Some(simplex_var) = frac_var {
-            let v = self.simplex.model_value(simplex_var);
+            let v = scratch.model_value(simplex_var);
             let floor_v = v.floor_int();
             let ceil_v = v.ceil_int();
             let (sv, sv2) = match (self.alloc_bb_var(), self.alloc_bb_var()) {

@@ -823,165 +823,6 @@ impl CdclT {
         id
     }
 
-    /// Check the SAT model against the theories.
-    /// Returns None on consistency, or a conflict clause on violation.
-    fn theory_check(&mut self, model: &rm_sat::Model) -> Option<Vec<Literal>> {
-        // Undo the previous call's assertions first (using the level pushed by that call),
-        // then push a fresh level so the NEXT call can undo this call's assertions.
-        // Order matters: backtrack before push — otherwise we record undo.len()=N as the
-        // target and backtrack immediately undoes nothing.
-        self.cc.backtrack_to(0);
-        self.dl.backtrack_to(0);
-        self.cc.new_decision_level();
-        self.dl.new_decision_level();
-
-        let vars: Vec<u32> = self.atoms.keys().copied().collect();
-
-        for v in vars {
-            if v as usize > model.num_vars() as usize {
-                continue;
-            }
-            let val = model.value_of(v);
-            // Store raw literals (with polarity) as sat_lit tags so conflict
-            // clauses can be correctly formed by negating them.
-            let sat_raw = if val {
-                Literal::positive(v).raw()
-            } else {
-                Literal::negative(v).raw()
-            };
-            let atom = self.atoms[&v].clone();
-            match atom {
-                BackboneAtom::Eq { lhs, rhs } => {
-                    if val {
-                        if let Err(e) = self.cc.assert_eq(&self.egraph, lhs, rhs, sat_raw) {
-                            if let Some(c) = mk_conflict_euf(e) {
-                                return Some(c);
-                            }
-                        }
-                    } else if let Err(e) = self.cc.assert_neq(&self.egraph, lhs, rhs, sat_raw) {
-                        if let Some(c) = mk_conflict_euf(e) {
-                            return Some(c);
-                        }
-                    }
-                }
-                BackboneAtom::Leq { x, y, c } => {
-                    let res = if val {
-                        self.dl.assert_leq(x, y, c, sat_raw)
-                    } else {
-                        self.dl.assert_leq(y, x, -c - 1, sat_raw)
-                    };
-                    if let Err(e) = res {
-                        return Some(mk_conflict_dl(e));
-                    }
-                }
-                BackboneAtom::Lt { x, y, c } => {
-                    let res = if val {
-                        self.dl.assert_leq(x, y, c - 1, sat_raw)
-                    } else {
-                        self.dl.assert_leq(y, x, -c, sat_raw)
-                    };
-                    if let Err(e) = res {
-                        return Some(mk_conflict_dl(e));
-                    }
-                }
-            }
-        }
-
-        // Nelson-Oppen fixed-point: cycle EUF↔DL until no new merges appear.
-        // A single pass misses chains where DL derives x=y, CC congruence propagates,
-        // and the updated CC lets DL close off further equalities.
-        self.no_dl_expl.clear();
-        loop {
-            // EUF → DL: assert DL equalities for all CC-merged pairs.
-            if let Some(conflict) = no_euf_to_dl(&self.dl_uf_pairs, &mut self.cc, &mut self.dl, &self.egraph) {
-                return Some(conflict);
-            }
-            // Check DL consistency.
-            if let Err(e) = self.dl.check() {
-                return Some(mk_conflict_dl(e));
-            }
-            // DL → EUF: find tight-bound pairs and merge in CC.
-            // O(E) union-find over tight bidirectional edges, then O(N_f × N_all)
-            // pair scan — no per-pair BF calls.
-            let tight_classes = self.dl.tight_equality_classes();
-            let mut any_new = false;
-            for i in 0..self.dl_no_check_pairs.len() {
-                let (xi, xuid) = self.dl_no_check_pairs[i];
-                for j in 0..self.dl_uf_pairs.len() {
-                    let (yi, yuid) = self.dl_uf_pairs[j];
-                    if xi == yi { continue; }
-                    if tight_classes[xi as usize] != tight_classes[yi as usize] { continue; }
-                    if self.cc.are_equal(xuid, yuid) { continue; }
-                    let mut dl_lits: Vec<u32> = Vec::new();
-                    if let Some(p) = self.dl.path_explanation(yi, xi) { dl_lits.extend(p); }
-                    if let Some(p) = self.dl.path_explanation(xi, yi) { dl_lits.extend(p); }
-                    let tag = dl_lits.first().copied().unwrap_or(0);
-                    let key = (xuid.min(yuid), xuid.max(yuid));
-                    self.no_dl_expl.insert(key, dl_lits.clone());
-                    if let Err(e) = self.cc.assert_eq(&self.egraph, xuid, yuid, tag) {
-                        if let Some(mut conflict) = mk_conflict_euf(e) {
-                            conflict.extend(dl_lits.iter().map(|&raw| Literal::from_raw(raw).negate()));
-                            conflict.sort_unstable();
-                            conflict.dedup();
-                            return Some(conflict);
-                        }
-                    } else {
-                        any_new = true;
-                    }
-                }
-            }
-            if !any_new {
-                break;
-            }
-        }
-
-        // Congruence check for Bool-sorted predicates.
-        // Group atoms by canonical key (fname, rep_args): atoms with the same key
-        // must have the same SAT value. If two conflict, emit a congruence lemma.
-        // O(N) per call using a hash map, not O(N²).
-        let mut canon_map: rustc_hash::FxHashMap<
-            (String, Vec<ENodeId>),   // (fname, canonical arg reps)
-            (u32, Vec<ENodeId>, bool) // (sat_var, original arg ids, val)
-        > = rustc_hash::FxHashMap::default();
-        for (&v, (fname, ids)) in &self.bool_pred_nodes {
-            if v as usize > model.num_vars() as usize {
-                continue;
-            }
-            let val = model.value_of(v);
-            let canon: Vec<ENodeId> = ids.iter().map(|&id| self.cc.find(id)).collect();
-            let key = (fname.clone(), canon);
-            if let Some(&(other_v, ref other_ids, other_val)) = canon_map.get(&key) {
-                let other_ids = other_ids.clone();
-                if val != other_val {
-                    // Congruence violation: same canonical args, different Bool values.
-                    let lit_v = if val { Literal::positive(v) } else { Literal::negative(v) };
-                    let lit_o = if other_val {
-                        Literal::positive(other_v)
-                    } else {
-                        Literal::negative(other_v)
-                    };
-                    let mut conflict = vec![lit_v.negate(), lit_o.negate()];
-                    // Add EUF justification for why the args are equal.
-                    for (&ai, &aj) in ids.iter().zip(other_ids.iter()) {
-                        if ai != aj {
-                            let expl = self.cc.explain_equality(&self.egraph, ai, aj);
-                            for premise in expl.sat_lits() {
-                                conflict.push(Literal::from_raw(premise).negate());
-                            }
-                        }
-                    }
-                    conflict.sort_unstable();
-                    conflict.dedup();
-                    return Some(conflict);
-                }
-            } else {
-                canon_map.insert(key, (v, ids.clone(), val));
-            }
-        }
-
-        None
-    }
-
     fn solve(&mut self, max_conflicts: u64) -> NoResult {
         if self.cancel.load(Ordering::Relaxed) {
             return NoResult::Unknown;
@@ -1201,7 +1042,198 @@ impl TheorySolver for CdclT {
     }
 
     fn theory_final_check(&mut self, model: &rm_sat::Model) -> Option<Vec<Literal>> {
-        self.theory_check(model)
+        // Build a FRESH CongruenceClosure from the EGraph for each final check.
+        //
+        // Reusing self.cc with backtrack_to(0) is unsound: the sig_table is never
+        // rolled back by backtrack_to.  Stale sig_table entries from the incremental
+        // state can map a canonical signature key back to the node being looked up,
+        // causing the "other == node_id" branch to silently skip the congruence merge
+        // that would reveal the EUF conflict.  A fresh CC has no such stale entries.
+        //
+        // We swap the fresh CC into self.cc so all existing method calls in the check
+        // body work unchanged, then restore the incremental CC afterwards so that
+        // theory_backtrack at the UIP level operates on the correct incremental state.
+        let dl_saved = self.dl.clone();
+        let no_dl_expl_saved = self.no_dl_expl.clone();
+
+        let incremental_cc = {
+            let n = self.egraph.num_nodes();
+            let mut fresh = CongruenceClosure::new(n);
+            for i in 0..n {
+                let id = ENodeId(i as u32);
+                fresh.add_term(id, self.egraph.node(id));
+            }
+            std::mem::replace(&mut self.cc, fresh)
+        };
+
+        self.cc.new_decision_level();
+        self.dl.backtrack_to(0);
+        self.dl.new_decision_level();
+
+        let result: Option<Vec<Literal>> = 'tfc: {
+            let vars: Vec<u32> = self.atoms.keys().copied().collect();
+            for v in &vars {
+                let v = *v;
+                if v as usize > model.num_vars() as usize {
+                    continue;
+                }
+                let val = model.value_of(v);
+                let sat_raw = if val {
+                    Literal::positive(v).raw()
+                } else {
+                    Literal::negative(v).raw()
+                };
+                let atom = self.atoms[&v].clone();
+                match atom {
+                    BackboneAtom::Eq { lhs, rhs } => {
+                        if val {
+                            if let Err(e) = self.cc.assert_eq(&self.egraph, lhs, rhs, sat_raw) {
+                                if let Some(c) = mk_conflict_euf(e) {
+                                    break 'tfc Some(c);
+                                }
+                            }
+                        } else if let Err(e) =
+                            self.cc.assert_neq(&self.egraph, lhs, rhs, sat_raw)
+                        {
+                            if let Some(c) = mk_conflict_euf(e) {
+                                break 'tfc Some(c);
+                            }
+                        }
+                    }
+                    BackboneAtom::Leq { x, y, c } => {
+                        let res = if val {
+                            self.dl.assert_leq(x, y, c, sat_raw)
+                        } else {
+                            self.dl.assert_leq(y, x, -c - 1, sat_raw)
+                        };
+                        if let Err(e) = res {
+                            break 'tfc Some(mk_conflict_dl(e));
+                        }
+                    }
+                    BackboneAtom::Lt { x, y, c } => {
+                        let res = if val {
+                            self.dl.assert_leq(x, y, c - 1, sat_raw)
+                        } else {
+                            self.dl.assert_leq(y, x, -c, sat_raw)
+                        };
+                        if let Err(e) = res {
+                            break 'tfc Some(mk_conflict_dl(e));
+                        }
+                    }
+                }
+            }
+
+            // Nelson-Oppen fixed-point.
+            self.no_dl_expl.clear();
+            loop {
+                if let Some(conflict) =
+                    no_euf_to_dl(&self.dl_uf_pairs, &mut self.cc, &mut self.dl, &self.egraph)
+                {
+                    break 'tfc Some(conflict);
+                }
+                if let Err(e) = self.dl.check() {
+                    break 'tfc Some(mk_conflict_dl(e));
+                }
+                let tight_classes = self.dl.tight_equality_classes();
+                let mut any_new = false;
+                for i in 0..self.dl_no_check_pairs.len() {
+                    let (xi, xuid) = self.dl_no_check_pairs[i];
+                    for j in 0..self.dl_uf_pairs.len() {
+                        let (yi, yuid) = self.dl_uf_pairs[j];
+                        if xi == yi {
+                            continue;
+                        }
+                        if tight_classes[xi as usize] != tight_classes[yi as usize] {
+                            continue;
+                        }
+                        if self.cc.are_equal(xuid, yuid) {
+                            continue;
+                        }
+                        let mut dl_lits: Vec<u32> = Vec::new();
+                        if let Some(p) = self.dl.path_explanation(yi, xi) {
+                            dl_lits.extend(p);
+                        }
+                        if let Some(p) = self.dl.path_explanation(xi, yi) {
+                            dl_lits.extend(p);
+                        }
+                        let tag = dl_lits.first().copied().unwrap_or(0);
+                        let key = (xuid.min(yuid), xuid.max(yuid));
+                        self.no_dl_expl.insert(key, dl_lits.clone());
+                        if let Err(e) = self.cc.assert_eq(&self.egraph, xuid, yuid, tag) {
+                            if let Some(mut conflict) = mk_conflict_euf(e) {
+                                conflict.extend(
+                                    dl_lits.iter().map(|&raw| Literal::from_raw(raw).negate()),
+                                );
+                                conflict.sort_unstable();
+                                conflict.dedup();
+                                break 'tfc Some(conflict);
+                            }
+                        } else {
+                            any_new = true;
+                        }
+                    }
+                }
+                if !any_new {
+                    break;
+                }
+            }
+
+            // Bool-predicate congruence check.
+            let mut canon_map: rustc_hash::FxHashMap<
+                (String, Vec<ENodeId>),
+                (u32, Vec<ENodeId>, bool),
+            > = rustc_hash::FxHashMap::default();
+            for (&v, (fname, ids)) in &self.bool_pred_nodes {
+                if v as usize > model.num_vars() as usize {
+                    continue;
+                }
+                let val = model.value_of(v);
+                let canon: Vec<ENodeId> = ids.iter().map(|&id| self.cc.find(id)).collect();
+                let key = (fname.clone(), canon);
+                if let Some(&(other_v, ref other_ids, other_val)) = canon_map.get(&key) {
+                    let other_ids = other_ids.clone();
+                    if val != other_val {
+                        let lit_v =
+                            if val { Literal::positive(v) } else { Literal::negative(v) };
+                        let lit_o = if other_val {
+                            Literal::positive(other_v)
+                        } else {
+                            Literal::negative(other_v)
+                        };
+                        let mut conflict = vec![lit_v.negate(), lit_o.negate()];
+                        for (&ai, &aj) in ids.iter().zip(other_ids.iter()) {
+                            if ai != aj {
+                                let expl = self.cc.explain_equality(&self.egraph, ai, aj);
+                                for premise in expl.sat_lits() {
+                                    conflict.push(Literal::from_raw(premise).negate());
+                                }
+                            }
+                        }
+                        conflict.sort_unstable();
+                        conflict.dedup();
+                        break 'tfc Some(conflict);
+                    }
+                } else {
+                    canon_map.insert(key, (v, ids.clone(), val));
+                }
+            }
+
+            None
+        };
+
+        // Restore: put back the incremental CC and saved DL state.
+        self.cc = incremental_cc;
+        self.dl = dl_saved;
+        self.no_dl_expl = no_dl_expl_saved;
+
+        result
+    }
+
+    fn theory_final_check_preserves_state(&self) -> bool {
+        // theory_final_check swaps in a fresh CC (mem::replace) and clones DL for the
+        // check, then restores both. The incremental CC/DL state at the current level
+        // is intact after TFC, so the CDCL loop can safely UIP-backjump.
+        true
     }
 }
 
