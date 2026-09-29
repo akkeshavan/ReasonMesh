@@ -776,6 +776,15 @@ fn encode_bool(term: &Term, solver: &mut LiaCdclT) -> Result<Literal, ()> {
             };
             Ok(Literal::positive(v))
         }
+        TermInner::Eq(_, _) => {
+            // Non-arithmetic equality (e.g. two UF-sorted constants): model as a fresh
+            // unconstrained propositional atom. No congruence closure; this lets the
+            // formula structure remain intact so arithmetic assertions can still be
+            // encoded. Works correctly for problems where UNSAT comes from arithmetic
+            // alone (e.g. TwoSquares benchmarks with declare-sort S1 0).
+            let v = solver.alloc_sat();
+            Ok(Literal::positive(v))
+        }
         _ => Err(()),
     }
 }
