@@ -121,9 +121,12 @@ impl DiffLogicSolver {
     pub fn backtrack_to(&mut self, level: u32) {
         let target = if (level as usize) < self.level_lim.len() {
             self.level_lim[level as usize]
-        } else if level == 0 {
-            0 // Clear all edges; handles the case where level_lim is empty
         } else {
+            // Already at or below target level (level_lim has no entry for `level`),
+            // so there is nothing to undo.  This mirrors CongruenceClosure::backtrack_to.
+            // In particular, a second consecutive backtrack_to(0) call (e.g. the
+            // restart that follows a conflict-backjump that also landed at level 0)
+            // must not clear the level-0 edges that were preserved by the first call.
             return;
         };
         while self.edges.len() > target {

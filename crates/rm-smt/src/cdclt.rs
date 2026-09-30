@@ -752,7 +752,30 @@ struct CdclT {
     /// Full DL literal justification for N-O DL→EUF merges.
     /// Keyed by canonical (min_id, max_id) ENode pair. T-propagation consults this
     /// to emit complete theory lemmas rather than the truncated single-lit CC tag.
-    no_dl_expl: FxHashMap<(ENodeId, ENodeId), Vec<u32>>,
+    /// The u32 is the decision level at which the NO merge was made; used by
+    /// theory_backtrack to retain entries for merges that survive the backtrack.
+    no_dl_expl: FxHashMap<(ENodeId, ENodeId), (u32, Vec<u32>)>,
+    /// Secondary index: tag (raw lit = first DL lit stored as CC explain_parent
+    /// for a NO-derived merge) → (level, full_dl_lits). Used to supplement
+    /// cc.explain_equality chains that traverse NO-derived merges — those chains
+    /// return only the tag, but we need all the DL path lits.
+    no_dl_tag: FxHashMap<u32, (u32, Vec<u32>)>,
+    /// EUF→DL supplementation: tag (raw lit used as sat_lit for a DL edge asserted
+    /// by no_euf_to_dl) → (level, full_euf_lits). Used when dl.check() returns a
+    /// conflict involving an EUF-derived DL equality edge — the tag alone is not
+    /// sufficient, we need all the EUF justification lits.
+    no_euf_dl_tag: FxHashMap<u32, (u32, Vec<u32>)>,
+    /// Tracks which canonical (min,max) DL-var pairs already have NO-derived DL
+    /// edges, mapping to (level, tag). Prevents duplicate edge insertion across
+    /// NO-loop iterations and ensures no_euf_dl_tag[old_tag] is always refreshed
+    /// with the current no_dl_tag supplement even when the CC explanation's first
+    /// lit (i.e. the tag) changes between iterations.
+    no_euf_dl_pairs: FxHashMap<(u32, u32), (u32, u32)>,
+    /// Monotone counter for assigning unique internal tags to NO-derived EUF→DL
+    /// equality edges. These tags are NOT SAT variables — they are used as DL
+    /// edge sat_lit values only and are REPLACED (not kept) in supplement_dl_lits.
+    /// Starts at 1 << 28 to visually distinguish them from normal SAT vars.
+    next_no_tag: u32,
     /// Shared cancellation flag. The benchmark runner (or any timeout wrapper)
     /// sets this to true after the wall-clock deadline fires; the solve loop
     /// checks it once per iteration and returns Unknown promptly.
@@ -780,6 +803,10 @@ impl CdclT {
             arith_count: 0,
             uf_to_dl: FxHashMap::default(),
             no_dl_expl: FxHashMap::default(),
+            no_dl_tag: FxHashMap::default(),
+            no_euf_dl_tag: FxHashMap::default(),
+            no_euf_dl_pairs: FxHashMap::default(),
+            next_no_tag: 1 << 28,
             cancel,
         }
     }
@@ -880,13 +907,13 @@ impl TheorySolver for CdclT {
                 BackboneAtom::Eq { lhs, rhs } => {
                     if val {
                         if let Err(e) = self.cc.assert_eq(&self.egraph, lhs, rhs, sat_raw) {
-                            if let Some(conflict) = mk_conflict_euf(e) {
-                                return Err(conflict);
+                            if let Some(raw_c) = mk_conflict_euf(e) {
+                                return Err(supplement_euf_conflict(raw_c, &self.no_dl_tag));
                             }
                         }
                     } else if let Err(e) = self.cc.assert_neq(&self.egraph, lhs, rhs, sat_raw) {
-                        if let Some(conflict) = mk_conflict_euf(e) {
-                            return Err(conflict);
+                        if let Some(raw_c) = mk_conflict_euf(e) {
+                            return Err(supplement_euf_conflict(raw_c, &self.no_dl_tag));
                         }
                     }
                 }
@@ -897,7 +924,7 @@ impl TheorySolver for CdclT {
                         self.dl.assert_leq(y, x, -c - 1, sat_raw)
                     };
                     if let Err(e) = res {
-                        return Err(mk_conflict_dl(e));
+                        return Err(supplement_dl_conflict(mk_conflict_dl(e), &self.no_euf_dl_tag));
                     }
                 }
                 BackboneAtom::Lt { x, y, c } => {
@@ -907,7 +934,7 @@ impl TheorySolver for CdclT {
                         self.dl.assert_leq(y, x, -c, sat_raw)
                     };
                     if let Err(e) = res {
-                        return Err(mk_conflict_dl(e));
+                        return Err(supplement_dl_conflict(mk_conflict_dl(e), &self.no_euf_dl_tag));
                     }
                 }
             }
@@ -915,11 +942,17 @@ impl TheorySolver for CdclT {
 
         // Nelson-Oppen fixed-point: cycle EUF↔DL until no new merges appear.
         loop {
-            if let Some(conflict) = no_euf_to_dl(&self.dl_uf_pairs, &mut self.cc, &mut self.dl, &self.egraph) {
+            if let Some(conflict) = no_euf_to_dl(&self.dl_uf_pairs, &mut self.cc, &mut self.dl, &self.egraph, &self.no_dl_tag, &mut self.no_euf_dl_tag, &mut self.no_euf_dl_pairs, &mut self.next_no_tag, level) {
                 return Err(conflict);
             }
             if let Err(e) = self.dl.check() {
-                return Err(mk_conflict_dl(e));
+                let raw = match &e { DlError::Conflict(c) => c.sat_lits.clone(), _ => vec![] };
+                let supp = supplement_dl_lits(&raw, &self.no_euf_dl_tag);
+                let conflict: Vec<Literal> = supp.into_iter()
+                    .filter(|&r| r != 0)
+                    .map(|r| Literal::from_raw(r).negate())
+                    .collect();
+                return Err(conflict);
             }
             let tight_classes = self.dl.tight_equality_classes();
             let mut any_new = false;
@@ -930,15 +963,24 @@ impl TheorySolver for CdclT {
                     if xi == yi { continue; }
                     if tight_classes[xi as usize] != tight_classes[yi as usize] { continue; }
                     if self.cc.are_equal(xuid, yuid) { continue; }
-                    let mut dl_lits: Vec<u32> = Vec::new();
-                    if let Some(p) = self.dl.path_explanation(yi, xi) { dl_lits.extend(p); }
-                    if let Some(p) = self.dl.path_explanation(xi, yi) { dl_lits.extend(p); }
+                    let mut dl_lits_raw: Vec<u32> = Vec::new();
+                    if let Some(p) = self.dl.path_explanation(yi, xi) { dl_lits_raw.extend(p); }
+                    if let Some(p) = self.dl.path_explanation(xi, yi) { dl_lits_raw.extend(p); }
+                    // Pre-expand: replace any EUF→DL fresh_tags in the DL path with their
+                    // EUF justification so that no_dl_tag values never contain internal tags.
+                    let dl_lits: Vec<u32> = supplement_dl_lits(&dl_lits_raw, &self.no_euf_dl_tag)
+                        .into_iter().filter(|&r| r != 0).collect();
                     let tag = dl_lits.first().copied().unwrap_or(0);
                     let key = (xuid.min(yuid), xuid.max(yuid));
-                    self.no_dl_expl.insert(key, dl_lits.clone());
+                    self.no_dl_expl.insert(key, (level, dl_lits.clone()));
+                    if tag != 0 {
+                        self.no_dl_tag.insert(tag, (level, dl_lits.clone()));
+                    }
                     if let Err(e) = self.cc.assert_eq(&self.egraph, xuid, yuid, tag) {
-                        if let Some(mut conflict) = mk_conflict_euf(e) {
-                            conflict.extend(dl_lits.iter().map(|&r| Literal::from_raw(r).negate()));
+                        if let Some(raw_c) = mk_conflict_euf(e) {
+                            let mut conflict = supplement_euf_conflict(raw_c, &self.no_dl_tag);
+                            let dl_supp = supplement_dl_lits(&dl_lits, &self.no_euf_dl_tag);
+                            conflict.extend(dl_supp.iter().filter(|&&r| r != 0).map(|&r| Literal::from_raw(r).negate()));
                             conflict.sort_unstable();
                             conflict.dedup();
                             return Err(conflict);
@@ -984,8 +1026,9 @@ impl TheorySolver for CdclT {
                     for (&ai, &aj) in ids.iter().zip(other_ids.iter()) {
                         if ai != aj {
                             let expl = self.cc.explain_equality(&self.egraph, ai, aj);
-                            for premise in expl.sat_lits() {
-                                conflict.push(Literal::from_raw(premise).negate());
+                            let raw_supp = supplement_raw_lits(&expl.sat_lits(), &self.no_dl_tag);
+                            for raw in raw_supp {
+                                if raw != 0 { conflict.push(Literal::from_raw(raw).negate()); }
                             }
                         }
                     }
@@ -1007,15 +1050,20 @@ impl TheorySolver for CdclT {
         for (&var, atom) in &self.atoms {
             if let BackboneAtom::Eq { lhs, rhs } = atom {
                 if assigned.contains_key(&var) {
-                    continue; // Already assigned by SAT
+                    continue;
                 }
                 if self.cc.are_equal(*lhs, *rhs) {
-                    // Prefer the full DL lit list for N-O-derived merges.
                     let key = ((*lhs).min(*rhs), (*lhs).max(*rhs));
-                    let sat_lits: Vec<u32> = if let Some(dl_lits) = self.no_dl_expl.get(&key) {
-                        dl_lits.iter().copied().filter(|&r| r != 0).collect()
+                    let sat_lits: Vec<u32> = if let Some((_, dl_lits)) = self.no_dl_expl.get(&key) {
+                        supplement_dl_lits(dl_lits, &self.no_euf_dl_tag)
+                            .into_iter().filter(|&r| r != 0).collect()
                     } else {
-                        self.cc.explain_equality(&self.egraph, *lhs, *rhs).sat_lits()
+                        // IMPORTANT: Do NOT use dl.path_explanation here. The CC equality
+                        // may be from pure EUF (direct Eq atom or congruence), and using
+                        // dl.path_explanation would give a DL-based justification that
+                        // doesn't represent the actual reason — producing unsound lemmas.
+                        let raw_chain = self.cc.explain_equality(&self.egraph, *lhs, *rhs).sat_lits();
+                        supplement_raw_lits(&raw_chain, &self.no_dl_tag)
                     };
                     if sat_lits.is_empty() {
                         if lhs == rhs {
@@ -1031,14 +1079,19 @@ impl TheorySolver for CdclT {
                 }
             }
         }
-
         Ok(lemmas)
     }
 
     fn theory_backtrack(&mut self, target_level: u32) {
         self.cc.backtrack_to(target_level);
         self.dl.backtrack_to(target_level);
-        self.no_dl_expl.clear();
+        // Retain only entries for NO merges that survive the backtrack (level ≤ target).
+        // Merges at levels > target_level are undone by cc.backtrack_to above, so their
+        // entries would refer to DL lits that are no longer in the trail.
+        self.no_dl_expl.retain(|_, (entry_level, _)| *entry_level <= target_level);
+        self.no_dl_tag.retain(|_, (entry_level, _)| *entry_level <= target_level);
+        self.no_euf_dl_tag.retain(|_, (entry_level, _)| *entry_level <= target_level);
+        self.no_euf_dl_pairs.retain(|_, (entry_level, _)| *entry_level <= target_level);
     }
 
     fn theory_final_check(&mut self, model: &rm_sat::Model) -> Option<Vec<Literal>> {
@@ -1055,6 +1108,11 @@ impl TheorySolver for CdclT {
         // theory_backtrack at the UIP level operates on the correct incremental state.
         let dl_saved = self.dl.clone();
         let no_dl_expl_saved = self.no_dl_expl.clone();
+        let no_dl_tag_saved = self.no_dl_tag.clone();
+        let no_euf_dl_tag_saved = self.no_euf_dl_tag.clone();
+        // TFC runs on a fresh DL/CC from scratch; give it its own no_euf_dl_pairs
+        // so it doesn't interfere with the incremental state's dedup tracking.
+        let mut tfc_no_euf_dl_pairs: FxHashMap<(u32, u32), (u32, u32)> = FxHashMap::default();
 
         let incremental_cc = {
             let n = self.egraph.num_nodes();
@@ -1088,15 +1146,15 @@ impl TheorySolver for CdclT {
                     BackboneAtom::Eq { lhs, rhs } => {
                         if val {
                             if let Err(e) = self.cc.assert_eq(&self.egraph, lhs, rhs, sat_raw) {
-                                if let Some(c) = mk_conflict_euf(e) {
-                                    break 'tfc Some(c);
+                                if let Some(raw_c) = mk_conflict_euf(e) {
+                                    break 'tfc Some(supplement_euf_conflict(raw_c, &self.no_dl_tag));
                                 }
                             }
                         } else if let Err(e) =
                             self.cc.assert_neq(&self.egraph, lhs, rhs, sat_raw)
                         {
-                            if let Some(c) = mk_conflict_euf(e) {
-                                break 'tfc Some(c);
+                            if let Some(raw_c) = mk_conflict_euf(e) {
+                                break 'tfc Some(supplement_euf_conflict(raw_c, &self.no_dl_tag));
                             }
                         }
                     }
@@ -1107,7 +1165,7 @@ impl TheorySolver for CdclT {
                             self.dl.assert_leq(y, x, -c - 1, sat_raw)
                         };
                         if let Err(e) = res {
-                            break 'tfc Some(mk_conflict_dl(e));
+                            break 'tfc Some(supplement_dl_conflict(mk_conflict_dl(e), &self.no_euf_dl_tag));
                         }
                     }
                     BackboneAtom::Lt { x, y, c } => {
@@ -1117,7 +1175,7 @@ impl TheorySolver for CdclT {
                             self.dl.assert_leq(y, x, -c, sat_raw)
                         };
                         if let Err(e) = res {
-                            break 'tfc Some(mk_conflict_dl(e));
+                            break 'tfc Some(supplement_dl_conflict(mk_conflict_dl(e), &self.no_euf_dl_tag));
                         }
                     }
                 }
@@ -1127,12 +1185,18 @@ impl TheorySolver for CdclT {
             self.no_dl_expl.clear();
             loop {
                 if let Some(conflict) =
-                    no_euf_to_dl(&self.dl_uf_pairs, &mut self.cc, &mut self.dl, &self.egraph)
+                    no_euf_to_dl(&self.dl_uf_pairs, &mut self.cc, &mut self.dl, &self.egraph, &self.no_dl_tag, &mut self.no_euf_dl_tag, &mut tfc_no_euf_dl_pairs, &mut self.next_no_tag, 0)
                 {
                     break 'tfc Some(conflict);
                 }
                 if let Err(e) = self.dl.check() {
-                    break 'tfc Some(mk_conflict_dl(e));
+                    let raw = match &e { DlError::Conflict(c) => c.sat_lits.clone(), _ => vec![] };
+                    let supp = supplement_dl_lits(&raw, &self.no_euf_dl_tag);
+                    let conflict: Vec<Literal> = supp.into_iter()
+                        .filter(|&r| r != 0)
+                        .map(|r| Literal::from_raw(r).negate())
+                        .collect();
+                    break 'tfc Some(conflict);
                 }
                 let tight_classes = self.dl.tight_equality_classes();
                 let mut any_new = false;
@@ -1149,20 +1213,26 @@ impl TheorySolver for CdclT {
                         if self.cc.are_equal(xuid, yuid) {
                             continue;
                         }
-                        let mut dl_lits: Vec<u32> = Vec::new();
+                        let mut dl_lits_raw: Vec<u32> = Vec::new();
                         if let Some(p) = self.dl.path_explanation(yi, xi) {
-                            dl_lits.extend(p);
+                            dl_lits_raw.extend(p);
                         }
                         if let Some(p) = self.dl.path_explanation(xi, yi) {
-                            dl_lits.extend(p);
+                            dl_lits_raw.extend(p);
                         }
+                        let dl_lits: Vec<u32> = supplement_dl_lits(&dl_lits_raw, &self.no_euf_dl_tag)
+                            .into_iter().filter(|&r| r != 0).collect();
                         let tag = dl_lits.first().copied().unwrap_or(0);
                         let key = (xuid.min(yuid), xuid.max(yuid));
-                        self.no_dl_expl.insert(key, dl_lits.clone());
+                        self.no_dl_expl.insert(key, (0, dl_lits.clone())); // level 0: this block is always saved/restored
+                        if tag != 0 { self.no_dl_tag.insert(tag, (0, dl_lits.clone())); }
                         if let Err(e) = self.cc.assert_eq(&self.egraph, xuid, yuid, tag) {
-                            if let Some(mut conflict) = mk_conflict_euf(e) {
+                            if let Some(raw_c) = mk_conflict_euf(e) {
+                                let mut conflict = supplement_euf_conflict(raw_c, &self.no_dl_tag);
+                                // Supplement DL path lits with full EUF chains for EUF→DL tags.
+                                let dl_supp = supplement_dl_lits(&dl_lits, &self.no_euf_dl_tag);
                                 conflict.extend(
-                                    dl_lits.iter().map(|&raw| Literal::from_raw(raw).negate()),
+                                    dl_supp.iter().filter(|&&r| r != 0).map(|&r| Literal::from_raw(r).negate()),
                                 );
                                 conflict.sort_unstable();
                                 conflict.dedup();
@@ -1204,8 +1274,9 @@ impl TheorySolver for CdclT {
                         for (&ai, &aj) in ids.iter().zip(other_ids.iter()) {
                             if ai != aj {
                                 let expl = self.cc.explain_equality(&self.egraph, ai, aj);
-                                for premise in expl.sat_lits() {
-                                    conflict.push(Literal::from_raw(premise).negate());
+                                let raw_supp = supplement_raw_lits(&expl.sat_lits(), &self.no_dl_tag);
+                                for raw in raw_supp {
+                                    if raw != 0 { conflict.push(Literal::from_raw(raw).negate()); }
                                 }
                             }
                         }
@@ -1221,10 +1292,12 @@ impl TheorySolver for CdclT {
             None
         };
 
-        // Restore: put back the incremental CC and saved DL state.
+        // Restore: put back the incremental CC and saved DL/NO state.
         self.cc = incremental_cc;
         self.dl = dl_saved;
         self.no_dl_expl = no_dl_expl_saved;
+        self.no_dl_tag = no_dl_tag_saved;
+        self.no_euf_dl_tag = no_euf_dl_tag_saved;
 
         result
     }
@@ -1276,14 +1349,131 @@ fn mk_conflict_dl(e: DlError) -> Vec<Literal> {
         .collect()
 }
 
+/// Supplement a slice of raw EUF explanation lits with extra DL lits for any
+/// NO-derived tags present. `no_dl_tag` maps a tag (first DL lit stored as
+/// explain_parent in CC for a NO-derived merge) to the full DL path lits.
+/// Returns the combined, deduplicated raw lits.
+fn supplement_raw_lits(
+    raw_lits: &[u32],
+    no_dl_tag: &FxHashMap<u32, (u32, Vec<u32>)>,
+) -> Vec<u32> {
+    let mut result = raw_lits.to_vec();
+    for &r in raw_lits {
+        if r != 0 {
+            if let Some((_, dl_lits)) = no_dl_tag.get(&r) {
+                for &extra in dl_lits {
+                    if extra != 0 {
+                        result.push(extra);
+                    }
+                }
+            }
+        }
+    }
+    result.sort_unstable();
+    result.dedup();
+    result
+}
+
+/// Supplement a conflict clause (already negated lits from mk_conflict_euf) with
+/// extra DL path lits for any DL→EUF tags present. Each conflict lit `¬raw` is
+/// checked: if `raw` is a DL→EUF CC explain_parent in `no_dl_tag`, the full DL
+/// path lits are added (negated) to the conflict.
+fn supplement_euf_conflict(
+    mut conflict: Vec<Literal>,
+    no_dl_tag: &FxHashMap<u32, (u32, Vec<u32>)>,
+) -> Vec<Literal> {
+    // Collect extra negated DL lits for any DL→EUF tags in the current conflict.
+    let extra: Vec<Literal> = conflict
+        .iter()
+        .filter_map(|&lit| {
+            let raw = lit.negate().raw();
+            no_dl_tag.get(&raw).map(|(_, dl_lits)| {
+                dl_lits
+                    .iter()
+                    .filter(|&&r| r != 0)
+                    .map(|&r| Literal::from_raw(r).negate())
+                    .collect::<Vec<_>>()
+            })
+        })
+        .flatten()
+        .collect();
+    conflict.extend(extra);
+    conflict.sort_unstable();
+    conflict.dedup();
+    conflict
+}
+
+/// Supplement a DL conflict clause (already negated lits from mk_conflict_dl) with
+/// full EUF justifications for any EUF→DL assertion tags present.
+fn supplement_dl_conflict(
+    conflict: Vec<Literal>,
+    no_euf_dl_tag: &FxHashMap<u32, (u32, Vec<u32>)>,
+) -> Vec<Literal> {
+    let raw: Vec<u32> = conflict.iter().map(|&l| l.negate().raw()).collect();
+    let supp = supplement_dl_lits(&raw, no_euf_dl_tag);
+    supp.into_iter()
+        .filter(|&r| r != 0)
+        .map(|r| Literal::from_raw(r).negate())
+        .collect()
+}
+
+/// Supplement a slice of raw DL conflict lits with full EUF justifications for any
+/// EUF→DL assertion tags present. `no_euf_dl_tag` maps an EUF→DL edge tag to the
+/// full EUF chain that justified the equality. Returns the combined, deduplicated
+/// raw lits.
+fn supplement_dl_lits(
+    raw_lits: &[u32],
+    no_euf_dl_tag: &FxHashMap<u32, (u32, Vec<u32>)>,
+) -> Vec<u32> {
+    // REPLACE internal NO-tags with their EUF justification lits (don't keep the tag
+    // itself — it is a DL-internal identifier, not a SAT atom, and must not appear in
+    // the conflict clause).  Non-tag lits (real SAT atoms) are kept as-is.
+    let mut result = Vec::with_capacity(raw_lits.len());
+    for &r in raw_lits {
+        if r != 0 {
+            if let Some((_, euf_lits)) = no_euf_dl_tag.get(&r) {
+                result.extend(euf_lits.iter().copied().filter(|&e| e != 0));
+            } else {
+                result.push(r);
+            }
+        }
+    }
+    result.sort_unstable();
+    result.dedup();
+    result
+}
+
+
 /// Nelson-Oppen EUF → DL: if EUF has merged two DL-linked UF nodes, assert their
 /// DL equality and return a conflict clause if DL rejects the merge.
+///
+/// Also populates `no_euf_dl_tag` so that subsequent `dl.check()` conflicts can
+/// be supplemented with the full EUF justification for each EUF→DL assertion.
 fn no_euf_to_dl(
     dl_uf_pairs: &[(u32, ENodeId)],
     cc: &mut CongruenceClosure,
     dl: &mut DiffLogicSolver,
     egraph: &EGraph,
+    no_dl_tag: &FxHashMap<u32, (u32, Vec<u32>)>,
+    no_euf_dl_tag: &mut FxHashMap<u32, (u32, Vec<u32>)>,
+    no_euf_dl_pairs: &mut FxHashMap<(u32, u32), (u32, u32)>,
+    next_sat_lit: &mut u32,
+    level: u32,
 ) -> Option<Vec<Literal>> {
+    // Two-pass approach to keep no_euf_dl_tag sound:
+    //
+    // Pass 1: for every EUF-equal pair, recompute euf_lits with the current
+    //   no_dl_tag and immediately refresh no_euf_dl_tag for existing pairs.
+    //   After pass 1, every existing pair's tag entry reflects the latest
+    //   DL supplement — so any conflict that fires in pass 2 can safely use it.
+    //
+    // Pass 2: for pairs that are newly EUF-equal (not yet in no_euf_dl_pairs),
+    //   assert DL equality edges.  Conflicts here will supplement using the
+    //   fully-refreshed no_euf_dl_tag from pass 1.
+
+    // new_pairs: (xi, xuid, yi, yuid, euf_lits, pair_key)
+    let mut new_pairs: Vec<(u32, ENodeId, u32, ENodeId, Vec<u32>, (u32, u32))> = Vec::new();
+
     for i in 0..dl_uf_pairs.len() {
         for j in (i + 1)..dl_uf_pairs.len() {
             let (xi, xuid) = dl_uf_pairs[i];
@@ -1292,22 +1482,70 @@ fn no_euf_to_dl(
                 continue;
             }
             let expl = cc.explain_equality(egraph, xuid, yuid);
-            let euf_lits: Vec<u32> = expl.sat_lits();
-            let tag = euf_lits.iter().copied().find(|&r| r != 0).unwrap_or(0);
-            if let Err(e) = dl.assert_leq(xi, yi, 0, tag) {
-                let mut conflict = mk_conflict_dl(e);
-                conflict.extend(euf_lits.iter().filter(|&&r| r != 0).map(|&r| Literal::from_raw(r).negate()));
-                conflict.sort_unstable();
-                conflict.dedup();
-                return Some(conflict);
+            let raw_euf = expl.sat_lits();
+            let euf_lits_raw = supplement_raw_lits(&raw_euf, no_dl_tag);
+            // Pre-expand: replace any embedded EUF→DL fresh_tags in euf_lits with their
+            // own EUF justification.  This prevents internal tags from leaking into
+            // conflict clauses where they would be treated as SAT literals.
+            let euf_lits: Vec<u32> = supplement_dl_lits(&euf_lits_raw, no_euf_dl_tag)
+                .into_iter().filter(|&r| r != 0).collect();
+            let pair_key = (xi.min(yi), xi.max(yi));
+
+            if let Some(&(pair_level, old_tag)) = no_euf_dl_pairs.get(&pair_key) {
+                // Existing pair: refresh no_euf_dl_tag[old_tag] with current euf_lits.
+                // Keep the original level so the entry lives and dies with the DL edge.
+                if old_tag != 0 {
+                    no_euf_dl_tag.insert(old_tag, (pair_level, euf_lits));
+                }
+            } else {
+                new_pairs.push((xi, xuid, yi, yuid, euf_lits, pair_key));
             }
-            if let Err(e) = dl.assert_leq(yi, xi, 0, tag) {
-                let mut conflict = mk_conflict_dl(e);
-                conflict.extend(euf_lits.iter().filter(|&&r| r != 0).map(|&r| Literal::from_raw(r).negate()));
-                conflict.sort_unstable();
-                conflict.dedup();
-                return Some(conflict);
-            }
+        }
+    }
+
+    // Pass 2: add DL equality edges for newly-equal pairs.
+    // no_euf_dl_tag is now fully up-to-date for every existing pair.
+    //
+    // Each new pair gets a UNIQUE fresh tag (not derived from euf_lits) so that two
+    // different pairs with identical euf_lits never collide on the same tag key.
+    // A collision would cause one pair's no_euf_dl_tag entry to overwrite the other's;
+    // after backtracking removes the newer entry the older DL edge would be unjustified.
+    for (xi, _xuid, yi, _yuid, euf_lits, pair_key) in new_pairs {
+        // When euf_lits is non-empty use a fresh tag (unique identifier for the DL edge).
+        // When euf_lits is empty the equality is unconditional (level-0 DL→EUF merge with
+        // no SAT justification); use sat_lit=0 so the edge is always valid and its 0-lit
+        // gets filtered from any conflict.  Never skip unconditional edges — omitting them
+        // would silently drop constraints and cause false SAT.
+        let (fresh_tag, record_in_tag_map) = if euf_lits.iter().any(|&r| r != 0) {
+            let t = *next_sat_lit;
+            *next_sat_lit += 1;
+            (t, true)
+        } else {
+            (0u32, false)
+        };
+        if record_in_tag_map {
+            no_euf_dl_tag.insert(fresh_tag, (level, euf_lits.clone()));
+        }
+        no_euf_dl_pairs.insert(pair_key, (level, fresh_tag));
+
+        if let Err(e) = dl.assert_leq(xi, yi, 0, fresh_tag) {
+            let raw_dl = match &e { DlError::Conflict(c) => c.sat_lits.clone(), _ => vec![] };
+            // supplement_dl_lits replaces internal tags; euf_lits is already pre-expanded.
+            let mut supp = supplement_dl_lits(&raw_dl, no_euf_dl_tag);
+            supp.extend_from_slice(&euf_lits);
+            supp.sort_unstable();
+            supp.dedup();
+            let conflict: Vec<Literal> = supp.into_iter().filter(|&r| r != 0).map(|r| Literal::from_raw(r).negate()).collect();
+            return Some(conflict);
+        }
+        if let Err(e) = dl.assert_leq(yi, xi, 0, fresh_tag) {
+            let raw_dl = match &e { DlError::Conflict(c) => c.sat_lits.clone(), _ => vec![] };
+            let mut supp = supplement_dl_lits(&raw_dl, no_euf_dl_tag);
+            supp.extend_from_slice(&euf_lits);
+            supp.sort_unstable();
+            supp.dedup();
+            let conflict: Vec<Literal> = supp.into_iter().filter(|&r| r != 0).map(|r| Literal::from_raw(r).negate()).collect();
+            return Some(conflict);
         }
     }
     None
