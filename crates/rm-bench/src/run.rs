@@ -18,7 +18,7 @@ use rm_akx::{ExportPolicy, ImportPolicy, WorkBudget};
 use rm_proof::model::check_dimacs_model;
 use rm_gpu;
 use rm_sat::{parse_dimacs, CdclSolver, DimacsCnf, SolveResult};
-use rm_smt::{SmtSolver, SmtStatus, SmtResult};
+use rm_smt::{SmtSolver, SmtStatus, SmtResult, SmtWorkerConfig, SmtWorkerOutcome, run_smt_pool};
 use rm_telemetry::{EventKind, Outcome, RunMeta, TraceError, TraceWriter};
 use rm_worker::{Problem as WorkerProblem, WorkerConfig, WorkerOutcome, WorkerPool, WorkerStats};
 use std::collections::HashMap;
@@ -307,13 +307,45 @@ fn solve_smt_problem(manifest: &Manifest, problem: &Problem) -> Result<ProblemRe
 
     let timeout = Duration::from_secs(manifest.solver.timeout_secs);
     let max_conflicts = Some(manifest.solver.timeout_secs.saturating_mul(500_000));
+    let num_workers = manifest.solver.workers.max(1) as usize;
 
-    let (outcome, timed_out) = {
-        // Create the cancellation flag before spawning so the main thread can
-        // signal the solver thread to stop once the deadline fires.  The spawned
-        // thread is NOT joined — we move on when recv_timeout returns — but
-        // setting cancel=true lets the solver exit its loop promptly instead of
-        // running (and allocating) until the theory-iteration cap.
+    let (outcome, timed_out) = if num_workers > 1 {
+        // Parallel CDCL(T) path: N workers on a shared AKX bus.
+        let (tx, rx) = std::sync::mpsc::channel();
+        let text = input.clone();
+        let clause_sharing = manifest.solver.clause_sharing;
+        std::thread::spawn(move || {
+            let cfg = SmtWorkerConfig {
+                num_workers,
+                export_policy: if clause_sharing {
+                    rm_akx::ExportPolicy::default()
+                } else {
+                    rm_akx::ExportPolicy { max_items: 0, ..rm_akx::ExportPolicy::default() }
+                },
+                ..SmtWorkerConfig::default()
+            };
+            let outcomes = run_smt_pool(&text, cfg, Some(timeout));
+            let _ = tx.send(outcomes);
+        });
+        let recv_result = rx.recv_timeout(timeout + Duration::from_secs(5));
+        match recv_result {
+            Ok(outcomes) => {
+                let is_unsat = outcomes.iter().any(|o| matches!(o, SmtWorkerOutcome::Unsat { .. }));
+                let is_sat   = outcomes.iter().any(|o| matches!(o, SmtWorkerOutcome::Sat { .. }));
+                let elapsed = start.elapsed();
+                let timed_out = elapsed >= timeout;
+                if is_unsat {
+                    (Outcome::Unsat, false)
+                } else if is_sat {
+                    (Outcome::Sat, false)
+                } else {
+                    (Outcome::Unknown, timed_out)
+                }
+            }
+            Err(_) => (Outcome::Unknown, true),
+        }
+    } else {
+        // Single-threaded path (original).
         let cancel = Arc::new(AtomicBool::new(false));
         let cancel_for_thread = cancel.clone();
         let input_arc = Arc::new(input);
@@ -326,7 +358,6 @@ fn solve_smt_problem(manifest: &Manifest, problem: &Problem) -> Result<ProblemRe
         });
         let recv_result = rx.recv_timeout(timeout);
         if recv_result.is_err() {
-            // Deadline fired (or sender disconnected). Signal the thread to stop.
             cancel.store(true, Ordering::Relaxed);
         }
         let result = recv_result.ok().and_then(|r| r.ok());
