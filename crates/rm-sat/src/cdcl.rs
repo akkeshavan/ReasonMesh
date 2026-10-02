@@ -264,6 +264,13 @@ pub struct CdclSolver {
     /// When None, the existing sequential CPU walk_phase is used unchanged.
     gpu: Option<Box<dyn rm_gpu::GpuAccelerator>>,
 
+    /// Consecutive restarts where walk_phase made zero improvement to the
+    /// polarity score.  Once this reaches WALK_GIVE_UP we stop calling the
+    /// walk entirely for this instance — it's almost certainly UNSAT and the
+    /// walk is pure overhead (CPU: ~50μs/restart × thousands of restarts;
+    /// GPU: ~1-2ms/restart × thousands of restarts).
+    walk_no_improve: u32,
+
     // XOR/parity reasoning (GF(2) unit propagation).
     // Populated once after BVE by scanning the clause DB for k=2,3 XOR patterns.
     xor_clauses: Vec<XorClause>,
@@ -289,8 +296,8 @@ impl CdclSolver {
             trail_buf: Vec::new(),
             luby_u: 1,
             luby_v: 1,
-            luby_scale: 350,               // tighter Luby intervals (was 512)
-            next_restart_conflicts: 350,
+            luby_scale: 25,
+            next_restart_conflicts: 25,
             lbd_fast_ema: 0.0,
             lbd_slow_ema: 0.0,
             conflicts_at_last_restart: 0,
@@ -327,6 +334,7 @@ impl CdclSolver {
             bve_eliminated: Vec::new(),
             bve_done: false,
             gpu: None,
+            walk_no_improve: 0,
             xor_clauses: Vec::new(),
             xor_init_done: false,
         }
@@ -1788,13 +1796,14 @@ impl CdclSolver {
         if self.mode != SolverMode::Focus {
             return false;
         }
-        // Require at least 500 conflicts since last restart before firing EMA.
-        // The slow EMA (α=1e-5) needs ~70k conflicts to converge; during warm-up
-        // lbd_fast >> lbd_slow always, so the raw ratio check would fire constantly
-        // without this guard.
+        // Require at least 50 conflicts since last restart before firing EMA.
+        // Guard of 50 (down from 500) enables kissat-style aggressive restarts
+        // in Focus mode every ~50 conflicts. The 0.8 threshold fires whenever
+        // fast ≈ slow (almost always after warmup) so acts as a fixed 50-conflict
+        // interval, keeping Focus restarts as dense as kissat's inner schedule.
         let conflicts_since = self.conflicts.saturating_sub(self.conflicts_at_last_restart);
         self.lbd_slow_ema > 0.0
-            && conflicts_since >= 500
+            && conflicts_since >= 50
             && self.lbd_fast_ema > self.lbd_slow_ema * 0.8
     }
 
@@ -1811,7 +1820,20 @@ impl CdclSolver {
         }
         // Target phase walk: only in Stable mode so UNSAT instances are not
         // penalised by local search that can never find a satisfying assignment.
-        if self.mode == SolverMode::Stable && self.assumption_floor == 0 {
+        // For GPU walk (≥2000 vars): disable after WALK_GIVE_UP non-improving
+        // calls — each Metal round-trip costs ~1-2ms so accumulation matters.
+        // For CPU walk (<2000 vars): always run — overhead is ~50μs/restart
+        // (negligible), and disabling it kills phase guidance on hard SAT
+        // instances where the walk only improves after many restarts.
+        const GPU_MIN_VARS: u32 = 2000;
+        const WALK_GIVE_UP: u32 = 50;
+        let skip_walk = self.gpu.is_some()
+            && self.num_vars >= GPU_MIN_VARS
+            && self.walk_no_improve >= WALK_GIVE_UP;
+        if self.mode == SolverMode::Stable
+            && self.assumption_floor == 0
+            && !skip_walk
+        {
             self.walk_phase();
         }
         self.backtrack_and_reschedule(self.assumption_floor);
@@ -1836,11 +1858,7 @@ impl CdclSolver {
         // Luby schedule: 4× wider intervals in Stable mode so the walk has
         // more conflicts to work with between restarts.
         let next = luby_next(&mut self.luby_u, &mut self.luby_v);
-        let effective_scale = if self.mode == SolverMode::Stable {
-            self.luby_scale * 4
-        } else {
-            self.luby_scale
-        };
+        let effective_scale = self.luby_scale;
         self.next_restart_conflicts = self.conflicts + next * effective_scale;
 
         // Run inprocessing every INPROCESS_INTERVAL conflicts
@@ -2305,16 +2323,28 @@ impl CdclSolver {
         if self.assumption_floor > 0 {
             return;
         }
-        if self.gpu.is_some() {
-            self.walk_phase_gpu();
+        // Metal/CUDA round-trip overhead is ~1-2ms per call (buffer alloc, command
+        // buffer encode, waitUntilCompleted, 9 buffer deallocs).  On instances with
+        // < 2000 vars that overhead dwarfs the actual GPU compute time and makes RM
+        // 3-5× slower than a single-threaded CPU solver.  Fall back to CPU walk for
+        // small instances; GPU pays off once the shader compute time exceeds ~2ms.
+        const GPU_MIN_VARS: u32 = 2000;
+        let improved = if self.gpu.is_some() && self.num_vars >= GPU_MIN_VARS {
+            self.walk_phase_gpu()
         } else {
-            self.walk_phase_cpu();
+            self.walk_phase_cpu()
+        };
+        if improved {
+            self.walk_no_improve = 0;
+        } else {
+            self.walk_no_improve = self.walk_no_improve.saturating_add(1);
         }
     }
 
     /// GPU-accelerated walk: dispatches 10 000 independent WalkSAT trajectories
     /// to the Metal (or CUDA) backend and writes back the best polarity found.
-    fn walk_phase_gpu(&mut self) {
+    /// Returns true if the polarity was updated (sat_count improved).
+    fn walk_phase_gpu(&mut self) -> bool {
         let n = self.num_vars as usize;
         let mut gpu_clauses: Vec<GpuClause> = Vec::new();
         self.db.for_each_clause(2, |_, _, _, lits| {
@@ -2328,7 +2358,7 @@ impl CdclSolver {
             gpu_clauses.push(GpuClause { lits: dimacs });
         });
         if gpu_clauses.is_empty() {
-            return;
+            return false;
         }
 
         let initial_polarity = self.polarity.clone();
@@ -2360,6 +2390,9 @@ impl CdclSolver {
             for v in 1..=n {
                 self.polarity[v] = result.polarity[v];
             }
+            true
+        } else {
+            false
         }
     }
 
@@ -2373,9 +2406,10 @@ impl CdclSolver {
     ///
     /// Called once per restart, after phase saving and before backtracking.
     /// Has no effect when assumption_floor > 0 (incremental solving context).
-    fn walk_phase_cpu(&mut self) {
+    /// Returns true if the polarity table was updated (walk found improvement).
+    fn walk_phase_cpu(&mut self) -> bool {
         if self.assumption_floor > 0 {
-            return;
+            return false;
         }
         let n = self.num_vars as usize;
         let max_steps = n * 16;
@@ -2389,7 +2423,7 @@ impl CdclSolver {
         });
         let nc = clauses.len();
         if nc == 0 {
-            return;
+            return false;
         }
 
         // Occurrence lists: literal raw → list of clause indices (u32 to save memory).
@@ -2575,6 +2609,9 @@ impl CdclSolver {
             for v in 1..=n {
                 self.polarity[v] = best_phase[v];
             }
+            true
+        } else {
+            false
         }
     }
 

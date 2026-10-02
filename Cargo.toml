@@ -81,3 +81,8 @@ panic = "abort"
 [profile.bench]
 inherits = "release"
 debug = true
+
+[profile.profiling]
+inherits = "release"
+debug = true
+strip = false

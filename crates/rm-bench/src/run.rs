@@ -777,6 +777,26 @@ fn wait_or_kill(child: &mut std::process::Child, deadline: Instant) -> bool {
     }
 }
 
+/// Strip the SATLIB `%\n0\n` trailer that some files append after the last
+/// DIMACS clause. CaDiCaL and Kissat abort on `%`; Z3 solves but prints a
+/// stderr error. Returns a cleaned temp-file path (caller must delete), or
+/// None if the file has no `%` trailer.
+fn make_clean_cnf(cnf_path: &Path) -> Option<std::path::PathBuf> {
+    let content = std::fs::read_to_string(cnf_path).ok()?;
+    if !content.contains("\n%") && !content.starts_with('%') {
+        return None;
+    }
+    let cleaned: String = content
+        .lines()
+        .take_while(|l| !l.starts_with('%'))
+        .flat_map(|l| std::iter::once(l).chain(std::iter::once("\n")))
+        .collect();
+    let fname = cnf_path.file_name().and_then(|n| n.to_str()).unwrap_or("tmp");
+    let tmp = std::env::temp_dir().join(format!("rm_bench_clean_{fname}"));
+    std::fs::write(&tmp, cleaned).ok()?;
+    Some(tmp)
+}
+
 /// Run one external baseline solver on a single CNF file and return its verdict
 /// and wall time. Invocation: `{binary} {cnf_path} {args...}`.
 ///
@@ -788,8 +808,12 @@ fn wait_or_kill(child: &mut std::process::Child, deadline: Instant) -> bool {
 /// The process is killed if it exceeds `timeout`; stdout is drained
 /// concurrently so the child never blocks on a full pipe.
 fn run_baseline(b: &BaselineConfig, cnf_path: &Path, timeout: Duration) -> BaselineResult {
+    // Strip SATLIB `%` trailer — CaDiCaL/Kissat abort on it.
+    let tmp_clean = make_clean_cnf(cnf_path);
+    let effective_path: &Path = tmp_clean.as_deref().unwrap_or(cnf_path);
+
     let mut child = match std::process::Command::new(&b.binary)
-        .arg(cnf_path)
+        .arg(effective_path)
         .args(&b.args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -846,6 +870,10 @@ fn run_baseline(b: &BaselineConfig, cnf_path: &Path, timeout: Duration) -> Basel
 fn run_baseline_portfolio(b: &BaselineConfig, cnf_path: &Path, timeout: Duration) -> BaselineResult {
     use std::sync::mpsc;
 
+    // Strip SATLIB `%` trailer — CaDiCaL/Kissat abort on it.
+    let tmp_clean = make_clean_cnf(cnf_path);
+    let effective_path: &Path = tmp_clean.as_deref().unwrap_or(cnf_path);
+
     let n = b.workers as usize;
     let start = Instant::now();
     let (tx, rx) = mpsc::channel::<(rm_telemetry::Outcome, Duration)>();
@@ -854,7 +882,7 @@ fn run_baseline_portfolio(b: &BaselineConfig, cnf_path: &Path, timeout: Duration
 
     for i in 0..n {
         let mut cmd = std::process::Command::new(&b.binary);
-        cmd.arg(cnf_path).args(&b.args);
+        cmd.arg(effective_path).args(&b.args);
         if !b.seed_flag.is_empty() {
             cmd.arg(&b.seed_flag).arg(i.to_string());
         }
