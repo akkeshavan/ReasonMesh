@@ -290,7 +290,7 @@ impl CdclSolver {
             watches: WatchList::new(num_vars),
             activity: vec![0.0; num_vars as usize + 1],
             activity_inc: 1.0,
-            activity_decay: 0.8,          // aggressive VSIDS decay (was 0.95)
+            activity_decay: 0.95,
             heap,
             polarity: vec![false; num_vars as usize + 1],
             trail_buf: Vec::new(),
@@ -1755,8 +1755,8 @@ impl CdclSolver {
     // -----------------------------------------------------------------------
 
     fn pick_branch(&mut self) -> Option<Literal> {
-        // Focus mode: VMTF (O(1) move-to-front, walks front for unassigned).
-        // Stable mode: VSIDS lazy-deletion max-heap.
+        // Focus mode: VMTF (O(1) move-to-front, recency-driven for AKX import).
+        // Stable mode: VSIDS lazy-deletion max-heap with 0.95 decay.
         if self.mode == SolverMode::Focus {
             let var = self.vmtf.front_unassigned(|v| !self.assignment.is_assigned(v))?;
             return Some(if self.polarity[var as usize] {
@@ -1818,13 +1818,8 @@ impl CdclSolver {
         for &lit in self.assignment.trail() {
             self.polarity[lit.var() as usize] = lit.is_positive();
         }
-        // Target phase walk: only in Stable mode so UNSAT instances are not
-        // penalised by local search that can never find a satisfying assignment.
-        // For GPU walk (≥2000 vars): disable after WALK_GIVE_UP non-improving
-        // calls — each Metal round-trip costs ~1-2ms so accumulation matters.
-        // For CPU walk (<2000 vars): always run — overhead is ~50μs/restart
-        // (negligible), and disabling it kills phase guidance on hard SAT
-        // instances where the walk only improves after many restarts.
+        // Target phase walk: only in Stable mode.  GPU walk (≥2000 vars) is
+        // gated by WALK_GIVE_UP; CPU walk always runs (negligible overhead).
         const GPU_MIN_VARS: u32 = 2000;
         const WALK_GIVE_UP: u32 = 50;
         let skip_walk = self.gpu.is_some()
@@ -1837,6 +1832,10 @@ impl CdclSolver {
             self.walk_phase();
         }
         self.backtrack_and_reschedule(self.assumption_floor);
+        // Compact the lazy heap: with slow decay (0.95) the heap accumulates
+        // stale entries 4× faster between rescalings, degrading branch selection.
+        // Rebuilding at every restart (every ~38 conflicts) keeps it at O(n).
+        self.rebuild_heap();
         self.restarts += 1;
         self.conflicts_at_last_restart = self.conflicts;
 
@@ -1850,10 +1849,7 @@ impl CdclSolver {
             };
         }
 
-        // Mode-dependent VSIDS decay: Stable mode uses slower decay (0.95) to
-        // remember long-term variable importance across Luby restarts; Focus uses
-        // aggressive decay (0.8) for rapid reorientation after each conflict.
-        self.activity_decay = if self.mode == SolverMode::Stable { 0.95 } else { 0.8 };
+        self.activity_decay = 0.95;
 
         // Luby schedule: 4× wider intervals in Stable mode so the walk has
         // more conflicts to work with between restarts.
