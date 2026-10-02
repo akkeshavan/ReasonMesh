@@ -958,8 +958,11 @@ impl TheorySolver for CdclT {
             }
             let tight_classes = self.dl.tight_equality_classes();
             let mut any_new = false;
-            for i in 0..self.dl_no_check_pairs.len() {
-                let (xi, xuid) = self.dl_no_check_pairs[i];
+            // Scan all dl_uf_pairs (not just formula-level EQ nodes) so that
+            // DL-assigned intermediate arithmetic/ite variables get merged in
+            // EUF when DL says they equal an integer literal or each other.
+            for i in 0..self.dl_uf_pairs.len() {
+                let (xi, xuid) = self.dl_uf_pairs[i];
                 for j in 0..self.dl_uf_pairs.len() {
                     let (yi, yuid) = self.dl_uf_pairs[j];
                     if xi == yi { continue; }
@@ -1255,8 +1258,11 @@ impl TheorySolver for CdclT {
                 }
                 let tight_classes = self.dl.tight_equality_classes();
                 let mut any_new = false;
-                for i in 0..self.dl_no_check_pairs.len() {
-                    let (xi, xuid) = self.dl_no_check_pairs[i];
+                // Scan all dl_uf_pairs (not just formula-level EQ nodes) so that
+                // DL-assigned intermediate arithmetic/ite variables get merged in
+                // EUF when DL says they equal an integer literal or each other.
+                for i in 0..self.dl_uf_pairs.len() {
+                    let (xi, xuid) = self.dl_uf_pairs[i];
                     for j in 0..self.dl_uf_pairs.len() {
                         let (yi, yuid) = self.dl_uf_pairs[j];
                         if xi == yi {
@@ -2145,11 +2151,42 @@ fn intern_uf_term_cdclt(
             uf_cache.insert(name.clone(), id);
             Ok(id)
         }
-        // Integer literals are treated as distinct UF constants "#n".
-        // Two uses of the same literal share the same ENodeId.
+        // Integer literals are treated as distinct UF constants "#n" AND get a
+        // DL variable unit-forced to their value.  This is required for N-O
+        // completeness: when DL assigns x = n, the DL→EUF tight-class check
+        // can find that x_dl and dl_int_n are equal and merge x_uid with
+        // #int_n in EUF — enabling congruence to fire on f(x) = f(n).
         SExpr::Atom(Atom::Numeral(n)) => {
             let name = format!("#int_{n}");
             let id = cdclt.intern_const(&name);
+            if let Ok(n_i64) = i64::try_from(*n) {
+                let dl_id = cdclt.dl.add_var();
+                cdclt.dl_var_names.insert(dl_id, name.clone());
+                cdclt.dl_uf_pairs.push((dl_id, id));
+                cdclt.uf_to_dl.insert(id, dl_id);
+                cdclt.dl_to_uf.insert(dl_id, id);
+                // Unit-force dl_id = n: dl_id - zero ≤ n and zero - dl_id ≤ -n.
+                let k1 = (dl_id, 0u32, n_i64, false);
+                let v1 = if let Some(&v) = cdclt.arith_atom_cache.get(&k1) {
+                    v
+                } else {
+                    let v = cdclt.alloc_var();
+                    cdclt.atoms.insert(v, BackboneAtom::Leq { x: dl_id, y: 0, c: n_i64 });
+                    cdclt.arith_atom_cache.insert(k1, v);
+                    v
+                };
+                cdclt.add_clause(&[Literal::positive(v1)]);
+                let k2 = (0u32, dl_id, -n_i64, false);
+                let v2 = if let Some(&v) = cdclt.arith_atom_cache.get(&k2) {
+                    v
+                } else {
+                    let v = cdclt.alloc_var();
+                    cdclt.atoms.insert(v, BackboneAtom::Leq { x: 0, y: dl_id, c: -n_i64 });
+                    cdclt.arith_atom_cache.insert(k2, v);
+                    v
+                };
+                cdclt.add_clause(&[Literal::positive(v2)]);
+            }
             uf_cache.insert(key, id);
             Ok(id)
         }
@@ -2764,5 +2801,22 @@ mod tests {
         .unwrap();
         assert_eq!(verdict, NoResult::Sat);
         assert!(!model.is_empty(), "model should contain x and y values");
+    }
+
+    #[test]
+    fn no_unsat_int_congruence() {
+        // f(0)=1, f(1)=2, x∈{0,1}, f(x)=3 → UNSAT via N-O: DL assigns x=n,
+        // tight-class merges x_uid=#int_n, congruence fires, DL conflict.
+        let r = check(
+            "(set-logic QF_UFIDL)
+             (declare-fun f (Int) Int)
+             (declare-fun x () Int)
+             (assert (= (f 0) 1))
+             (assert (= (f 1) 2))
+             (assert (or (= x 0) (= x 1)))
+             (assert (= (f x) 3))
+             (check-sat)",
+        );
+        assert_eq!(r, NoResult::Unsat);
     }
 }
