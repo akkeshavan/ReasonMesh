@@ -140,6 +140,11 @@ struct LiaCdclT {
     /// Snapshot of the Simplex after encoding (rows only, no bounds).
     /// Used by theory_final_check to get a clean scratch for the rational check.
     initial_simplex: Option<SimplexSolver>,
+    /// Model values saved from the last complete-model Simplex scratch in TFC.
+    /// Keyed by Simplex variable ID; populated when TFC finds a SAT model so
+    /// that model extraction uses the correct complete-model assignment rather
+    /// than the incremental Simplex (which has stale/partial bounds after B&B).
+    last_sat_model_values: FxHashMap<u32, i64>,
     /// Cancellation flag; set by the benchmark harness when the timeout fires.
     cancel: Arc<AtomicBool>,
 }
@@ -164,6 +169,7 @@ impl LiaCdclT {
             one_var: 0,
             simplex_level: 0,
             initial_simplex: None,
+            last_sat_model_values: FxHashMap::default(),
             cancel,
         }
     }
@@ -401,12 +407,28 @@ impl TheorySolver for LiaCdclT {
             let ceil_v = v.ceil_int();
             let (sv, sv2) = match (self.alloc_bb_var(), self.alloc_bb_var()) {
                 (Some(a), Some(b)) => (a, b),
-                _ => return None,
+                _ => {
+                    // Pre-allocated B&B variable pool exhausted. Returning None here
+                    // would be misinterpreted as SAT — unsound. Signal Unknown instead
+                    // by setting the cancel flag; the solve() caller checks it and
+                    // returns Unknown before returning Sat.
+                    self.cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+                    return None;
+                }
             };
             self.atoms.insert(sv, SimplexAtom::Upper { var: simplex_var, bound: floor_v });
             self.atoms.insert(sv2, SimplexAtom::Lower { var: simplex_var, bound: ceil_v });
             Some(vec![Literal::positive(sv), Literal::positive(sv2)])
         } else {
+            // All integer variables have integer model values — genuine SAT.
+            // Save the complete-model values from the scratch Simplex so that
+            // model extraction uses the correct full-model assignment rather than
+            // the incremental Simplex (which may have stale bounds after B&B jumps).
+            self.last_sat_model_values.clear();
+            for (_name, &id) in &self.var_ids {
+                let val = scratch.model_value(id);
+                self.last_sat_model_values.insert(id, val.floor_int());
+            }
             None
         }
     }
@@ -921,7 +943,17 @@ pub fn solve_qf_lia(text: &str, cancel: Arc<AtomicBool>) -> Result<LiaResult, St
         solver
             .var_ids
             .iter()
-            .map(|(name, &id)| (name.clone(), solver.simplex.model_int(id)))
+            .map(|(name, &id)| {
+                // Use the scratch-model snapshot saved by theory_final_check rather
+                // than the incremental Simplex, which may have stale bounds after
+                // branch-and-bound pivots.
+                let val = solver
+                    .last_sat_model_values
+                    .get(&id)
+                    .copied()
+                    .unwrap_or_else(|| solver.simplex.model_int(id));
+                (name.clone(), val)
+            })
             .collect()
     } else {
         Vec::new()

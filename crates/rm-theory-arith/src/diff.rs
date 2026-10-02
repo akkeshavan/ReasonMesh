@@ -75,6 +75,10 @@ pub struct DiffLogicSolver {
     level_lim: Vec<usize>,
     /// Adjacency list (from→[(to, edge_idx)]) for Bellman-Ford relaxation.
     adj: Vec<Vec<(VarId, usize)>>,
+    /// Dist snapshots taken at each `new_decision_level()` call.
+    /// `dist_snapshots[k]` holds `dist` as it was before any level-k assertions,
+    /// so backtracking to level k can restore it without re-running Bellman-Ford.
+    dist_snapshots: Vec<Vec<i64>>,
 }
 
 
@@ -89,6 +93,7 @@ impl DiffLogicSolver {
             pred_edge: vec![None; n],
             level_lim: Vec::new(),
             adj: vec![Vec::new(); n],
+            dist_snapshots: Vec::new(),
         }
     }
 
@@ -111,6 +116,9 @@ impl DiffLogicSolver {
 
     pub fn new_decision_level(&mut self) {
         self.level_lim.push(self.edges.len());
+        // Snapshot dist BEFORE any assertions at the new level so backtrack_to can
+        // restore it without re-running a full Bellman-Ford from scratch.
+        self.dist_snapshots.push(self.dist.clone());
     }
 
     pub fn current_level(&self) -> u32 {
@@ -124,9 +132,8 @@ impl DiffLogicSolver {
         } else {
             // Already at or below target level (level_lim has no entry for `level`),
             // so there is nothing to undo.  This mirrors CongruenceClosure::backtrack_to.
-            // In particular, a second consecutive backtrack_to(0) call (e.g. the
-            // restart that follows a conflict-backjump that also landed at level 0)
-            // must not clear the level-0 edges that were preserved by the first call.
+            // In particular, a second consecutive backtrack_to(0) call must not clear
+            // the level-0 edges that were preserved by the first call.
             return;
         };
         while self.edges.len() > target {
@@ -135,7 +142,13 @@ impl DiffLogicSolver {
         }
         self.level_lim.truncate(level as usize);
         let n = self.num_vars as usize + 1;
-        self.dist = vec![0i64; n];
+        let restored = if (level as usize) < self.dist_snapshots.len() {
+            Some(self.dist_snapshots[level as usize].clone())
+        } else {
+            None
+        };
+        self.dist_snapshots.truncate(level as usize);
+        self.dist = restored.unwrap_or_else(|| vec![0i64; n]);
         self.pred_edge = vec![None; n];
     }
 
@@ -528,6 +541,59 @@ impl DiffLogicSolver {
             }
         }
         Some(lits)
+    }
+
+    /// Compute the tightest derivable upper bound on `target - source` AND the
+    /// SAT literals on the shortest path that justify it, in one BF pass.
+    /// Returns `None` if no path exists (variables are unconstrained relative to
+    /// each other). Used by DL T-propagation to check and justify implied atoms.
+    pub fn bound_and_explanation(&self, source: VarId, target: VarId) -> Option<(i64, Vec<u32>)> {
+        if source > self.num_vars || target > self.num_vars {
+            return None;
+        }
+        if source == target {
+            return Some((0, vec![]));
+        }
+        let n = self.num_vars as usize + 1;
+        let mut dist = vec![i64::MAX / 2; n];
+        let mut pred: Vec<Option<usize>> = vec![None; n];
+        dist[source as usize] = 0;
+        for _ in 0..n {
+            let mut changed = false;
+            for (idx, edge) in self.edges.iter().enumerate() {
+                let d = dist[edge.from as usize];
+                if d < i64::MAX / 2 {
+                    let nd = d.saturating_add(edge.weight);
+                    if nd < dist[edge.to as usize] {
+                        dist[edge.to as usize] = nd;
+                        pred[edge.to as usize] = Some(idx);
+                        changed = true;
+                    }
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        let bound = dist[target as usize];
+        if bound >= i64::MAX / 2 {
+            return None;
+        }
+        let mut lits = Vec::new();
+        let mut cur = target as usize;
+        for _ in 0..=n {
+            match pred[cur] {
+                Some(ei) => {
+                    lits.push(self.edges[ei].sat_lit);
+                    cur = self.edges[ei].from as usize;
+                    if cur == source as usize {
+                        break;
+                    }
+                }
+                None => break,
+            }
+        }
+        Some((bound, lits))
     }
 
     /// Produce AKX `BoundKnowledge` for all currently tight bounds.
