@@ -1,0 +1,1101 @@
+{
+  "schema_version": 1,
+  "manifest": "smtlib-ufidl-parallel",
+  "solver_version": "0.1.0",
+  "git_revision": "unknown",
+  "run_wall": {
+    "secs": 815,
+    "nanos": 813387625
+  },
+  "problems": [
+    {
+      "name": "QF_UFIDL/pete2/g7nidw.smt2",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 65,
+        "nanos": 5489584
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 110320500
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "QF_UFIDL/pete2/f7nidw.smt2",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 65,
+        "nanos": 10391458
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 3,
+            "nanos": 46519584
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "QF_UFIDL/pete2/c7b.smt2",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 65,
+        "nanos": 10861833
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 1,
+            "nanos": 168361875
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "QF_UFIDL/pete2/f6n.smt2",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 65,
+        "nanos": 10361209
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 342240958
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "QF_UFIDL/pete2/f6.smt2",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 65,
+        "nanos": 10839416
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 112268917
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "QF_UFIDL/pete2/c10i_i.smt2",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 65,
+        "nanos": 11426250
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 28,
+            "nanos": 309586209
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "QF_UFIDL/pete2/f8bidw.smt2",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 65,
+        "nanos": 10519541
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 43,
+            "nanos": 848652375
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "QF_UFIDL/pete2/c10i.smt2",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 65,
+        "nanos": 10943292
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 40,
+            "nanos": 948355750
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "QF_UFIDL/pete2/c10ni_i.smt2",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 65,
+        "nanos": 11298792
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 40,
+            "nanos": 753626375
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "QF_UFIDL/pete2/f6bid.smt2",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 65,
+        "nanos": 11038084
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 1,
+            "nanos": 930577250
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "QF_UFIDL/pete2/c10nidw.smt2",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 65,
+        "nanos": 10435375
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 26,
+            "nanos": 838700541
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "QF_UFIDL/pete2/c8idw_i.smt2",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 65,
+        "nanos": 10911292
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 16,
+            "nanos": 867330958
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "QF_UFIDL/pete2/c6nid_i.smt2",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 65,
+        "nanos": 10453291
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 8,
+            "nanos": 688578709
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "QF_UFIDL/pete2/f10nidw.smt2",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 65,
+        "nanos": 10832000
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unknown",
+          "wall": {
+            "secs": 60,
+            "nanos": 121020584
+          },
+          "timed_out": true,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "QF_UFIDL/pete2/c10bid.smt2",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 65,
+        "nanos": 10505500
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 36,
+            "nanos": 929558500
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "QF_UFIDL/pete2/c8idw.smt2",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 65,
+        "nanos": 10429750
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 10,
+            "nanos": 650285417
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "QF_UFIDL/pete2/c6bi_i.smt2",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 65,
+        "nanos": 10919042
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 6,
+            "nanos": 680325000
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "QF_UFIDL/pete2/g6bid.smt2",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 65,
+        "nanos": 11194500
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 372249334
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "QF_UFIDL/pete2/g9bidw.smt2",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 65,
+        "nanos": 10654792
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 7,
+            "nanos": 131917125
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "QF_UFIDL/pete2/g9.smt2",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 65,
+        "nanos": 10435625
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 2,
+            "nanos": 19007834
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "QF_UFIDL/uclid/43s.smt2",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 65,
+        "nanos": 2968750
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 335389167
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "QF_UFIDL/uclid/elf.rf8.smt2",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 65,
+        "nanos": 4703167
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60022750
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "QF_UFIDL/uclid/cache.inv10.smt2",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 65,
+        "nanos": 10826708
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 1,
+            "nanos": 122952917
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "QF_UFIDL/uclid/dlx1c.rwmem1.smt2",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 65,
+        "nanos": 10336917
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 111361916
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "QF_UFIDL/uclid/ooo.rf10.smt2",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 65,
+        "nanos": 10411708
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 21,
+            "nanos": 287874542
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "QF_UFIDL/uclid/elf.rf9.smt2",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 65,
+        "nanos": 10363458
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 3,
+            "nanos": 323738750
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "QF_UFIDL/uclid/q2.14.smt2",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 65,
+        "nanos": 10872875
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 57,
+            "nanos": 24300500
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "QF_UFIDL/uclid/q2.30.smt2",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 65,
+        "nanos": 10454333
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unknown",
+          "wall": {
+            "secs": 60,
+            "nanos": 112258042
+          },
+          "timed_out": true,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "QF_UFIDL/pete/cxs-bp-ex-safety.smt2",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 65,
+        "nanos": 11210208
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 2,
+            "nanos": 436921000
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "QF_UFIDL/pete/IC-flush.smt2",
+      "outcome": "Unknown",
+      "expected": "sat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 65,
+        "nanos": 11378667
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 1,
+            "nanos": 341968542
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "QF_UFIDL/pete/6stage-flush.smt2",
+      "outcome": "Unsat",
+      "expected": "unsat",
+      "matches_expected": true,
+      "wall": {
+        "secs": 51,
+        "nanos": 333706916
+      },
+      "timed_out": false,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 344431375
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "QF_UFIDL/pete/cxs-bp-ex.smt2",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 65,
+        "nanos": 6375375
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 394791458
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "QF_UFIDL/pete/fxs-bp-ex-inp-safety.smt2",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 65,
+        "nanos": 5114083
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 444554000
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "QF_UFIDL/uclid2/cache.inv15.smt2",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 65,
+        "nanos": 10888667
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 48,
+            "nanos": 708901292
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "QF_UFIDL/mathsat/EufLaArithmetic/vhard/vhard11.smt2",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 65,
+        "nanos": 10711500
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 608777459
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "QF_UFIDL/pete3/bug_file1.smt2",
+      "outcome": "Unknown",
+      "expected": "sat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 65,
+        "nanos": 11655625
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 0,
+            "nanos": 60647458
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "QF_UFIDL/uclid2/ooo.tag15.smt2",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 65,
+        "nanos": 10601458
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 2,
+            "nanos": 11337000
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "QF_UFIDL/pete2/g8n.smt2",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 65,
+        "nanos": 10865958
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 0,
+            "nanos": 430132416
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "QF_UFIDL/pete3/bug_file3.smt2",
+      "outcome": "Unknown",
+      "expected": "sat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 65,
+        "nanos": 10397750
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Sat",
+          "wall": {
+            "secs": 1,
+            "nanos": 303525292
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    },
+    {
+      "name": "QF_UFIDL/pete2/f8nidw.smt2",
+      "outcome": "Unknown",
+      "expected": "unsat",
+      "matches_expected": false,
+      "wall": {
+        "secs": 65,
+        "nanos": 10495208
+      },
+      "timed_out": true,
+      "conflicts": 0,
+      "decisions": 0,
+      "propagations": 0,
+      "restarts": 0,
+      "baselines": [
+        {
+          "name": "z3",
+          "outcome": "Unsat",
+          "wall": {
+            "secs": 25,
+            "nanos": 945991875
+          },
+          "timed_out": false,
+          "workers": 1
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "problems": 40,
+    "solved": 1,
+    "unsolved": 39,
+    "solved_total_ns": 51333706916,
+    "par2_ns": 4731333706916,
+    "par10_ns": 23451333706916,
+    "timeout_ns": 60000000000
+  }
+}
