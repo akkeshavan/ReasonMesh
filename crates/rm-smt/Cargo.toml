@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 rm-akx          = { workspace = true }
+rm-bus          = { workspace = true }
 rm-ir           = { workspace = true }
 rm-sat          = { workspace = true }
 rm-syntax       = { workspace = true }

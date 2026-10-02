@@ -35,7 +35,7 @@ use std::sync::{
 // ---------------------------------------------------------------------------
 
 /// Result of the Nelson-Oppen QF_UFIDL solve.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NoResult {
     Sat,
     Unsat,
@@ -708,7 +708,7 @@ enum BackboneAtom {
 /// Tseitin clauses are buffered during encoding; the SAT solver is created
 /// just before the first `solve()` call so it is sized exactly to the actual
 /// number of Boolean variables used.
-struct CdclT {
+pub(crate) struct CdclT {
     atoms: FxHashMap<u32, BackboneAtom>,
     egraph: EGraph,
     cc: CongruenceClosure,
@@ -784,7 +784,7 @@ struct CdclT {
 }
 
 impl CdclT {
-    fn new(num_arith: u32, cancel: Arc<AtomicBool>) -> Self {
+    pub(crate) fn new(num_arith: u32, cancel: Arc<AtomicBool>) -> Self {
         CdclT {
             atoms: FxHashMap::default(),
             egraph: EGraph::new(),
@@ -825,8 +825,19 @@ impl CdclT {
     }
 
     /// Create the SAT solver with the exact variable count and load buffered clauses.
-    /// Must be called exactly once, before `solve()`.
+    /// Idempotent: if already called, drains any pending_clauses added since the last
+    /// call into the existing solver rather than creating a fresh one.
     fn finalize(&mut self) {
+        if self.sat.is_some() {
+            if !self.pending_clauses.is_empty() {
+                if let Some(sat) = &mut self.sat {
+                    for clause in self.pending_clauses.drain(..) {
+                        sat.add_clause(&clause);
+                    }
+                }
+            }
+            return;
+        }
         let num_vars = self.next_var - 1;
         let mut sat = CdclSolver::new(num_vars);
         // BVE eliminates variables that theory atoms depend on; theory lemmas
@@ -836,6 +847,37 @@ impl CdclT {
             sat.add_clause(&clause);
         }
         self.sat = Some(sat);
+    }
+
+    /// Drain learned clauses from the SAT backbone for AKX export.
+    pub(crate) fn drain_learned_clauses(&mut self) -> Vec<(Vec<Literal>, u32)> {
+        if let Some(sat) = &mut self.sat { sat.drain_learned() } else { Vec::new() }
+    }
+
+    /// Import learned clauses from AKX peers into the SAT backbone.
+    /// Before finalization, clauses are buffered in `pending_clauses`.
+    pub(crate) fn import_sat_clauses(&mut self, clauses: &[Vec<Literal>]) {
+        if let Some(sat) = &mut self.sat {
+            sat.import_clauses(clauses);
+        } else {
+            self.pending_clauses.extend(clauses.iter().cloned());
+        }
+    }
+
+    /// Number of SAT variables (backbone + theory atoms) allocated so far.
+    pub(crate) fn num_sat_vars(&self) -> u32 {
+        self.next_var - 1
+    }
+
+    /// Extract the DL model: var_name → integer value, sorted by name.
+    pub(crate) fn dl_model(&self) -> Vec<(String, i64)> {
+        let mut model: Vec<(String, i64)> = self
+            .dl_var_names
+            .iter()
+            .filter_map(|(&id, name)| self.dl.var_upper_bound(id).map(|v| (name.clone(), v)))
+            .collect();
+        model.sort_by_key(|(n, _)| n.clone());
+        model
     }
 
     fn intern_const(&mut self, name: &str) -> ENodeId {
@@ -852,7 +894,7 @@ impl CdclT {
         id
     }
 
-    fn solve(&mut self, max_conflicts: u64) -> NoResult {
+    pub(crate) fn solve(&mut self, max_conflicts: u64) -> NoResult {
         if self.cancel.load(Ordering::Relaxed) {
             return NoResult::Unknown;
         }
@@ -1621,14 +1663,19 @@ fn no_euf_to_dl(
 
 /// Lazy CDCL(T) path for formulas with disjunctions.
 /// Returns the verdict and, on SAT, a DL model (var_name → integer value).
-fn solve_with_cdclt(text: &str, max_conflicts: u64, cancel: Arc<AtomicBool>) -> Result<(NoResult, Vec<(String, i64)>), String> {
+/// Parse an SMT-LIB script and encode it into a fresh `CdclT` without solving.
+/// Used by `SmtReasoner` to build the incremental solve state.
+/// Returns `Err` if parsing or encoding fails fatally; returns `Ok(None)` if encoding
+/// produces an obvious contradiction (empty clause), indicating immediate Unsat.
+pub(crate) fn build_cdclt_from_text(
+    text: &str,
+    cancel: Arc<AtomicBool>,
+) -> Result<Option<CdclT>, String> {
     use rm_syntax::{lex, parse_program};
     let tokens = lex(text).map_err(|e| e.to_string())?;
     let exprs = parse_program(&tokens).map_err(|e| e.to_string())?;
     let decls = parse_smtlib_decls(&exprs);
 
-    // Use raw (unexpanded) assertions when let-expansion overflowed — the let-aware
-    // encoder in encode_bool_cdclt will process let forms directly without blowup.
     let assertions_to_encode = if decls.expansion_overflow {
         &decls.raw_assertions
     } else {
@@ -1669,22 +1716,21 @@ fn solve_with_cdclt(text: &str, max_conflicts: u64, cancel: Arc<AtomicBool>) -> 
         );
         match lit {
             Ok(l) => cdclt.add_clause(&[l]),
-            Err(()) => return Ok((NoResult::Unknown, Vec::new())),
+            Err(()) => return Ok(None), // encoding failed → treat as Unknown
         }
     }
 
-    let verdict = cdclt.solve(max_conflicts);
-    let dl_model = if verdict == NoResult::Sat {
-        let mut model: Vec<(String, i64)> = cdclt
-            .dl_var_names
-            .iter()
-            .filter_map(|(&id, name)| cdclt.dl.var_upper_bound(id).map(|v| (name.clone(), v)))
-            .collect();
-        model.sort_by_key(|(n, _)| n.clone());
-        model
-    } else {
-        Vec::new()
+    Ok(Some(cdclt))
+}
+
+fn solve_with_cdclt(text: &str, max_conflicts: u64, cancel: Arc<AtomicBool>) -> Result<(NoResult, Vec<(String, i64)>), String> {
+    let cdclt_opt = build_cdclt_from_text(text, cancel)?;
+    let mut cdclt = match cdclt_opt {
+        Some(c) => c,
+        None => return Ok((NoResult::Unknown, Vec::new())),
     };
+    let verdict = cdclt.solve(max_conflicts);
+    let dl_model = if verdict == NoResult::Sat { cdclt.dl_model() } else { Vec::new() };
     Ok((verdict, dl_model))
 }
 
