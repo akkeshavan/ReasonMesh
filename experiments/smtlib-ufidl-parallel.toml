@@ -1,0 +1,215 @@
+schema_version = 1
+name = "smtlib-ufidl-parallel"
+description = "QF_UFIDL hard problems (parallel CDCL(T) with clause sharing, 4 workers)"
+
+[solver]
+timeout_secs = 60
+workers = 4
+clause_sharing = true
+parallel_problems = 4
+
+[[baselines]]
+name = "z3"
+binary = "z3"
+args   = []
+workers = 1
+
+[[problems]]
+name = "QF_UFIDL/pete2/g7nidw.smt2"
+file = "../benchmarks/smtlib/non-incremental/QF_UFIDL/pete2/g7nidw.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "QF_UFIDL/pete2/f7nidw.smt2"
+file = "../benchmarks/smtlib/non-incremental/QF_UFIDL/pete2/f7nidw.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "QF_UFIDL/pete2/c7b.smt2"
+file = "../benchmarks/smtlib/non-incremental/QF_UFIDL/pete2/c7b.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "QF_UFIDL/pete2/f6n.smt2"
+file = "../benchmarks/smtlib/non-incremental/QF_UFIDL/pete2/f6n.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "QF_UFIDL/pete2/f6.smt2"
+file = "../benchmarks/smtlib/non-incremental/QF_UFIDL/pete2/f6.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "QF_UFIDL/pete2/c10i_i.smt2"
+file = "../benchmarks/smtlib/non-incremental/QF_UFIDL/pete2/c10i_i.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "QF_UFIDL/pete2/f8bidw.smt2"
+file = "../benchmarks/smtlib/non-incremental/QF_UFIDL/pete2/f8bidw.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "QF_UFIDL/pete2/c10i.smt2"
+file = "../benchmarks/smtlib/non-incremental/QF_UFIDL/pete2/c10i.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "QF_UFIDL/pete2/c10ni_i.smt2"
+file = "../benchmarks/smtlib/non-incremental/QF_UFIDL/pete2/c10ni_i.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "QF_UFIDL/pete2/f6bid.smt2"
+file = "../benchmarks/smtlib/non-incremental/QF_UFIDL/pete2/f6bid.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "QF_UFIDL/pete2/c10nidw.smt2"
+file = "../benchmarks/smtlib/non-incremental/QF_UFIDL/pete2/c10nidw.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "QF_UFIDL/pete2/c8idw_i.smt2"
+file = "../benchmarks/smtlib/non-incremental/QF_UFIDL/pete2/c8idw_i.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "QF_UFIDL/pete2/c6nid_i.smt2"
+file = "../benchmarks/smtlib/non-incremental/QF_UFIDL/pete2/c6nid_i.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "QF_UFIDL/pete2/f10nidw.smt2"
+file = "../benchmarks/smtlib/non-incremental/QF_UFIDL/pete2/f10nidw.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "QF_UFIDL/pete2/c10bid.smt2"
+file = "../benchmarks/smtlib/non-incremental/QF_UFIDL/pete2/c10bid.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "QF_UFIDL/pete2/c8idw.smt2"
+file = "../benchmarks/smtlib/non-incremental/QF_UFIDL/pete2/c8idw.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "QF_UFIDL/pete2/c6bi_i.smt2"
+file = "../benchmarks/smtlib/non-incremental/QF_UFIDL/pete2/c6bi_i.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "QF_UFIDL/pete2/g6bid.smt2"
+file = "../benchmarks/smtlib/non-incremental/QF_UFIDL/pete2/g6bid.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "QF_UFIDL/pete2/g9bidw.smt2"
+file = "../benchmarks/smtlib/non-incremental/QF_UFIDL/pete2/g9bidw.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "QF_UFIDL/pete2/g9.smt2"
+file = "../benchmarks/smtlib/non-incremental/QF_UFIDL/pete2/g9.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "QF_UFIDL/uclid/43s.smt2"
+file = "../benchmarks/smtlib/non-incremental/QF_UFIDL/uclid/43s.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "QF_UFIDL/uclid/elf.rf8.smt2"
+file = "../benchmarks/smtlib/non-incremental/QF_UFIDL/uclid/elf.rf8.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "QF_UFIDL/uclid/cache.inv10.smt2"
+file = "../benchmarks/smtlib/non-incremental/QF_UFIDL/uclid/cache.inv10.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "QF_UFIDL/uclid/dlx1c.rwmem1.smt2"
+file = "../benchmarks/smtlib/non-incremental/QF_UFIDL/uclid/dlx1c.rwmem1.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "QF_UFIDL/uclid/ooo.rf10.smt2"
+file = "../benchmarks/smtlib/non-incremental/QF_UFIDL/uclid/ooo.rf10.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "QF_UFIDL/uclid/elf.rf9.smt2"
+file = "../benchmarks/smtlib/non-incremental/QF_UFIDL/uclid/elf.rf9.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "QF_UFIDL/uclid/q2.14.smt2"
+file = "../benchmarks/smtlib/non-incremental/QF_UFIDL/uclid/q2.14.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "QF_UFIDL/uclid/q2.30.smt2"
+file = "../benchmarks/smtlib/non-incremental/QF_UFIDL/uclid/q2.30.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "QF_UFIDL/pete/cxs-bp-ex-safety.smt2"
+file = "../benchmarks/smtlib/non-incremental/QF_UFIDL/pete/cxs-bp-ex-safety.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "QF_UFIDL/pete/IC-flush.smt2"
+file = "../benchmarks/smtlib/non-incremental/QF_UFIDL/pete/IC-flush.smt2"
+expect = "sat"
+
+[[problems]]
+name = "QF_UFIDL/pete/6stage-flush.smt2"
+file = "../benchmarks/smtlib/non-incremental/QF_UFIDL/pete/6stage-flush.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "QF_UFIDL/pete/cxs-bp-ex.smt2"
+file = "../benchmarks/smtlib/non-incremental/QF_UFIDL/pete/cxs-bp-ex.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "QF_UFIDL/pete/fxs-bp-ex-inp-safety.smt2"
+file = "../benchmarks/smtlib/non-incremental/QF_UFIDL/pete/fxs-bp-ex-inp-safety.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "QF_UFIDL/uclid2/cache.inv15.smt2"
+file = "../benchmarks/smtlib/non-incremental/QF_UFIDL/uclid2/cache.inv15.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "QF_UFIDL/mathsat/EufLaArithmetic/vhard/vhard11.smt2"
+file = "../benchmarks/smtlib/non-incremental/QF_UFIDL/mathsat/EufLaArithmetic/vhard/vhard11.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "QF_UFIDL/pete3/bug_file1.smt2"
+file = "../benchmarks/smtlib/non-incremental/QF_UFIDL/pete3/bug_file1.smt2"
+expect = "sat"
+
+[[problems]]
+name = "QF_UFIDL/uclid2/ooo.tag15.smt2"
+file = "../benchmarks/smtlib/non-incremental/QF_UFIDL/uclid2/ooo.tag15.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "QF_UFIDL/pete2/g8n.smt2"
+file = "../benchmarks/smtlib/non-incremental/QF_UFIDL/pete2/g8n.smt2"
+expect = "unsat"
+
+[[problems]]
+name = "QF_UFIDL/pete3/bug_file3.smt2"
+file = "../benchmarks/smtlib/non-incremental/QF_UFIDL/pete3/bug_file3.smt2"
+expect = "sat"
+
+[[problems]]
+name = "QF_UFIDL/pete2/f8nidw.smt2"
+file = "../benchmarks/smtlib/non-incremental/QF_UFIDL/pete2/f8nidw.smt2"
+expect = "unsat"
