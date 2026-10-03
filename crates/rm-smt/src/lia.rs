@@ -311,10 +311,6 @@ impl TheorySolver for LiaCdclT {
         }
         // T-propagation: for each unassigned theory atom, check if current
         // Simplex bounds imply it.  Return implied atoms as unit reason clauses.
-        // Limit to small atom sets to avoid O(n²) overhead on large encodings.
-        if self.atoms.len() > 300 {
-            return Ok(Vec::new());
-        }
         // Build set of already-assigned SAT vars from the full trail.
         let assigned: std::collections::HashSet<u32> =
             trail.iter().map(|l| l.var()).collect();

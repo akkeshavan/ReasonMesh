@@ -928,6 +928,15 @@ impl TheorySolver for CdclT {
         }
 
         // Process newly assigned theory atoms from trail[prev_trail_len..].
+        // Fast path: if no theory atoms in the new trail, the DL/EUF state is
+        // unchanged and the N-O loop + T-propagation would be no-ops. Skip.
+        let has_new_theory_atom = trail[prev_trail_len..]
+            .iter()
+            .any(|l| self.atoms.contains_key(&l.var()) || self.bool_pred_nodes.contains_key(&l.var()));
+        if !has_new_theory_atom {
+            return Ok(Vec::new());
+        }
+
         for &lit in &trail[prev_trail_len..] {
             let var = lit.var();
             let val = lit.is_positive();
@@ -975,9 +984,10 @@ impl TheorySolver for CdclT {
         }
 
         // Nelson-Oppen fixed-point: cycle EUF↔DL until no new merges appear.
-        // tight_info is saved across the loop so DL T-propagation can reuse the
-        // final tight subgraph without an extra O(V+E) Kosaraju pass.
-        let mut no_tight_info = self.dl.tight_equality_classes();
+        // Declared uninitialized; first set inside the loop (after no_euf_to_dl).
+        // The only loop exit is `break` (after the assignment), so Rust's
+        // definite-initialization analysis accepts the post-loop use.
+        let mut no_tight_info;
         loop {
             if let Some(conflict) = no_euf_to_dl(&self.dl_uf_pairs, &mut self.cc, &mut self.dl, &self.egraph, &self.no_dl_tag, &mut self.no_euf_dl_tag, &mut self.no_euf_dl_pairs, &mut self.next_no_tag, level) {
                 return Err(conflict);
@@ -1321,50 +1331,52 @@ impl TheorySolver for CdclT {
                 }
                 let tight_info2 = self.dl.tight_equality_classes();
                 let mut any_new = false;
-                // Scan all dl_uf_pairs (not just formula-level EQ nodes) so that
-                // DL-assigned intermediate arithmetic/ite variables get merged in
-                // EUF when DL says they equal an integer literal or each other.
-                for i in 0..self.dl_uf_pairs.len() {
-                    let (xi, xuid) = self.dl_uf_pairs[i];
-                    for j in 0..self.dl_uf_pairs.len() {
-                        let (yi, yuid) = self.dl_uf_pairs[j];
-                        if xi == yi {
-                            continue;
-                        }
-                        if tight_info2.classes[xi as usize] != tight_info2.classes[yi as usize] {
-                            continue;
-                        }
-                        if self.cc.are_equal(xuid, yuid) {
-                            continue;
-                        }
-                        let mut dl_lits_raw: Vec<u32> = Vec::new();
-                        if let Some(p) = self.dl.tight_path(&tight_info2, yi, xi) {
-                            dl_lits_raw.extend(p);
-                        }
-                        if let Some(p) = self.dl.tight_path(&tight_info2, xi, yi) {
-                            dl_lits_raw.extend(p);
-                        }
-                        let dl_lits: Vec<u32> = supplement_dl_lits(&dl_lits_raw, &self.no_euf_dl_tag)
-                            .into_iter().filter(|&r| r != 0).collect();
-                        let tag = dl_lits.first().copied().unwrap_or(0);
-                        let key = (xuid.min(yuid), xuid.max(yuid));
-                        self.no_dl_expl.insert(key, (0, dl_lits.clone())); // level 0: this block is always saved/restored
-                        if tag != 0 { self.no_dl_tag.insert(tag, (0, dl_lits.clone())); }
-                        if let Err(e) = self.cc.assert_eq(&self.egraph, xuid, yuid, tag) {
-                            if let Some(raw_c) = mk_conflict_euf(e) {
-                                let mut conflict = supplement_euf_conflict(raw_c, &self.no_dl_tag);
-                                // Supplement DL path lits with full EUF chains for EUF→DL tags.
-                                let dl_supp = supplement_dl_lits(&dl_lits, &self.no_euf_dl_tag);
-                                conflict.extend(
-                                    dl_supp.iter().filter(|&&r| r != 0).map(|&r| Literal::from_raw(r).negate()),
-                                );
-                                conflict.sort_unstable();
-                                conflict.dedup();
-                                break 'tfc Some(conflict);
+                // Class-grouping (O(n log n)) instead of the old O(n²) double loop.
+                // Sort dl_uf_pairs by tight class, then only compare within-class pairs.
+                {
+                    let mut by_class: Vec<(u32, u32, ENodeId)> = self.dl_uf_pairs.iter()
+                        .map(|&(dl_id, uid)| (tight_info2.classes[dl_id as usize], dl_id, uid))
+                        .collect();
+                    by_class.sort_unstable_by_key(|&(cls, _, _)| cls);
+                    let mut gs = 0;
+                    while gs < by_class.len() {
+                        let cls = by_class[gs].0;
+                        let ge = gs + by_class[gs..].partition_point(|&(c, _, _)| c == cls);
+                        let group = &by_class[gs..ge];
+                        if group.len() >= 2 {
+                            for a in 0..group.len() {
+                                for b in (a + 1)..group.len() {
+                                    let (_, xi, xuid) = group[a];
+                                    let (_, yi, yuid) = group[b];
+                                    if xi == yi { continue; }
+                                    if self.cc.are_equal(xuid, yuid) { continue; }
+                                    let mut dl_lits_raw: Vec<u32> = Vec::new();
+                                    if let Some(p) = self.dl.tight_path(&tight_info2, yi, xi) { dl_lits_raw.extend(p); }
+                                    if let Some(p) = self.dl.tight_path(&tight_info2, xi, yi) { dl_lits_raw.extend(p); }
+                                    let dl_lits: Vec<u32> = supplement_dl_lits(&dl_lits_raw, &self.no_euf_dl_tag)
+                                        .into_iter().filter(|&r| r != 0).collect();
+                                    let tag = dl_lits.first().copied().unwrap_or(0);
+                                    let key = (xuid.min(yuid), xuid.max(yuid));
+                                    self.no_dl_expl.insert(key, (0, dl_lits.clone()));
+                                    if tag != 0 { self.no_dl_tag.insert(tag, (0, dl_lits.clone())); }
+                                    if let Err(e) = self.cc.assert_eq(&self.egraph, xuid, yuid, tag) {
+                                        if let Some(raw_c) = mk_conflict_euf(e) {
+                                            let mut conflict = supplement_euf_conflict(raw_c, &self.no_dl_tag);
+                                            let dl_supp = supplement_dl_lits(&dl_lits, &self.no_euf_dl_tag);
+                                            conflict.extend(
+                                                dl_supp.iter().filter(|&&r| r != 0).map(|&r| Literal::from_raw(r).negate()),
+                                            );
+                                            conflict.sort_unstable();
+                                            conflict.dedup();
+                                            break 'tfc Some(conflict);
+                                        }
+                                    } else {
+                                        any_new = true;
+                                    }
+                                }
                             }
-                        } else {
-                            any_new = true;
                         }
+                        gs = ge;
                     }
                 }
                 if !any_new {
