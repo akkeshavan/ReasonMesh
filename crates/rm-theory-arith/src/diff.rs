@@ -24,6 +24,18 @@ use thiserror::Error;
 
 pub type VarId = u32;
 
+/// Tight-equality class info for the DL→EUF Nelson-Oppen step.
+///
+/// Built once per theory_propagate call (O(V + E)) and reused for all pair
+/// queries within that call.  Use `DiffLogicSolver::tight_path` to extract
+/// explanations without re-building the tight subgraph.
+pub struct TightInfo {
+    /// classes[v] = tight equality class ID for variable v.
+    pub classes: Vec<u32>,
+    /// tight_adj[u] = list of (edge_idx, v) for tight outgoing edges u→v.
+    pub(crate) tight_adj: Vec<Vec<(usize, usize)>>,
+}
+
 /// An edge in the constraint graph: (from, to, weight, sat_lit).
 #[derive(Clone, Debug)]
 struct Edge {
@@ -443,19 +455,21 @@ impl DiffLogicSolver {
     /// tight edges (same SCC of the tight-edge subgraph).
     ///
     /// Algorithm: Kosaraju's SCC on the tight-edge subgraph, then label each
-    /// variable with `(scc_id, dist[v])`.  O(V + E) per call.
-    pub fn tight_equality_classes(&self) -> Vec<u32> {
+    /// variable with `(scc_id, dist[v])`.  O(V + E) per call.  Also returns
+    /// the tight adjacency list so callers can use `tight_path` for O(V+E)
+    /// path queries without re-building the subgraph.
+    pub fn tight_equality_classes(&self) -> TightInfo {
         let n = self.num_vars as usize + 1;
 
-        // Build tight-edge forward and reverse adjacency lists.
-        let mut fwd: Vec<Vec<usize>> = vec![Vec::new(); n];
+        // Build tight-edge forward (with edge indices) and reverse adjacency lists.
+        let mut fwd: Vec<Vec<(usize, usize)>> = vec![Vec::new(); n]; // (ei, to)
         let mut rev: Vec<Vec<usize>> = vec![Vec::new(); n];
-        for edge in &self.edges {
+        for (ei, edge) in self.edges.iter().enumerate() {
             let tight = self.dist[edge.from as usize]
                 .saturating_add(edge.weight)
                 == self.dist[edge.to as usize];
             if tight {
-                fwd[edge.from as usize].push(edge.to as usize);
+                fwd[edge.from as usize].push((ei, edge.to as usize));
                 rev[edge.to as usize].push(edge.from as usize);
             }
         }
@@ -472,7 +486,7 @@ impl DiffLogicSolver {
             while let Some((v, i)) = stack.last_mut() {
                 let v = *v;
                 if *i < fwd[v].len() {
-                    let w = fwd[v][*i];
+                    let (_, w) = fwd[v][*i];
                     *i += 1;
                     if !visited[w] {
                         visited[w] = true;
@@ -510,7 +524,7 @@ impl DiffLogicSolver {
         let mut class_map: rustc_hash::FxHashMap<(u32, i64), u32> =
             rustc_hash::FxHashMap::default();
         let mut next_cls: u32 = 0;
-        (0..n)
+        let classes = (0..n)
             .map(|v| {
                 let key = (scc[v], self.dist[v]);
                 *class_map.entry(key).or_insert_with(|| {
@@ -519,7 +533,49 @@ impl DiffLogicSolver {
                     c
                 })
             })
-            .collect()
+            .collect();
+
+        TightInfo { classes, tight_adj: fwd }
+    }
+
+    /// BFS path explanation on the tight subgraph captured in `info`.
+    /// O(V + |tight_edges|) — reuses the tight_adj already built by
+    /// `tight_equality_classes`, so no extra edge scan needed.
+    pub fn tight_path(&self, info: &TightInfo, source: VarId, target: VarId) -> Option<Vec<u32>> {
+        if source == target { return Some(vec![]); }
+        let n = info.tight_adj.len();
+        if source as usize >= n || target as usize >= n { return None; }
+        let mut pred: Vec<Option<usize>> = vec![None; n];
+        let mut visited = vec![false; n];
+        let mut queue = std::collections::VecDeque::new();
+        visited[source as usize] = true;
+        queue.push_back(source as usize);
+        let mut found = false;
+        'bfs: while let Some(u) = queue.pop_front() {
+            for &(ei, v) in &info.tight_adj[u] {
+                if !visited[v] {
+                    visited[v] = true;
+                    pred[v] = Some(ei);
+                    if v == target as usize { found = true; break 'bfs; }
+                    queue.push_back(v);
+                }
+            }
+        }
+        if !found { return None; }
+        let mut lits = Vec::new();
+        let mut cur = target as usize;
+        for _ in 0..=n {
+            match pred[cur] {
+                Some(ei) => {
+                    let e = &self.edges[ei];
+                    if e.sat_lit != 0 { lits.push(e.sat_lit); }
+                    cur = e.from as usize;
+                    if cur == source as usize { break; }
+                }
+                None => break,
+            }
+        }
+        Some(lits)
     }
 
     /// Returns the SAT literals on the shortest path from `source` to `target`

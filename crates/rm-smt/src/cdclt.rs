@@ -992,18 +992,18 @@ impl TheorySolver for CdclT {
             // dl.check() (full Bellman-Ford) is redundant here: no_euf_to_dl above
             // calls dl.assert_leq which runs relax_from_edge (incremental SPFA)
             // and already catches conflicts.  dist[] is kept current by relax_from_edge.
-            let tight_classes = self.dl.tight_equality_classes();
+            let tight_info = self.dl.tight_equality_classes();
             let mut any_new = false;
             // DL→EUF: for every pair (xi, xj) in the same DL tight-equality class
             // that is NOT yet CC-equal, merge them in CC.
             //
-            // Class-grouping replaces the O(n²) double loop with O(n log n) sort +
-            // O(sum k²) within-class checks (k = class size, usually 1–3).
-            // For n=351 this reduces ~123K iterations to ~1K in practice.
+            // Class-grouping: O(n log n) sort + O(Σk²) within-class checks.
+            // tight_path: O(V+|tight_edges|) BFS using tight_adj from tight_equality_classes,
+            // replacing O(VE) Bellman-Ford per pair.
             {
                 // Build (tight_class, dl_id, uf_id) triples, sort by class.
                 let mut by_class: Vec<(u32, u32, ENodeId)> = self.dl_uf_pairs.iter()
-                    .map(|&(dl_id, uid)| (tight_classes[dl_id as usize], dl_id, uid))
+                    .map(|&(dl_id, uid)| (tight_info.classes[dl_id as usize], dl_id, uid))
                     .collect();
                 by_class.sort_unstable_by_key(|&(cls, _, _)| cls);
 
@@ -1020,8 +1020,8 @@ impl TheorySolver for CdclT {
                                 if xi == yi { continue; }
                                 if self.cc.are_equal(xuid, yuid) { continue; }
                                 let mut dl_lits_raw: Vec<u32> = Vec::new();
-                                if let Some(p) = self.dl.path_explanation(yi, xi) { dl_lits_raw.extend(p); }
-                                if let Some(p) = self.dl.path_explanation(xi, yi) { dl_lits_raw.extend(p); }
+                                if let Some(p) = self.dl.tight_path(&tight_info, yi, xi) { dl_lits_raw.extend(p); }
+                                if let Some(p) = self.dl.tight_path(&tight_info, xi, yi) { dl_lits_raw.extend(p); }
                                 let dl_lits: Vec<u32> = supplement_dl_lits(&dl_lits_raw, &self.no_euf_dl_tag)
                                     .into_iter().filter(|&r| r != 0).collect();
                                 let tag = dl_lits.first().copied().unwrap_or(0);
@@ -1339,7 +1339,7 @@ impl TheorySolver for CdclT {
                         .collect();
                     break 'tfc Some(conflict);
                 }
-                let tight_classes = self.dl.tight_equality_classes();
+                let tight_info2 = self.dl.tight_equality_classes();
                 let mut any_new = false;
                 // Scan all dl_uf_pairs (not just formula-level EQ nodes) so that
                 // DL-assigned intermediate arithmetic/ite variables get merged in
@@ -1351,17 +1351,17 @@ impl TheorySolver for CdclT {
                         if xi == yi {
                             continue;
                         }
-                        if tight_classes[xi as usize] != tight_classes[yi as usize] {
+                        if tight_info2.classes[xi as usize] != tight_info2.classes[yi as usize] {
                             continue;
                         }
                         if self.cc.are_equal(xuid, yuid) {
                             continue;
                         }
                         let mut dl_lits_raw: Vec<u32> = Vec::new();
-                        if let Some(p) = self.dl.path_explanation(yi, xi) {
+                        if let Some(p) = self.dl.tight_path(&tight_info2, yi, xi) {
                             dl_lits_raw.extend(p);
                         }
-                        if let Some(p) = self.dl.path_explanation(xi, yi) {
+                        if let Some(p) = self.dl.tight_path(&tight_info2, xi, yi) {
                             dl_lits_raw.extend(p);
                         }
                         let dl_lits: Vec<u32> = supplement_dl_lits(&dl_lits_raw, &self.no_euf_dl_tag)
