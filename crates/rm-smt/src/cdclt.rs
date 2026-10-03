@@ -183,6 +183,8 @@ impl NoCombinedSolver {
     /// After EUF merges two arithmetic-sort nodes, propagate the equality
     /// to DL as x - y ≤ 0 ∧ y - x ≤ 0.
     fn euf_propagate_to_dl(&mut self) -> Result<(), ()> {
+        // Use tight_equality_classes (O(V+E)) instead of bound_between (O(VE)) per pair.
+        let tight_info = self.dl.tight_equality_classes();
         let shared: Vec<(u32, u32, ENodeId, ENodeId)> = self
             .arith_terms
             .values()
@@ -199,16 +201,9 @@ impl NoCombinedSolver {
 
         for (xi, yi, xuid, yuid) in shared {
             if self.cc.are_equal(xuid, yuid) {
-                let already = self
-                    .dl
-                    .bound_between(yi, xi)
-                    .map(|b| b <= 0)
-                    .unwrap_or(false)
-                    && self
-                        .dl
-                        .bound_between(xi, yi)
-                        .map(|b| b <= 0)
-                        .unwrap_or(false);
+                let xi_cls = tight_info.classes.get(xi as usize).copied().unwrap_or(u32::MAX);
+                let yi_cls = tight_info.classes.get(yi as usize).copied().unwrap_or(u32::MAX - 1);
+                let already = xi_cls == yi_cls;
                 if !already {
                     let sat = self.fresh_lit();
                     self.dl.assert_leq(xi, yi, 0, sat).map_err(|_| ())?;
