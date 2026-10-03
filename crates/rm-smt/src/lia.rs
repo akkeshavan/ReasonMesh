@@ -306,9 +306,69 @@ impl TheorySolver for LiaCdclT {
         }
         // Run Simplex to detect infeasibility from the new bounds.
         match self.simplex.check() {
-            Ok(_) => Ok(Vec::new()),
-            Err(e) => Err(mk_conflict_simplex(&e.lits)),
+            Err(e) => return Err(mk_conflict_simplex(&e.lits)),
+            Ok(_) => {}
         }
+        // T-propagation: for each unassigned theory atom, check if current
+        // Simplex bounds imply it.  Return implied atoms as unit reason clauses.
+        // Limit to small atom sets to avoid O(n²) overhead on large encodings.
+        if self.atoms.len() > 300 {
+            return Ok(Vec::new());
+        }
+        // Build set of already-assigned SAT vars from the full trail.
+        let assigned: std::collections::HashSet<u32> =
+            trail.iter().map(|l| l.var()).collect();
+        let mut lemmas: Vec<Vec<Literal>> = Vec::new();
+        for (&sv, atom) in &self.atoms {
+            if assigned.contains(&sv) {
+                continue;
+            }
+            match atom {
+                SimplexAtom::Upper { var, bound } => {
+                    let bound_q = Rational::from_int(*bound);
+                    // lb > bound → var > bound → ¬(var ≤ bound) → propagate ¬sv
+                    if let Some((lb, lb_raw)) = self.simplex.lower_bound(*var) {
+                        if lb > bound_q {
+                            lemmas.push(vec![
+                                Literal::from_raw(lb_raw).negate(),
+                                Literal::negative(sv),
+                            ]);
+                        }
+                    }
+                    // ub ≤ bound → var ≤ bound → propagate +sv
+                    if let Some((ub, ub_raw)) = self.simplex.upper_bound(*var) {
+                        if ub <= bound_q {
+                            lemmas.push(vec![
+                                Literal::from_raw(ub_raw).negate(),
+                                Literal::positive(sv),
+                            ]);
+                        }
+                    }
+                }
+                SimplexAtom::Lower { var, bound } => {
+                    let bound_q = Rational::from_int(*bound);
+                    // ub < bound → var < bound → ¬(var ≥ bound) → propagate ¬sv
+                    if let Some((ub, ub_raw)) = self.simplex.upper_bound(*var) {
+                        if ub < bound_q {
+                            lemmas.push(vec![
+                                Literal::from_raw(ub_raw).negate(),
+                                Literal::negative(sv),
+                            ]);
+                        }
+                    }
+                    // lb ≥ bound → var ≥ bound → propagate +sv
+                    if let Some((lb, lb_raw)) = self.simplex.lower_bound(*var) {
+                        if lb >= bound_q {
+                            lemmas.push(vec![
+                                Literal::from_raw(lb_raw).negate(),
+                                Literal::positive(sv),
+                            ]);
+                        }
+                    }
+                }
+            }
+        }
+        Ok(lemmas)
     }
 
     fn theory_backtrack(&mut self, target_level: u32) {

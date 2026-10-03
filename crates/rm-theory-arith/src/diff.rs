@@ -405,6 +405,33 @@ impl DiffLogicSolver {
         self.dist[v as usize]
     }
 
+    /// Returns the current upper bound on `x - 0` (= `dist[x]`) and the SAT
+    /// literals on the pred-edge path from x back to the zero node.
+    /// O(path_length) — much faster than bound_and_explanation(0, x) which
+    /// re-runs full Bellman-Ford.  Used by DL T-propagation for zero-rooted atoms.
+    pub fn bound_from_zero(&self, x: VarId) -> (i64, Vec<u32>) {
+        let bound = self.get_dist(x);
+        let mut lits = Vec::new();
+        let mut cur = x as usize;
+        let limit = self.num_vars as usize + 2;
+        for _ in 0..limit {
+            match self.pred_edge[cur] {
+                Some(ei) if ei < self.edges.len() => {
+                    let e = &self.edges[ei];
+                    if e.sat_lit != 0 {
+                        lits.push(e.sat_lit);
+                    }
+                    cur = e.from as usize;
+                    if cur == 0 {
+                        break;
+                    }
+                }
+                _ => break,
+            }
+        }
+        (bound, lits)
+    }
+
     /// Compute DL-equality class IDs for all variables (indices 0..=num_vars).
     ///
     /// Two variables u and v with `result[u] == result[v]` are DL-equal:

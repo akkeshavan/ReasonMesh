@@ -989,52 +989,63 @@ impl TheorySolver for CdclT {
             if let Some(conflict) = no_euf_to_dl(&self.dl_uf_pairs, &mut self.cc, &mut self.dl, &self.egraph, &self.no_dl_tag, &mut self.no_euf_dl_tag, &mut self.no_euf_dl_pairs, &mut self.next_no_tag, level) {
                 return Err(conflict);
             }
-            if let Err(e) = self.dl.check() {
-                let raw = match &e { DlError::Conflict(c) => c.sat_lits.clone(), _ => vec![] };
-                let supp = supplement_dl_lits(&raw, &self.no_euf_dl_tag);
-                let conflict: Vec<Literal> = supp.into_iter()
-                    .filter(|&r| r != 0)
-                    .map(|r| Literal::from_raw(r).negate())
-                    .collect();
-                return Err(conflict);
-            }
+            // dl.check() (full Bellman-Ford) is redundant here: no_euf_to_dl above
+            // calls dl.assert_leq which runs relax_from_edge (incremental SPFA)
+            // and already catches conflicts.  dist[] is kept current by relax_from_edge.
             let tight_classes = self.dl.tight_equality_classes();
             let mut any_new = false;
-            // Scan all dl_uf_pairs (not just formula-level EQ nodes) so that
-            // DL-assigned intermediate arithmetic/ite variables get merged in
-            // EUF when DL says they equal an integer literal or each other.
-            for i in 0..self.dl_uf_pairs.len() {
-                let (xi, xuid) = self.dl_uf_pairs[i];
-                for j in 0..self.dl_uf_pairs.len() {
-                    let (yi, yuid) = self.dl_uf_pairs[j];
-                    if xi == yi { continue; }
-                    if tight_classes[xi as usize] != tight_classes[yi as usize] { continue; }
-                    if self.cc.are_equal(xuid, yuid) { continue; }
-                    let mut dl_lits_raw: Vec<u32> = Vec::new();
-                    if let Some(p) = self.dl.path_explanation(yi, xi) { dl_lits_raw.extend(p); }
-                    if let Some(p) = self.dl.path_explanation(xi, yi) { dl_lits_raw.extend(p); }
-                    // Pre-expand: replace any EUF→DL fresh_tags in the DL path with their
-                    // EUF justification so that no_dl_tag values never contain internal tags.
-                    let dl_lits: Vec<u32> = supplement_dl_lits(&dl_lits_raw, &self.no_euf_dl_tag)
-                        .into_iter().filter(|&r| r != 0).collect();
-                    let tag = dl_lits.first().copied().unwrap_or(0);
-                    let key = (xuid.min(yuid), xuid.max(yuid));
-                    self.no_dl_expl.insert(key, (level, dl_lits.clone()));
-                    if tag != 0 {
-                        self.no_dl_tag.insert(tag, (level, dl_lits.clone()));
-                    }
-                    if let Err(e) = self.cc.assert_eq(&self.egraph, xuid, yuid, tag) {
-                        if let Some(raw_c) = mk_conflict_euf(e) {
-                            let mut conflict = supplement_euf_conflict(raw_c, &self.no_dl_tag);
-                            let dl_supp = supplement_dl_lits(&dl_lits, &self.no_euf_dl_tag);
-                            conflict.extend(dl_supp.iter().filter(|&&r| r != 0).map(|&r| Literal::from_raw(r).negate()));
-                            conflict.sort_unstable();
-                            conflict.dedup();
-                            return Err(conflict);
+            // DL→EUF: for every pair (xi, xj) in the same DL tight-equality class
+            // that is NOT yet CC-equal, merge them in CC.
+            //
+            // Class-grouping replaces the O(n²) double loop with O(n log n) sort +
+            // O(sum k²) within-class checks (k = class size, usually 1–3).
+            // For n=351 this reduces ~123K iterations to ~1K in practice.
+            {
+                // Build (tight_class, dl_id, uf_id) triples, sort by class.
+                let mut by_class: Vec<(u32, u32, ENodeId)> = self.dl_uf_pairs.iter()
+                    .map(|&(dl_id, uid)| (tight_classes[dl_id as usize], dl_id, uid))
+                    .collect();
+                by_class.sort_unstable_by_key(|&(cls, _, _)| cls);
+
+                let mut start = 0;
+                while start < by_class.len() {
+                    let cls = by_class[start].0;
+                    let end = start + by_class[start..].partition_point(|&(c, _, _)| c == cls);
+                    let group = &by_class[start..end];
+                    if group.len() >= 2 {
+                        for a in 0..group.len() {
+                            for b in (a + 1)..group.len() {
+                                let (_, xi, xuid) = group[a];
+                                let (_, yi, yuid) = group[b];
+                                if xi == yi { continue; }
+                                if self.cc.are_equal(xuid, yuid) { continue; }
+                                let mut dl_lits_raw: Vec<u32> = Vec::new();
+                                if let Some(p) = self.dl.path_explanation(yi, xi) { dl_lits_raw.extend(p); }
+                                if let Some(p) = self.dl.path_explanation(xi, yi) { dl_lits_raw.extend(p); }
+                                let dl_lits: Vec<u32> = supplement_dl_lits(&dl_lits_raw, &self.no_euf_dl_tag)
+                                    .into_iter().filter(|&r| r != 0).collect();
+                                let tag = dl_lits.first().copied().unwrap_or(0);
+                                let key = (xuid.min(yuid), xuid.max(yuid));
+                                self.no_dl_expl.insert(key, (level, dl_lits.clone()));
+                                if tag != 0 {
+                                    self.no_dl_tag.insert(tag, (level, dl_lits.clone()));
+                                }
+                                if let Err(e) = self.cc.assert_eq(&self.egraph, xuid, yuid, tag) {
+                                    if let Some(raw_c) = mk_conflict_euf(e) {
+                                        let mut conflict = supplement_euf_conflict(raw_c, &self.no_dl_tag);
+                                        let dl_supp = supplement_dl_lits(&dl_lits, &self.no_euf_dl_tag);
+                                        conflict.extend(dl_supp.iter().filter(|&&r| r != 0).map(|&r| Literal::from_raw(r).negate()));
+                                        conflict.sort_unstable();
+                                        conflict.dedup();
+                                        return Err(conflict);
+                                    }
+                                } else {
+                                    any_new = true;
+                                }
+                            }
                         }
-                    } else {
-                        any_new = true;
                     }
+                    start = end;
                 }
             }
             if !any_new {
@@ -1129,9 +1140,12 @@ impl TheorySolver for CdclT {
 
         // DL T-propagation: for each unassigned Leq/Lt atom, check whether the
         // current DL potentials imply its value and, if so, emit a unit lemma.
-        // Uses bound_and_explanation(y, x) = tightest derivable upper bound on x-y
-        // with the justifying DL path lits — O(V·E) per atom but called only for
-        // unassigned atoms which is a small set after a few propagation rounds.
+        //
+        // Potential filter: dist[x] - dist[y] is a lower bound on bound(y,x)
+        // (Johnson's inequality: any path y→x has weight ≥ dist[x]-dist[y]).
+        // Skip the O(V·E) Bellman-Ford call when the lower bound alone rules
+        // out implication.  For zero-rooted atoms (y=0) use bound_from_zero
+        // which walks pred_edge in O(path_length) instead of O(V·E).
         for (&var, atom) in &self.atoms {
             let (x, y, c, is_lt) = match atom {
                 BackboneAtom::Leq { x, y, c } => (*x, *y, *c, false),
@@ -1143,8 +1157,21 @@ impl TheorySolver for CdclT {
             }
             // Effective bound: Lt(x-y < c) = Leq(x-y ≤ c-1)
             let eff_c = if is_lt { c - 1 } else { c };
-            // Positive implication: bound_between(y, x) ≤ eff_c → atom is true
-            if let Some((bound, raw_lits)) = self.dl.bound_and_explanation(y, x) {
+            let dx = self.dl.get_dist(x);
+            let dy = self.dl.get_dist(y);
+
+            // Positive implication: bound(y,x) ≤ eff_c → propagate +var
+            // Filter: if dx-dy > eff_c, bound(y,x) ≥ dx-dy > eff_c → skip.
+            if dx.saturating_sub(dy) <= eff_c {
+                let (bound, raw_lits) = if y == 0 {
+                    let (b, lits) = self.dl.bound_from_zero(x);
+                    (b, lits)
+                } else if let Some(pair) = self.dl.bound_and_explanation(y, x) {
+                    pair
+                } else {
+                    // No path from y to x — not implied.
+                    (i64::MAX, vec![])
+                };
                 if bound <= eff_c {
                     let supp = supplement_dl_lits(&raw_lits, &self.no_euf_dl_tag);
                     let supp: Vec<u32> = supp.into_iter().filter(|&r| r != 0).collect();
@@ -1160,9 +1187,23 @@ impl TheorySolver for CdclT {
                     continue; // positive and negative are mutually exclusive
                 }
             }
-            // Negative implication: bound_between(x, y) ≤ -(eff_c+1) → atom is false
+
+            // Negative implication: bound(x,y) ≤ -(eff_c+1) → propagate ¬var
             let neg_bound = -(eff_c + 1);
-            if let Some((bound, raw_lits)) = self.dl.bound_and_explanation(x, y) {
+            // Filter: if dy-dx > neg_bound, bound(x,y) ≥ dy-dx > neg_bound → skip.
+            if dy.saturating_sub(dx) <= neg_bound {
+                let (bound, raw_lits) = if x == 0 {
+                    let (b, lits) = self.dl.bound_from_zero(y);
+                    // bound_from_zero gives bound on y-0; neg case wants bound on 0-y = -dist[y].
+                    // Negate: bound(0,y) is dist[y], bound(y,0) = -dist[y] only if tight in both dirs.
+                    // Fall back to bound_and_explanation for x=0 (uncommon case).
+                    let _ = (b, lits);
+                    if let Some(pair) = self.dl.bound_and_explanation(x, y) { pair } else { (i64::MAX, vec![]) }
+                } else if let Some(pair) = self.dl.bound_and_explanation(x, y) {
+                    pair
+                } else {
+                    (i64::MAX, vec![])
+                };
                 if bound <= neg_bound {
                     let supp = supplement_dl_lits(&raw_lits, &self.no_euf_dl_tag);
                     let supp: Vec<u32> = supp.into_iter().filter(|&r| r != 0).collect();
@@ -1584,32 +1625,48 @@ fn no_euf_to_dl(
     // new_pairs: (xi, xuid, yi, yuid, euf_lits, pair_key)
     let mut new_pairs: Vec<(u32, ENodeId, u32, ENodeId, Vec<u32>, (u32, u32))> = Vec::new();
 
-    for i in 0..dl_uf_pairs.len() {
-        for j in (i + 1)..dl_uf_pairs.len() {
-            let (xi, xuid) = dl_uf_pairs[i];
-            let (yi, yuid) = dl_uf_pairs[j];
-            if xi == yi || !cc.are_equal(xuid, yuid) {
-                continue;
-            }
-            let expl = cc.explain_equality(egraph, xuid, yuid);
-            let raw_euf = expl.sat_lits();
-            let euf_lits_raw = supplement_raw_lits(&raw_euf, no_dl_tag);
-            // Pre-expand: replace any embedded EUF→DL fresh_tags in euf_lits with their
-            // own EUF justification.  This prevents internal tags from leaking into
-            // conflict clauses where they would be treated as SAT literals.
-            let euf_lits: Vec<u32> = supplement_dl_lits(&euf_lits_raw, no_euf_dl_tag)
-                .into_iter().filter(|&r| r != 0).collect();
-            let pair_key = (xi.min(yi), xi.max(yi));
+    // CC-rep grouping: O(n log n) instead of O(n²).
+    // Group dl_uf_pairs by current CC representative — only pairs within the same
+    // CC class can be EUF-equal.  Class sizes are typically 1–3, so this reduces
+    // the inner pair-check loop from O(n²) to O(n + Σk²) ≈ O(n) in practice.
+    {
+        // Build (cc_rep, dl_id, uf_id) triples and sort by representative.
+        let mut by_rep: Vec<(ENodeId, u32, ENodeId)> = dl_uf_pairs.iter()
+            .map(|&(dl_id, uid)| (cc.find(uid), dl_id, uid))
+            .collect();
+        by_rep.sort_unstable_by_key(|&(rep, _, _)| rep.0);
 
-            if let Some(&(pair_level, old_tag)) = no_euf_dl_pairs.get(&pair_key) {
-                // Existing pair: refresh no_euf_dl_tag[old_tag] with current euf_lits.
-                // Keep the original level so the entry lives and dies with the DL edge.
-                if old_tag != 0 {
-                    no_euf_dl_tag.insert(old_tag, (pair_level, euf_lits));
+        let mut start = 0;
+        while start < by_rep.len() {
+            let rep = by_rep[start].0;
+            let end = start + by_rep[start..].partition_point(|&(r, _, _)| r == rep);
+            let group = &by_rep[start..end];
+            if group.len() >= 2 {
+                for a in 0..group.len() {
+                    for b in (a + 1)..group.len() {
+                        let (_, xi, xuid) = group[a];
+                        let (_, yi, yuid) = group[b];
+                        if xi == yi { continue; }
+                        // are_equal is cheap O(α(n)), but we already know they share a rep.
+                        // Still call it to handle stale reps after path compression.
+                        if !cc.are_equal(xuid, yuid) { continue; }
+                        let expl = cc.explain_equality(egraph, xuid, yuid);
+                        let raw_euf = expl.sat_lits();
+                        let euf_lits_raw = supplement_raw_lits(&raw_euf, no_dl_tag);
+                        let euf_lits: Vec<u32> = supplement_dl_lits(&euf_lits_raw, no_euf_dl_tag)
+                            .into_iter().filter(|&r| r != 0).collect();
+                        let pair_key = (xi.min(yi), xi.max(yi));
+                        if let Some(&(pair_level, old_tag)) = no_euf_dl_pairs.get(&pair_key) {
+                            if old_tag != 0 {
+                                no_euf_dl_tag.insert(old_tag, (pair_level, euf_lits));
+                            }
+                        } else {
+                            new_pairs.push((xi, xuid, yi, yuid, euf_lits, pair_key));
+                        }
+                    }
                 }
-            } else {
-                new_pairs.push((xi, xuid, yi, yuid, euf_lits, pair_key));
             }
+            start = end;
         }
     }
 

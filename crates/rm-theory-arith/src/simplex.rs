@@ -421,6 +421,18 @@ impl SimplexSolver {
         self.assignment[var as usize].floor_int()
     }
 
+    /// Current lower bound on `var`, or `None` if unconstrained.
+    /// Returns `(value, sat_lit_raw)` where sat_lit_raw is the SAT literal that asserted it.
+    pub fn lower_bound(&self, var: VarId) -> Option<(Rational, u32)> {
+        self.lower[var as usize].as_ref().map(|b| (b.value, b.sat_lit))
+    }
+
+    /// Current upper bound on `var`, or `None` if unconstrained.
+    /// Returns `(value, sat_lit_raw)` where sat_lit_raw is the SAT literal that asserted it.
+    pub fn upper_bound(&self, var: VarId) -> Option<(Rational, u32)> {
+        self.upper[var as usize].as_ref().map(|b| (b.value, b.sat_lit))
+    }
+
     // -----------------------------------------------------------------------
     // Private helpers
     // -----------------------------------------------------------------------
