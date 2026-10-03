@@ -980,6 +980,9 @@ impl TheorySolver for CdclT {
         }
 
         // Nelson-Oppen fixed-point: cycle EUF↔DL until no new merges appear.
+        // tight_info is saved across the loop so DL T-propagation can reuse the
+        // final tight subgraph without an extra O(V+E) Kosaraju pass.
+        let mut no_tight_info = self.dl.tight_equality_classes();
         loop {
             if let Some(conflict) = no_euf_to_dl(&self.dl_uf_pairs, &mut self.cc, &mut self.dl, &self.egraph, &self.no_dl_tag, &mut self.no_euf_dl_tag, &mut self.no_euf_dl_pairs, &mut self.next_no_tag, level) {
                 return Err(conflict);
@@ -987,7 +990,8 @@ impl TheorySolver for CdclT {
             // dl.check() (full Bellman-Ford) is redundant here: no_euf_to_dl above
             // calls dl.assert_leq which runs relax_from_edge (incremental SPFA)
             // and already catches conflicts.  dist[] is kept current by relax_from_edge.
-            let tight_info = self.dl.tight_equality_classes();
+            no_tight_info = self.dl.tight_equality_classes();
+            let tight_info = &no_tight_info;
             let mut any_new = false;
             // DL→EUF: for every pair (xi, xj) in the same DL tight-equality class
             // that is NOT yet CC-equal, merge them in CC.
@@ -1136,11 +1140,11 @@ impl TheorySolver for CdclT {
         // DL T-propagation: for each unassigned Leq/Lt atom, check whether the
         // current DL potentials imply its value and, if so, emit a unit lemma.
         //
-        // Potential filter: dist[x] - dist[y] is a lower bound on bound(y,x)
-        // (Johnson's inequality: any path y→x has weight ≥ dist[x]-dist[y]).
-        // Skip the O(V·E) Bellman-Ford call when the lower bound alone rules
-        // out implication.  For zero-rooted atoms (y=0) use bound_from_zero
-        // which walks pred_edge in O(path_length) instead of O(V·E).
+        // Strategy: use tight-path BFS (O(V+|tight_edges|)) via no_tight_info
+        // instead of O(VE) Bellman-Ford per atom.  A tight path from y to x
+        // means bound(y,x) = dist[x]-dist[y].  If no tight path exists, we skip
+        // (conservative — misses non-tight implications, but never unsound).
+        // For y=0: use bound_from_zero (O(path) pred_edge walk).
         for (&var, atom) in &self.atoms {
             let (x, y, c, is_lt) = match atom {
                 BackboneAtom::Leq { x, y, c } => (*x, *y, *c, false),
@@ -1150,65 +1154,51 @@ impl TheorySolver for CdclT {
             if assigned.contains_key(&var) {
                 continue;
             }
-            // Effective bound: Lt(x-y < c) = Leq(x-y ≤ c-1)
             let eff_c = if is_lt { c - 1 } else { c };
             let dx = self.dl.get_dist(x);
             let dy = self.dl.get_dist(y);
 
-            // Positive implication: bound(y,x) ≤ eff_c → propagate +var
-            // Filter: if dx-dy > eff_c, bound(y,x) ≥ dx-dy > eff_c → skip.
-            if dx.saturating_sub(dy) <= eff_c {
-                let (bound, raw_lits) = if y == 0 {
-                    let (b, lits) = self.dl.bound_from_zero(x);
-                    (b, lits)
-                } else if let Some(pair) = self.dl.bound_and_explanation(y, x) {
-                    pair
+            // Positive implication: bound(y,x) = dx-dy (tight path) ≤ eff_c
+            let tight_bound_pos = dx.saturating_sub(dy);
+            if tight_bound_pos <= eff_c {
+                let raw_lits = if y == 0 {
+                    let (_, lits) = self.dl.bound_from_zero(x);
+                    Some(lits)
                 } else {
-                    // No path from y to x — not implied.
-                    (i64::MAX, vec![])
+                    self.dl.tight_path(&no_tight_info, y, x)
                 };
-                if bound <= eff_c {
+                if let Some(raw_lits) = raw_lits {
                     let supp = supplement_dl_lits(&raw_lits, &self.no_euf_dl_tag);
                     let supp: Vec<u32> = supp.into_iter().filter(|&r| r != 0).collect();
                     if supp.is_empty() {
                         lemmas.push(vec![Literal::positive(var)]);
                     } else {
                         let mut lemma = vec![Literal::positive(var)];
-                        for raw in supp {
-                            lemma.push(Literal::from_raw(raw).negate());
-                        }
+                        for raw in supp { lemma.push(Literal::from_raw(raw).negate()); }
                         lemmas.push(lemma);
                     }
-                    continue; // positive and negative are mutually exclusive
+                    continue;
                 }
             }
 
-            // Negative implication: bound(x,y) ≤ -(eff_c+1) → propagate ¬var
+            // Negative implication: bound(x,y) = dy-dx (tight path) ≤ -(eff_c+1)
             let neg_bound = -(eff_c + 1);
-            // Filter: if dy-dx > neg_bound, bound(x,y) ≥ dy-dx > neg_bound → skip.
-            if dy.saturating_sub(dx) <= neg_bound {
-                let (bound, raw_lits) = if x == 0 {
-                    let (b, lits) = self.dl.bound_from_zero(y);
-                    // bound_from_zero gives bound on y-0; neg case wants bound on 0-y = -dist[y].
-                    // Negate: bound(0,y) is dist[y], bound(y,0) = -dist[y] only if tight in both dirs.
-                    // Fall back to bound_and_explanation for x=0 (uncommon case).
-                    let _ = (b, lits);
-                    if let Some(pair) = self.dl.bound_and_explanation(x, y) { pair } else { (i64::MAX, vec![]) }
-                } else if let Some(pair) = self.dl.bound_and_explanation(x, y) {
-                    pair
+            let tight_bound_neg = dy.saturating_sub(dx);
+            if tight_bound_neg <= neg_bound {
+                let raw_lits = if x == 0 {
+                    let (_, lits) = self.dl.bound_from_zero(y);
+                    Some(lits)
                 } else {
-                    (i64::MAX, vec![])
+                    self.dl.tight_path(&no_tight_info, x, y)
                 };
-                if bound <= neg_bound {
+                if let Some(raw_lits) = raw_lits {
                     let supp = supplement_dl_lits(&raw_lits, &self.no_euf_dl_tag);
                     let supp: Vec<u32> = supp.into_iter().filter(|&r| r != 0).collect();
                     if supp.is_empty() {
                         lemmas.push(vec![Literal::negative(var)]);
                     } else {
                         let mut lemma = vec![Literal::negative(var)];
-                        for raw in supp {
-                            lemma.push(Literal::from_raw(raw).negate());
-                        }
+                        for raw in supp { lemma.push(Literal::from_raw(raw).negate()); }
                         lemmas.push(lemma);
                     }
                 }
