@@ -155,7 +155,10 @@ impl NoCombinedSolver {
 
     /// Check which pairs of shared arithmetic variables have tight DL bounds
     /// implying equality (both x-y≤0 and y-x≤0 are derivable via shortest paths).
+    /// Uses tight_equality_classes() (O(V+E) Kosaraju) instead of calling
+    /// bound_between (O(VE) BF) per pair, cutting 123K BF calls to one Kosaraju.
     fn dl_derived_equalities(&mut self) -> Vec<(String, String)> {
+        let tight_info = self.dl.tight_equality_classes();
         let shared: Vec<(String, u32, ENodeId)> = self
             .arith_terms
             .iter()
@@ -167,17 +170,9 @@ impl NoCombinedSolver {
             for j in (i + 1)..shared.len() {
                 let (xname, xi, xuid) = &shared[i];
                 let (yname, yi, yuid) = &shared[j];
-                let xy_leq_0 = self
-                    .dl
-                    .bound_between(*yi, *xi)
-                    .map(|b| b <= 0)
-                    .unwrap_or(false);
-                let yx_leq_0 = self
-                    .dl
-                    .bound_between(*xi, *yi)
-                    .map(|b| b <= 0)
-                    .unwrap_or(false);
-                if xy_leq_0 && yx_leq_0 && !self.cc.are_equal(*xuid, *yuid) {
+                let xi_cls = tight_info.classes.get(*xi as usize).copied().unwrap_or(u32::MAX);
+                let yi_cls = tight_info.classes.get(*yi as usize).copied().unwrap_or(u32::MAX - 1);
+                if xi_cls == yi_cls && !self.cc.are_equal(*xuid, *yuid) {
                     derived.push((xname.clone(), yname.clone()));
                 }
             }
