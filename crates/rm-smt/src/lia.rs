@@ -131,6 +131,11 @@ struct LiaCdclT {
     /// Canonical form → simplex_var, so the same linear expression always maps
     /// to the same variable when used as a UF argument.
     form_to_var_cache: FxHashMap<(Vec<(u32, i64)>, i64), u32>,
+    /// Reverse: simplex_var → canonical form key (populated when form_to_var creates
+    /// a new slack).  Used by add_ackermann_constraints to detect when two UF arguments
+    /// provably differ by a non-zero constant, allowing those Ackermann pairs to be
+    /// skipped entirely (the implication is vacuously true).
+    var_to_form: FxHashMap<u32, (Vec<(u32, i64)>, i64)>,
     /// Simplex variable permanently fixed to 1, used to represent constant offsets
     /// in linear forms as `k * one_var` so the Simplex row stays exact.
     one_var: u32,
@@ -174,6 +179,7 @@ impl LiaCdclT {
             uf_apps: Vec::new(),
             uf_app_cache: FxHashMap::default(),
             form_to_var_cache: FxHashMap::default(),
+            var_to_form: FxHashMap::default(),
             one_var: 0,
             simplex_level: 0,
             initial_simplex: None,
@@ -493,6 +499,42 @@ fn encode_var_eq(a: u32, b: u32, solver: &mut LiaCdclT) -> Literal {
 /// the same function symbol.  For each such pair (i, j):
 ///   (∀k: arg_i[k] = arg_j[k]) → result_i = result_j
 /// encoded as a SAT clause.
+/// Returns true if Simplex variables `a` and `b` are guaranteed to be unequal
+/// at all satisfying assignments — i.e., their canonical linear forms differ by
+/// a non-zero integer constant and share identical variable coefficients.
+///
+/// If true, the Ackermann clause `¬(a=b) ∨ ...` is trivially satisfied and can
+/// be dropped.  Works for the common Wisa/array pattern where args are `v + k`
+/// for distinct integer offsets k.
+fn args_provably_differ(a: u32, b: u32, solver: &LiaCdclT) -> bool {
+    if a == b {
+        return false;
+    }
+    let Some(key_a) = solver.var_to_form.get(&a) else {
+        return false;
+    };
+    let Some(key_b) = solver.var_to_form.get(&b) else {
+        return false;
+    };
+    let diff_const = key_a.1 - key_b.1;
+    // Fast path: identical variable parts — just compare constants.
+    if key_a.0 == key_b.0 {
+        return diff_const != 0;
+    }
+    // General path: compute symbolic diff and check if all variable terms cancel.
+    if diff_const == 0 {
+        return false;
+    }
+    let mut diff: FxHashMap<u32, i64> = FxHashMap::default();
+    for &(v, c) in &key_a.0 {
+        *diff.entry(v).or_insert(0) += c;
+    }
+    for &(v, c) in &key_b.0 {
+        *diff.entry(v).or_insert(0) -= c;
+    }
+    diff.values().all(|&c| c == 0)
+}
+
 fn add_ackermann_constraints(solver: &mut LiaCdclT) {
     // Collect pairs first to avoid borrow conflict on solver.uf_apps during encoding.
     let n = solver.uf_apps.len();
@@ -515,6 +557,15 @@ fn add_ackermann_constraints(solver: &mut LiaCdclT) {
         }
     }
     for (_func, args_i, args_j, ri, rj) in pairs {
+        // If any single arg pair provably differs, the Ackermann clause
+        // ¬(a0=b0) ∨ ¬(a1=b1) ∨ ... ∨ (ri=rj) is trivially true — skip it.
+        if args_i
+            .iter()
+            .zip(args_j.iter())
+            .any(|(&a, &b)| args_provably_differ(a, b, solver))
+        {
+            continue;
+        }
         // Encode arg equalities.
         let arg_lits: Vec<Literal> =
             args_i.iter().zip(args_j.iter()).map(|(&a, &b)| encode_var_eq(a, b, solver)).collect();
@@ -550,6 +601,7 @@ fn form_to_var(form: LinearForm, solver: &mut LiaCdclT) -> u32 {
         return v;
     }
     let slack = get_or_create_slack(&form, solver);
+    solver.var_to_form.insert(slack, cache_key.clone());
     solver.form_to_var_cache.insert(cache_key, slack);
     slack
 }
@@ -932,6 +984,8 @@ pub fn solve_qf_lia(text: &str, cancel: Arc<AtomicBool>) -> Result<LiaResult, St
         if i < solver.is_int.len() {
             solver.is_int[i] = *sort == SortExpr::Int;
         }
+        // Register self-form so Ackermann pruning can detect constant-offset pairs.
+        solver.var_to_form.insert(id, (vec![(id, 1)], 0));
     }
 
     // Allocate the "one variable": always fixed to 1 so constant offsets in
