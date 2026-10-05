@@ -147,6 +147,14 @@ struct LiaCdclT {
     last_sat_model_values: FxHashMap<u32, i64>,
     /// Cancellation flag; set by the benchmark harness when the timeout fires.
     cancel: Arc<AtomicBool>,
+    /// Cache for Ackermann var-equality literals: (min(a,b), max(a,b)) → literal.
+    /// Prevents encode_var_eq from creating duplicate Simplex rows and SAT vars
+    /// for the same pair (e.g. 270 calls → 17 unique pairs for Hash benchmarks).
+    eq_cache: FxHashMap<(u32, u32), Literal>,
+    /// Cache for arithmetic comparison atoms: (simplex_var, is_upper, bound) → SAT var.
+    /// Prevents encode_arith_cmp from creating duplicate SAT atoms when the same
+    /// comparison appears multiple times (e.g. via let-expansion).
+    arith_atom_cache: FxHashMap<(u32, bool, i64), u32>,
 }
 
 impl LiaCdclT {
@@ -171,6 +179,8 @@ impl LiaCdclT {
             initial_simplex: None,
             last_sat_model_values: FxHashMap::default(),
             cancel,
+            eq_cache: FxHashMap::default(),
+            arith_atom_cache: FxHashMap::default(),
         }
     }
 
@@ -305,66 +315,13 @@ impl TheorySolver for LiaCdclT {
             }
         }
         // Run Simplex to detect infeasibility from the new bounds.
+        // T-propagation (emitting lemmas for implied atoms) was tried in S17 but caused
+        // regressions on Wisa/Hash problems by disrupting CDCL search; reverted.
+        // theory_final_check provides complete checking at the end.
         match self.simplex.check() {
-            Err(e) => return Err(mk_conflict_simplex(&e.lits)),
-            Ok(_) => {}
+            Ok(_) => Ok(Vec::new()),
+            Err(e) => Err(mk_conflict_simplex(&e.lits)),
         }
-        // T-propagation: for each unassigned theory atom, check if current
-        // Simplex bounds imply it.  Return implied atoms as unit reason clauses.
-        // Build set of already-assigned SAT vars from the full trail.
-        let assigned: std::collections::HashSet<u32> =
-            trail.iter().map(|l| l.var()).collect();
-        let mut lemmas: Vec<Vec<Literal>> = Vec::new();
-        for (&sv, atom) in &self.atoms {
-            if assigned.contains(&sv) {
-                continue;
-            }
-            match atom {
-                SimplexAtom::Upper { var, bound } => {
-                    let bound_q = Rational::from_int(*bound);
-                    // lb > bound → var > bound → ¬(var ≤ bound) → propagate ¬sv
-                    if let Some((lb, lb_raw)) = self.simplex.lower_bound(*var) {
-                        if lb > bound_q {
-                            lemmas.push(vec![
-                                Literal::from_raw(lb_raw).negate(),
-                                Literal::negative(sv),
-                            ]);
-                        }
-                    }
-                    // ub ≤ bound → var ≤ bound → propagate +sv
-                    if let Some((ub, ub_raw)) = self.simplex.upper_bound(*var) {
-                        if ub <= bound_q {
-                            lemmas.push(vec![
-                                Literal::from_raw(ub_raw).negate(),
-                                Literal::positive(sv),
-                            ]);
-                        }
-                    }
-                }
-                SimplexAtom::Lower { var, bound } => {
-                    let bound_q = Rational::from_int(*bound);
-                    // ub < bound → var < bound → ¬(var ≥ bound) → propagate ¬sv
-                    if let Some((ub, ub_raw)) = self.simplex.upper_bound(*var) {
-                        if ub < bound_q {
-                            lemmas.push(vec![
-                                Literal::from_raw(ub_raw).negate(),
-                                Literal::negative(sv),
-                            ]);
-                        }
-                    }
-                    // lb ≥ bound → var ≥ bound → propagate +sv
-                    if let Some((lb, lb_raw)) = self.simplex.lower_bound(*var) {
-                        if lb >= bound_q {
-                            lemmas.push(vec![
-                                Literal::from_raw(lb_raw).negate(),
-                                Literal::positive(sv),
-                            ]);
-                        }
-                    }
-                }
-            }
-        }
-        Ok(lemmas)
     }
 
     fn theory_backtrack(&mut self, target_level: u32) {
@@ -499,17 +456,23 @@ fn mk_conflict_simplex(lits: &[u32]) -> Vec<Literal> {
 /// Encode "simplex_var_a = simplex_var_b" as a SAT literal using two Simplex
 /// bound atoms: `a ≤ b` and `a ≥ b`, Tseitin-combined into one AND variable.
 fn encode_var_eq(a: u32, b: u32, solver: &mut LiaCdclT) -> Literal {
-    // diff = a - b.  We want: diff ≤ 0 ∧ diff ≥ 0.
-    let mut diff = LinearForm::default();
-    diff.coeffs.insert(a, 1);
-    diff.coeffs.insert(b, -1);
     // Handle the trivial case (a == b means always true).
     if a == b {
         let v = solver.alloc_sat();
         solver.add_clause(&[Literal::positive(v)]);
         return Literal::positive(v);
     }
-    let slack = get_or_create_slack(&diff, solver);
+    // Cache check: same pair (order-normalised) reuses existing literal.
+    let key = (a.min(b), a.max(b));
+    if let Some(&lit) = solver.eq_cache.get(&key) {
+        return lit;
+    }
+    // diff = a - b.  We want: diff ≤ 0 ∧ diff ≥ 0.
+    let mut diff = LinearForm::default();
+    diff.coeffs.insert(a, 1);
+    diff.coeffs.insert(b, -1);
+    // Use form_to_var so (a-b) reuses any existing slack/row for this form.
+    let slack = form_to_var(diff, solver);
     let le_sat = solver.alloc_sat();
     solver.atoms.insert(le_sat, SimplexAtom::Upper { var: slack, bound: 0 });
     let ge_sat = solver.alloc_sat();
@@ -522,6 +485,7 @@ fn encode_var_eq(a: u32, b: u32, solver: &mut LiaCdclT) -> Literal {
     solver.add_clause(&[z.negate(), le]);
     solver.add_clause(&[z.negate(), ge]);
     solver.add_clause(&[z, le.negate(), ge.negate()]);
+    solver.eq_cache.insert(key, z);
     z
 }
 
@@ -896,7 +860,9 @@ fn encode_arith_cmp(
         }
     }
 
-    let slack = get_or_create_slack(&form, solver);
+    // Use form_to_var so single-variable forms reuse the user var directly (no
+    // redundant slack row), and multi-variable forms share the cached slack.
+    let slack = form_to_var(form, solver);
 
     // Map the comparison to a Simplex atom:
     // slack = lhs_vars - rhs_vars
@@ -904,14 +870,24 @@ fn encode_arith_cmp(
     // Lt: slack ≤ rhs_const-1 → Upper(slack, rhs_const-1)  [integers]
     // Ge: slack ≥ rhs_const   → Lower(slack, rhs_const)
     // Gt: slack ≥ rhs_const+1 → Lower(slack, rhs_const+1)  [integers]
-    let atom = match kind {
-        ArithCmpKind::Le => SimplexAtom::Upper { var: slack, bound: rhs_const },
-        ArithCmpKind::Lt => SimplexAtom::Upper { var: slack, bound: rhs_const - 1 },
-        ArithCmpKind::Ge => SimplexAtom::Lower { var: slack, bound: rhs_const },
-        ArithCmpKind::Gt => SimplexAtom::Lower { var: slack, bound: rhs_const + 1 },
+    let (is_upper, bound) = match kind {
+        ArithCmpKind::Le => (true, rhs_const),
+        ArithCmpKind::Lt => (true, rhs_const - 1),
+        ArithCmpKind::Ge => (false, rhs_const),
+        ArithCmpKind::Gt => (false, rhs_const + 1),
     };
+    let cache_key = (slack, is_upper, bound);
+    if let Some(&v) = solver.arith_atom_cache.get(&cache_key) {
+        return Ok(Literal::positive(v));
+    }
     let v = solver.alloc_sat();
+    let atom = if is_upper {
+        SimplexAtom::Upper { var: slack, bound }
+    } else {
+        SimplexAtom::Lower { var: slack, bound }
+    };
     solver.atoms.insert(v, atom);
+    solver.arith_atom_cache.insert(cache_key, v);
     Ok(Literal::positive(v))
 }
 

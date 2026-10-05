@@ -928,12 +928,58 @@ impl TheorySolver for CdclT {
         }
 
         // Process newly assigned theory atoms from trail[prev_trail_len..].
-        // Fast path: if no theory atoms in the new trail, the DL/EUF state is
-        // unchanged and the N-O loop + T-propagation would be no-ops. Skip.
-        let has_new_theory_atom = trail[prev_trail_len..]
+        // Fast path: skip when neither theory atoms nor bool-pred assignments changed.
+        let has_new_atom = trail[prev_trail_len..]
             .iter()
-            .any(|l| self.atoms.contains_key(&l.var()) || self.bool_pred_nodes.contains_key(&l.var()));
-        if !has_new_theory_atom {
+            .any(|l| self.atoms.contains_key(&l.var()));
+        let has_new_bool_pred = trail[prev_trail_len..]
+            .iter()
+            .any(|l| self.bool_pred_nodes.contains_key(&l.var()));
+        if !has_new_atom && !has_new_bool_pred {
+            return Ok(Vec::new());
+        }
+        // Bool-pred-only fast path: when only predicate assignments changed (no DL/EUF
+        // atom state change), running the N-O loop + T-propagation is a no-op that
+        // re-scans all atoms for no benefit.  Just check bool-pred congruence and return.
+        if !has_new_atom {
+            let assigned: rustc_hash::FxHashMap<u32, bool> = trail
+                .iter()
+                .map(|l| (l.var(), l.is_positive()))
+                .collect();
+            let mut canon_map: rustc_hash::FxHashMap<
+                (String, Vec<ENodeId>),
+                (u32, Vec<ENodeId>, bool),
+            > = rustc_hash::FxHashMap::default();
+            for (&v, (fname, ids)) in &self.bool_pred_nodes {
+                let val = match assigned.get(&v) {
+                    Some(&b) => b,
+                    None => continue,
+                };
+                let canon: Vec<ENodeId> = ids.iter().map(|&id| self.cc.find(id)).collect();
+                let key = (fname.clone(), canon);
+                if let Some(&(other_v, ref other_ids, other_val)) = canon_map.get(&key) {
+                    let other_ids = other_ids.clone();
+                    if val != other_val {
+                        let lit_v = if val { Literal::positive(v) } else { Literal::negative(v) };
+                        let lit_o = if other_val { Literal::positive(other_v) } else { Literal::negative(other_v) };
+                        let mut conflict = vec![lit_v.negate(), lit_o.negate()];
+                        for (&ai, &aj) in ids.iter().zip(other_ids.iter()) {
+                            if ai != aj {
+                                let expl = self.cc.explain_equality(&self.egraph, ai, aj);
+                                let raw_supp = supplement_raw_lits(&expl.sat_lits(), &self.no_dl_tag);
+                                for raw in raw_supp {
+                                    if raw != 0 { conflict.push(Literal::from_raw(raw).negate()); }
+                                }
+                            }
+                        }
+                        conflict.sort_unstable();
+                        conflict.dedup();
+                        return Err(conflict);
+                    }
+                } else {
+                    canon_map.insert(key, (v, ids.clone(), val));
+                }
+            }
             return Ok(Vec::new());
         }
 
