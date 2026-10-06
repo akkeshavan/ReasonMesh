@@ -346,10 +346,14 @@ impl TheorySolver for LiaCdclT {
         // weren't re-asserted after backjumps (e.g., the final decision made by
         // branch_or_finish is never seen by theory_propagate). We check the complete
         // model by cloning the post-encoding Simplex (rows only, no bounds) and
-        // asserting all model atoms fresh — no stale incremental bounds.
-        // Build a fresh Simplex clone for the complete-model check. Keeping `scratch`
-        // alive past the rational check so the B&B section reads correct model values —
-        // self.simplex only has incremental bounds and its assignment may differ.
+        // asserting all TRUE atoms fresh — no stale incremental bounds.
+        //
+        // Only TRUE atoms are asserted here (FALSE atoms are skipped). Integer tightening
+        // of FALSE atoms (¬(x ≤ k) → x ≥ k+1) in a rational Simplex produces unsound
+        // conflict clauses when rational-valued slacks (e.g. diff_slack = ri − rj) have
+        // a satisfying rational value in (k, k+1). theory_propagate handles negated atoms
+        // incrementally with proper backtracking; TFC only needs the positive bounds to
+        // detect genuine rational infeasibilities in the complete model.
         let mut scratch = self.initial_simplex.as_ref().unwrap().clone();
         let atoms_snapshot: Vec<(u32, SimplexAtom)> = self
             .atoms
@@ -361,26 +365,16 @@ impl TheorySolver for LiaCdclT {
         let rat_conflict: Option<Vec<Literal>> = 'rat: {
             for (sat_var, atom) in &atoms_snapshot {
                 let val = model.value_of(*sat_var);
+                if !val {
+                    continue;
+                }
+                let sat_raw = Literal::positive(*sat_var).raw();
                 let res = match *atom {
                     SimplexAtom::Upper { var, bound } => {
-                        if val {
-                            let sat_raw = Literal::positive(*sat_var).raw();
-                            scratch.assert_upper(var, Rational::from_int(bound), sat_raw)
-                        } else {
-                            // ¬(x ≤ bound) ↔ x ≥ bound+1
-                            let sat_raw = Literal::negative(*sat_var).raw();
-                            scratch.assert_lower(var, Rational::from_int(bound + 1), sat_raw)
-                        }
+                        scratch.assert_upper(var, Rational::from_int(bound), sat_raw)
                     }
                     SimplexAtom::Lower { var, bound } => {
-                        if val {
-                            let sat_raw = Literal::positive(*sat_var).raw();
-                            scratch.assert_lower(var, Rational::from_int(bound), sat_raw)
-                        } else {
-                            // ¬(x ≥ bound) ↔ x ≤ bound-1
-                            let sat_raw = Literal::negative(*sat_var).raw();
-                            scratch.assert_upper(var, Rational::from_int(bound - 1), sat_raw)
-                        }
+                        scratch.assert_lower(var, Rational::from_int(bound), sat_raw)
                     }
                 };
                 if let Err(e) = res {
