@@ -1,128 +1,105 @@
-# ReasonMesh Agent Status — 2026-09-09
+# ReasonMesh Agent Status — 2026-10-12
 
-## What We're Working On
+## Repository
 
-Closing the performance gap between ReasonMesh CDCL solver and CaDiCaL on the g2 benchmark (16 problems: 7 PHP pigeonhole UNSAT + 9 random 3-SAT).
-
-**Baseline (v4 PAR-2): 1835.8s**
-
-The gap decomposes into:
-- 1.2× single-thread BCP throughput (partially closed: 1.99→2.63 Mprop/s early)
-- 2.4× watch-list bloat (core problem)
-- ~2× multi-worker overhead
+Public at https://github.com/akkeshavan/ReasonMesh — v0.1.0 in progress.
 
 ---
 
-## Current Implementation State
+## Current State
 
-### What's been implemented (in code, tests passing)
+### What is working
 
-1. **Header bit layout change** (`crates/rm-sat/src/clause.rs`):
-   - Old: LBD in bits 2-15 (14 bits, mask 0x3FFF)
-   - New: LBD in bits 2-14 (13 bits, mask 0x1FFF), bit 15 = `used_since_reduce`
-   - Max LBD = 8191, never reached in practice
-   - `is_used()`, `mark_used()` methods added
-   - `reduce_learned()` now takes `used: bool` as 5th closure parameter
-   - Tier-2 survivors (LBD 3-6) have used bit cleared at each reduce
+| Component | Status |
+|---|---|
+| CDCL SAT core (`rm-sat`) | Production quality — 74 tests passing |
+| Parallel portfolio with AKX clause sharing | Working — 4-thread within 1.2× of Kissat/Z3 on SATLIB |
+| QF_BV (Tseitin bit-blasting) | Working |
+| QF_IDL / QF_RDL (Bellman-Ford) | Working |
+| QF_UF (e-graph congruence closure) | Working — 191/200 SMTLIB correct |
+| QF_UFIDL (Nelson-Oppen EUF+DL) | Partial — 87/200, 57% timeout rate |
+| QF_LIA / QF_UFLIA (Simplex) | Partial — 86/200, 57% timeout rate; 2 unit tests failing |
+| TCP cluster transport (`rm-cluster`) | Working — correctness tests pass |
+| Benchmark harness (`rm-bench`) | Working — checkpoint/resume, baseline comparison |
+| Proof certificates (DRUP, `rm-proof`) | Working for SAT |
 
-2. **`mark_used` in conflict analysis** (`crates/rm-sat/src/cdcl.rs`, `process_reason_into`):
-   - Every learned clause used as a reason in conflict analysis gets `mark_used` called
+### Benchmark summary (latest runs)
 
-3. **New clause initialization** (`clause.rs` `add()`):
-   - Tier-2 learned clauses (LBD 3-6) start with `used = true` (matching CaDiCaL)
-   - This gives one free reduce round before the clause must prove its value
+**SATLIB (807 problems, 4 threads, 300 s timeout):**
+796/807 solved, PAR-2 = 7 647 s (Kissat: 6 373 s, Z3: 6 401 s). No wrong answers.
+See `Benchmarks.md` for per-category breakdown.
 
-4. **Current deletion predicate** (mode-adaptive, `cdcl.rs` `maybe_reduce_db`):
-   ```rust
-   let in_stable = self.mode == SolverMode::Stable;
-   self.db.reduce_learned(|cr, lbd, activity, lit0, used| {
-       lbd > 2
-           && self.assignment.reason_of(lit0.var()) != cr.0
-           && (lbd > 6
-               || if in_stable { !used } else { activity < 1e-4 })
-   });
-   ```
-   - Focus mode: activity-based (v4-style, preserves SAT phase-guiding clauses)
-   - Stable mode: used-bit (CaDiCaL-style, keeps watch lists tight for UNSAT)
-
-### All 39 tests pass.
+**SMTLIB QF_UF/QF_UFIDL/QF_UFLIA (600 problems, 1 thread, 30 s timeout):**
+364/600 correct (QF_UF: 191/200, QF_UFIDL: 87/200, QF_UFLIA: 86/200), PAR-2 = 16 310 s (Z3: 9 549 s).
+No wrong answers. See `Benchmarks.md` for details.
 
 ---
 
-## Benchmark Results So Far
+## Open Issues
 
-### Quick 5-problem results (experiments/quick-check.toml):
+### 1. Two failing QF_UFLIA unit tests (blocking crates.io publish)
 
-| problem | v4 (baseline) | v8 (used=true init) | v11 (mode-adaptive) |
-|---------|--------------|---------------------|---------------------|
-| php-10-9 (UNSAT) | 7.818s | 8.146s | 13.128s |
-| r3sat-150-r425 (SAT) | 0.048s | 0.120s | 0.154s |
-| r3sat-238-1 (SAT) | 0.101s | 0.156s | 0.113s |
-| r3sat-238-2 (UNSAT) | 10.718s | 4.933s | 5.164s |
-| r3sat-240-r425 (UNSAT) | 14.885s | 7.755s | 7.663s |
+**`uf_congruence_unsat`** and **`uf_constant_offset_arg_unsat`** in `crates/rm-smt/src/lia.rs`.
 
-### Full 16-problem PAR-2 (experiments/g2-vs-z3.toml):
+Root cause: `encode_var_eq` bypasses `arith_atom_cache` and allocates fresh SAT variables for
+Simplex bound atoms that `encode_arith_cmp` may have already created. The SAT solver then treats
+them as independent, allowing it to set the Ackermann equality atoms to false even when the
+corresponding user-asserted equality is true.
 
-| version | PAR-2 | vs v4 |
-|---------|-------|-------|
-| v4 (baseline, activity only) | 1835.8s | — |
-| v7 (used=false init BUG) | 1832.8s | -3.1s |
-| v8 (used=true init) | 1837.8s | +2.0s |
+**Fix for `uf_congruence_unsat`** (straightforward):
+In `encode_var_eq` (lia.rs ~line 654), after computing `slack = form_to_var(diff)`, look up
+`arith_atom_cache[(slack, true, 0)]` and `arith_atom_cache[(slack, false, 0)]` before calling
+`alloc_sat()`. Reuse existing atoms if present, insert if not.
 
-**The full v11 benchmark was interrupted.**
+**Fix for `uf_constant_offset_arg_unsat`** (harder):
+The arg equality is derivable from Simplex row equations (e.g. `slack_xp1 = x+1` and `y-x = 1`)
+but there are no explicit bounds on the diff slack. The cache fix above doesn't help because no
+`encode_arith_cmp` was ever called on that form. Requires model-value-based congruence checking in
+`theory_final_check`: after `scratch.check()`, walk `ackermann_arg_tprop` pairs and detect when
+`scratch.model_value(arg_i) == scratch.model_value(arg_j)` but result vars differ.
+
+Relevant functions:
+- `encode_var_eq` — lia.rs:635
+- `encode_arith_cmp` — lia.rs:1039 (has the cache)
+- `theory_final_check` — lia.rs:517
+- `theory_propagate` — lia.rs:393
+
+### 2. QF_UFIDL and QF_UFLIA timeout rate (~57%)
+
+Nelson-Oppen T-propagation between EUF and DL is incomplete. The CDCL(T) loop exits too early
+on disjunctive instances because the EUF theory does not propagate equalities back to the DL
+solver proactively. Fixing T-propagation completeness is the highest-ROI improvement for
+QF_UFIDL.
 
 ---
 
-## The Core Problem We're Debugging
+## What Needs to Be Done (ordered by priority)
 
-**Tension between SAT and UNSAT performance:**
-
-- **UNSAT benefit**: used-bit deletion keeps watch lists smaller → much faster BCP → r3sat-238-2 improves from 10.7s to 4.9s
-- **SAT harm**: used-bit deletion removes phase-guiding clauses that prevent conflicts (they participate in BCP propagation but not conflict analysis, so never get `mark_used`)
-- **PHP harm**: noisy due to 4-worker non-determinism; ranges from 7.8s to 15s across runs
-
-**Why mode-adaptive (v11) is also struggling:**
-- PHP-10-9 is UNSAT and spends time in Stable mode (should benefit) but results are noisy
-- r3sat-150 (SAT, 15285 conflicts) still regresses because it may hit reduce in Stable mode before solving
-- 4-worker non-determinism makes it hard to isolate the signal
-
----
-
-## What To Try Next
-
-### Option A: Single-thread baseline first
-Run `cargo run --release -p reasonmesh-cli -- solve benchmarks/g1/php-10-9.cnf` with 1 worker to eliminate multi-worker noise from the PHP numbers.
-
-### Option B: Best-phase / target-phase tracking (technique #3)
-For SAT instances specifically, implementing "target phase" from Kissat:
-- Track `best_trail: Vec<bool>` — snapshot of polarity when trail reaches new maximum
-- On Stable→Focus transition: reset saved phases to `best_trail`
-- This is the primary fix for SAT instance regressions (r3sat-238-1, r3sat-150)
-
-### Option C: Fixed-interval reduction (technique #2)
-Replace `learnt_count > limit` trigger with conflict-interval trigger (every N conflicts, grow N by 1.1×). This decouples reduce frequency from clause learning rate and gives more stable intervals.
-
-### Option D: Revert used-bit for now, only keep the layout+mark_used infrastructure
-Keep the bit-layout change and `mark_used` infrastructure for future use, but revert the deletion predicate to pure activity-based (v4 behavior). The infrastructure is correct and tested; the deletion strategy can be refined with best-phase + fixed-interval first.
+- [ ] Fix `uf_congruence_unsat` — use `arith_atom_cache` in `encode_var_eq`
+- [ ] Fix `uf_constant_offset_arg_unsat` — model-value congruence check in TFC
+- [ ] Improve QF_UFIDL T-propagation (complete Nelson-Oppen EUF↔DL propagation)
+- [ ] Parallel CDCL(T): share theory lemmas (not just SAT clauses) over AKX bus
+- [ ] Cube-and-conquer for SMT instances (currently SAT only)
+- [ ] DRUP proof certificates for SMT logics
+- [ ] Metal GPU WalkSAT kernel (stub exists at `crates/rm-gpu/src/lib.rs`, kernel not written)
+- [ ] CI on Linux and Windows (currently macOS-only)
+- [ ] Publish to crates.io (blocked on the two unit test failures above)
+- [ ] Lean 4 tactic integration (`docs/integrations.md` documents the intended API)
 
 ---
 
 ## Key Files
 
-- `crates/rm-sat/src/clause.rs` — Header bit layout, `is_used`, `mark_used`, `reduce_learned`
-- `crates/rm-sat/src/cdcl.rs` — `maybe_reduce_db`, `process_reason_into`, `add_learned_clause`
-- `experiments/g2-vs-z3.toml` — 16-problem benchmark manifest
-- `experiments/quick-check.toml` — 5-problem quick benchmark (created this session)
-- `benchmarks/results/g2/g2-vs-z3-v4.json` — v4 baseline results (reference)
-- Scratchpad: `/private/tmp/claude-501/-Users-anand-air-projects-ReasonMesh/f21a5d31-fd95-4ed9-b05d-4395be04206f/scratchpad/`
-  - `v7.json` — v7 full benchmark (used=false bug, PAR-2 1832.8s)
-  - `v8-full.json` — v8 full benchmark (used=true init, PAR-2 1837.8s)
-  - `v8-quick.json`, `v9-quick.json`, `v10-quick.json`, `v11-quick.json` — quick runs
-
----
-
-## Recommendation for Tomorrow
-
-Start with **Option D** (revert deletion predicate to v4 activity-based), commit the infrastructure changes (bit layout + mark_used + used=true init) as a clean foundation, then implement best-phase tracking (Option B) which is the higher-ROI technique for SAT instances. The used-bit deletion can be re-introduced on top once best-phase is working.
-
-Commit message for current infrastructure: "Add used_since_reduce bit to clause header for CaDiCaL-style tier-2 tracking"
+| File | Purpose |
+|---|---|
+| `crates/rm-smt/src/lia.rs` | QF_LIA/QF_UFLIA encoder, Simplex DPLL(T) loop |
+| `crates/rm-smt/src/cdclt.rs` | Generic CDCL(T) loop |
+| `crates/rm-smt/src/dl.rs` | QF_IDL/QF_RDL Bellman-Ford theory |
+| `crates/rm-smt/src/uf.rs` | QF_UF congruence closure theory |
+| `crates/rm-theory-arith/src/simplex.rs` | Dutertre-de Moura Simplex |
+| `crates/rm-sat/src/cdcl.rs` | CDCL engine |
+| `crates/rm-sat/src/parallel.rs` | Parallel worker pool |
+| `crates/rm-cluster/src/` | TCP cluster transport |
+| `experiments/` | Benchmark manifests |
+| `Benchmarks.md` | Latest benchmark results tables |
+| `docs/architecture_spec.md` | Full design spec (AKX protocol v0.2) |
