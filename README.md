@@ -561,8 +561,9 @@ Clause sharing vs. isolated-portfolio comparisons on PHP and random-3-SAT instan
 
 ### What needs to be done
 
-- [ ] Fix the two failing QF_UFLIA congruence tests
-- [ ] Improve QF_UFIDL coverage (complete Nelson-Oppen T-propagation)
+- [ ] Fix the two failing QF_UFLIA congruence tests (`uf_congruence_unsat`, `uf_constant_offset_arg_unsat`)
+- [ ] Complete QF_UFLIA T-propagation: `encode_var_eq` must reuse atoms from `arith_atom_cache` so Ackermann equality literals share SAT variables with user-asserted equalities; add model-value congruence check in `theory_final_check` for equalities derivable only from Simplex row equations
+- [ ] Complete QF_UFIDL T-propagation: finish Nelson-Oppen EUF↔DL propagation so derived equalities from congruence closure are forwarded to the difference-logic solver without waiting for SAT search (currently 57% timeout rate)
 - [ ] Parallel CDCL(T): wire theory solvers into the AKX bus so theory lemmas flow between workers (currently only SAT clauses are shared)
 - [ ] Cube-and-conquer for SMT instances (currently only SAT)
 - [ ] DRUP proof certificates for SMT logics (currently only QF_SAT has proofs)
