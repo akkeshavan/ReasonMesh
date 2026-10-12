@@ -1250,7 +1250,24 @@ fn main() {
             }
         }
         Command::Benchmark { manifest, checkpoint } => match Manifest::load(&manifest) {
-            Ok(m) => match run_manifest(&m, checkpoint.as_deref()) {
+            Ok(m) => {
+                // Default checkpoint path: results/<manifest-stem>.ckpt
+                // Always inside results/ which is gitignored, so checkpoint files
+                // can never be accidentally committed from the repo root.
+                let default_ckpt;
+                let checkpoint = match checkpoint {
+                    Some(p) => Some(p),
+                    None => {
+                        let stem = manifest
+                            .file_stem()
+                            .unwrap_or(std::ffi::OsStr::new("bench"))
+                            .to_string_lossy();
+                        let _ = std::fs::create_dir_all("results");
+                        default_ckpt = std::path::PathBuf::from(format!("results/{stem}.ckpt"));
+                        Some(default_ckpt)
+                    }
+                };
+                match run_manifest(&m, checkpoint.as_deref()) {
                 Ok(run) => {
                     let out = run.to_json_pretty();
                     use std::io::Write;
@@ -1266,7 +1283,7 @@ fn main() {
                     eprintln!("error: benchmark run failed: {e}");
                     std::process::exit(EXIT_INTERNAL_ERROR);
                 }
-            },
+            }},
             Err(e) => {
                 eprintln!(
                     "error: invalid benchmark manifest {}: {e}",

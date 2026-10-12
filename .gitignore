@@ -17,6 +17,9 @@ scratch/
 
 # Benchmark run outputs (JSON results, logs, checkpoints) — regenerate with `reasonmesh benchmark`
 results/
+# Bare numeric checkpoint files accidentally written to repo root (e.g. --checkpoint 0)
+/[0-9]
+/[0-9][0-9]
 
 # TLA+ generated and binary files
 # tla2tools.jar is a tool dependency — download it separately (see tla/README.md)
