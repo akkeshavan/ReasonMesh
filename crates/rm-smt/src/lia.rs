@@ -566,6 +566,64 @@ impl TheorySolver for LiaCdclT {
             return Some(conflict);
         }
 
+        // Congruence check: after the rational Simplex says SAT, verify that for
+        // every Ackermann arg pair the SAT model's equality atoms agree with what
+        // the Simplex model actually assigns.
+        //
+        // This catches cases where the arg equality is derivable purely from
+        // Simplex row equations (e.g. slack_xp1 = x+1 and y-x = 1 → x+1 = y)
+        // with no explicit bound on the diff slack, so the arith_atom_cache fix in
+        // encode_var_eq doesn't help.  We probe: if the SAT model has le_sat=false
+        // but Simplex model_value says args are equal, asserting Lower(diff,1)
+        // (the negation of Upper(diff,0)) must conflict with the existing rows —
+        // we collect that conflict core as a theory lemma and return it.
+        for &(arg_i, arg_j, le_sat, ge_sat) in &self.ackermann_arg_tprop {
+            if le_sat == 0 || ge_sat == 0 {
+                continue; // trivial pair (same var)
+            }
+            let vi = scratch.model_value(arg_i);
+            let vj = scratch.model_value(arg_j);
+            if vi != vj {
+                continue; // args genuinely differ in the model
+            }
+
+            // Retrieve the diff slack from the le_sat atom.
+            let slack = match self.atoms.get(&le_sat) {
+                Some(SimplexAtom::Upper { var, .. }) => *var,
+                _ => continue,
+            };
+
+            // If le_sat is FALSE: the SAT model claims diff > 0, but Simplex
+            // says diff = 0.  Probe Lower(diff, 1); if it conflicts, emit the
+            // lemma [+le_sat, ¬<witness bounds>].
+            if !model.value_of(le_sat) {
+                let mut probe = scratch.clone();
+                let neg_raw = Literal::negative(le_sat).raw();
+                let conflict = probe
+                    .assert_lower(slack, Rational::from_int(1), neg_raw)
+                    .err()
+                    .map(|e| mk_conflict_simplex(&e.lits))
+                    .or_else(|| probe.check().err().map(|e| mk_conflict_simplex(&e.lits)));
+                if let Some(c) = conflict {
+                    return Some(c);
+                }
+            }
+
+            // If ge_sat is FALSE: the SAT model claims diff < 0; probe Upper(diff,-1).
+            if !model.value_of(ge_sat) {
+                let mut probe = scratch.clone();
+                let neg_raw = Literal::negative(ge_sat).raw();
+                let conflict = probe
+                    .assert_upper(slack, Rational::from_int(-1), neg_raw)
+                    .err()
+                    .map(|e| mk_conflict_simplex(&e.lits))
+                    .or_else(|| probe.check().err().map(|e| mk_conflict_simplex(&e.lits)));
+                if let Some(c) = conflict {
+                    return Some(c);
+                }
+            }
+        }
+
         // Integer feasibility: if any Int-sorted variable has a fractional value,
         // emit a branch-and-bound disjunction x ≤ floor(v) ∨ x ≥ ceil(v).
         // Use `scratch` (complete-model assignment) not `self.simplex` (incremental).
@@ -651,10 +709,27 @@ fn encode_var_eq(a: u32, b: u32, solver: &mut LiaCdclT) -> (Literal, u32, u32) {
     diff.coeffs.insert(b, -1);
     // Use form_to_var so (a-b) reuses any existing slack/row for this form.
     let slack = form_to_var(diff, solver);
-    let le_sat = solver.alloc_sat();
-    solver.atoms.insert(le_sat, SimplexAtom::Upper { var: slack, bound: 0 });
-    let ge_sat = solver.alloc_sat();
-    solver.atoms.insert(ge_sat, SimplexAtom::Lower { var: slack, bound: 0 });
+    // Reuse atoms from arith_atom_cache when encode_arith_cmp already created
+    // them for the same slack.  Without this, encode_var_eq would allocate fresh
+    // SAT variables that the SAT solver treats as independent of the user-asserted
+    // equality, allowing it to set the Ackermann equality atoms false even when the
+    // corresponding arithmetic assertion forces the diff slack to zero.
+    let le_sat = if let Some(&v) = solver.arith_atom_cache.get(&(slack, true, 0)) {
+        v
+    } else {
+        let v = solver.alloc_sat();
+        solver.atoms.insert(v, SimplexAtom::Upper { var: slack, bound: 0 });
+        solver.arith_atom_cache.insert((slack, true, 0), v);
+        v
+    };
+    let ge_sat = if let Some(&v) = solver.arith_atom_cache.get(&(slack, false, 0)) {
+        v
+    } else {
+        let v = solver.alloc_sat();
+        solver.atoms.insert(v, SimplexAtom::Lower { var: slack, bound: 0 });
+        solver.arith_atom_cache.insert((slack, false, 0), v);
+        v
+    };
     // Tseitin AND: z ↔ (le ∧ ge)
     let v = solver.alloc_sat();
     let z = Literal::positive(v);
