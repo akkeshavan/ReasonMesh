@@ -172,6 +172,13 @@ struct LiaCdclT {
     /// Used in theory_propagate to emit T-propagation lemmas when tight Simplex
     /// bounds prove an arg diff is zero (forcing the le/ge atoms TRUE by theory).
     ackermann_arg_tprop: Vec<(u32, u32, u32, u32)>,
+    /// Full Ackermann pair data for lazy clause generation in TFC.
+    /// Tuple: (arg_eq_lits, result_eq_lit, result_i, result_j).
+    /// Ackermann clauses (¬eq_0 ∨ … ∨ res_eq) are NOT added upfront — for
+    /// problems with many UF applications they would flood the SAT database
+    /// with O(n²) clauses and degrade BCP.  TFC checks model values instead
+    /// and returns a violated clause on demand.
+    ackermann_full_pairs: Vec<(Vec<Literal>, Literal, u32, u32)>,
 }
 
 impl LiaCdclT {
@@ -202,6 +209,7 @@ impl LiaCdclT {
             eq_detail_cache: FxHashMap::default(),
             ackermann_le_ge_atoms: FxHashSet::default(),
             ackermann_arg_tprop: Vec::new(),
+            ackermann_full_pairs: Vec::new(),
         }
     }
 
@@ -624,6 +632,30 @@ impl TheorySolver for LiaCdclT {
             }
         }
 
+        // Lazy Ackermann: check all deferred Ackermann pairs against the SAT model.
+        // Ackermann clauses (¬eq_0 ∨ … ∨ res_eq) were not added upfront to avoid
+        // flooding the SAT database with O(n²) clauses.  For each pair, if all arg
+        // equality literals are TRUE and the result equality literal is FALSE in
+        // the current complete SAT model, congruence is violated — return the
+        // Ackermann clause as a conflict so CDCL learns it and backtracks.
+        for (arg_eq_lits, res_eq_lit, _ri, _rj) in &self.ackermann_full_pairs {
+            // Skip if any arg equality is FALSE (args are different in SAT model —
+            // the implication is vacuously satisfied, no congruence violation).
+            let all_args_true = arg_eq_lits.iter().all(|&lit| {
+                model.value_of(lit.var()) == lit.is_positive()
+            });
+            if !all_args_true {
+                continue;
+            }
+            // If result equality is FALSE → congruence violated.
+            let res_false = model.value_of(res_eq_lit.var()) != res_eq_lit.is_positive();
+            if res_false {
+                let mut clause: Vec<Literal> = arg_eq_lits.iter().map(|l| l.negate()).collect();
+                clause.push(*res_eq_lit);
+                return Some(clause);
+            }
+        }
+
         // Integer feasibility: if any Int-sorted variable has a fractional value,
         // emit a branch-and-bound disjunction x ≤ floor(v) ∨ x ≥ ceil(v).
         // Use `scratch` (complete-model assignment) not `self.simplex` (incremental).
@@ -799,10 +831,12 @@ fn add_ackermann_constraints(solver: &mut LiaCdclT) {
         }
         // Encode result equality.
         let (res_eq, _, _) = encode_var_eq(ri, rj, solver);
-        // Ackermann clause: ¬eq_0 ∨ ¬eq_1 ∨ ... ∨ res_eq
-        let mut clause: Vec<Literal> = arg_lits.iter().map(|l| l.negate()).collect();
-        clause.push(res_eq);
-        solver.add_clause(&clause);
+        // Defer the Ackermann clause (¬eq_0 ∨ … ∨ res_eq) to TFC.
+        // Adding it here for every pair would create O(n²) BCP-active clauses
+        // that dominate the SAT instance for problems with many UF applications
+        // (e.g. processor verification benchmarks with 10,000+ pairs).
+        // TFC checks model values and returns the violated clause on demand.
+        solver.ackermann_full_pairs.push((arg_lits, res_eq, ri, rj));
     }
 }
 
