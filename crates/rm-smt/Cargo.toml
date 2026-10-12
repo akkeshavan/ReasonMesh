@@ -1,10 +1,13 @@
 [package]
 name = "rm-smt"
-description = "SMT-LIB 2 facade: dispatches QF_BV, QF_IDL, QF_UF, and QF_UFIDL to theory solvers"
+description = "SMT-LIB 2 facade: QF_BV, QF_IDL, QF_UF, QF_UFIDL, QF_LIA, and QF_UFLIA theory solvers"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+readme = "README.md"
+keywords = ["smt", "sat", "solver", "formal-verification"]
+categories = ["algorithms", "science"]
 
 [dependencies]
 rm-akx          = { workspace = true }

@@ -1,0 +1,54 @@
+schema_version = 1
+name = "satlib-smoke"
+description = "5-problem smoke test for 4-thread baselines"
+
+[solver]
+workers = 4
+timeout_secs = 30
+parallel_problems = 4
+
+[output]
+dir = "results/satlib-smoke"
+trace = false
+
+[[baselines]]
+name = "kissat-1t"
+binary = "kissat"
+args = ["-q"]
+
+[[baselines]]
+name = "z3-4t"
+binary = "z3"
+args = ["sat.threads=4"]
+
+[[baselines]]
+name = "cadical-4p"
+binary = "cadical"
+args = ["-q"]
+workers = 4
+seed_flag = "--seed"
+
+[[problems]]
+name = "uf50/uf50-01"
+file = "../benchmarks/satlib/uf50/uf50-01.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uf50/uf50-010"
+file = "../benchmarks/satlib/uf50/uf50-010.cnf"
+expect = "sat"
+
+[[problems]]
+name = "uuf50/uuf50-01"
+file = "../benchmarks/satlib/uuf50/uuf50-01.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uuf50/uuf50-010"
+file = "../benchmarks/satlib/uuf50/uuf50-010.cnf"
+expect = "unsat"
+
+[[problems]]
+name = "uf100/uf100-01"
+file = "../benchmarks/satlib/uf100/uf100-01.cnf"
+expect = "sat"

@@ -5,24 +5,32 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+keywords = ["sat", "smt", "solver", "cli", "formal-verification"]
+categories = ["command-line-utilities", "science"]
 
 [[bin]]
 name = "reasonmesh"
 path = "src/main.rs"
 
 [dependencies]
-rm-akx    = { workspace = true }
-rm-gpu    = { workspace = true, features = ["metal"] }
-rm-sat    = { workspace = true }
-rm-smt    = { workspace = true }
-rm-bus    = { workspace = true }
-rm-proof  = { workspace = true }
+rm-akx       = { workspace = true }
+rm-gpu       = { workspace = true }
+rm-sat       = { workspace = true }
+rm-smt       = { workspace = true }
+rm-bus       = { workspace = true }
+rm-proof     = { workspace = true }
 rm-telemetry = { workspace = true }
-rm-bench  = { workspace = true }
-rm-worker = { workspace = true }
-clap      = { workspace = true }
-log       = { workspace = true }
-env_logger = { workspace = true }
-serde     = { workspace = true }
-serde_json = { workspace = true }
-thiserror  = { workspace = true }
+rm-bench     = { workspace = true }
+rm-worker    = { workspace = true }
+rm-cluster   = { workspace = true }
+clap         = { workspace = true }
+tokio        = { workspace = true }
+log          = { workspace = true }
+env_logger   = { workspace = true }
+serde        = { workspace = true }
+serde_json   = { workspace = true }
+thiserror    = { workspace = true }
+
+# Metal GPU backend is macOS-only; on other platforms rm-gpu compiles without it.
+[target.'cfg(target_os = "macos")'.dependencies]
+rm-gpu = { workspace = true, features = ["metal"] }

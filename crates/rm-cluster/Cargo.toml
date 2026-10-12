@@ -1,0 +1,17 @@
+[package]
+name = "rm-cluster"
+description = "TCP cluster transport for distributed cube-and-conquer solving"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords = ["distributed", "sat", "cluster", "solver"]
+categories = ["network-programming", "algorithms"]
+
+[dependencies]
+rm-sat    = { workspace = true }
+tokio     = { workspace = true }
+serde     = { workspace = true }
+postcard  = { workspace = true }
+thiserror = { workspace = true }
+log       = { workspace = true }

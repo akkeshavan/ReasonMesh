@@ -9,7 +9,8 @@ use rm_bus::{BusConfig, BusError, KnowledgeBus, PollBudget, PublishHandle};
 use rm_proof::model::check_dimacs_model;
 use rm_proof::proof_file::ProofFile as RmProofFile;
 use rm_proof::{ProofError, ProofFile, ProofStatus};
-use rm_sat::{parse_dimacs, CdclSolver, DimacsCnf, SolveResult};
+use rm_sat::{parse_dimacs, CdclSolver, DimacsCnf, ParallelCdclSolver, ParallelConfig, SolveResult};
+use rm_cluster::{ClusterCoordinator, ClusterResult, ClusterWorkerNode};
 use rm_smt::{SmtError, SmtSolver, SmtStatus};
 use rm_telemetry::{
     now_nanos, Event, EventKind, Outcome, RunMeta, TraceError, TraceReader, TraceWriter,
@@ -92,6 +93,14 @@ enum StrategyArg {
     Portfolio,
     /// Cube-and-conquer with lookahead splitting across N workers.
     Cnc,
+    /// Parallel CDCL with shared in-memory clause database.
+    /// All workers run on the same machine sharing one clause pool; ideal for big
+    /// single-machine runs (256 GB / 34+ core servers). First SAT/UNSAT wins.
+    SharedDb,
+    /// Cluster cube-and-conquer: coordinator distributes cubes to remote workers
+    /// via TCP binary protocol. Bind address set with --cluster-bind; spawn local
+    /// workers with --workers N for single-machine testing.
+    Cluster,
 }
 
 /// Exit codes follow the SAT competition convention:
@@ -149,6 +158,15 @@ enum Command {
         /// SAT instances write a model proof; UNSAT instances write a DRUP proof.
         #[arg(long)]
         proof_out: Option<PathBuf>,
+        /// TCP address the coordinator listens on when --strategy cluster is used.
+        /// Remote workers connect here.  Defaults to 127.0.0.1:7654.
+        #[arg(long, default_value = "127.0.0.1:7654")]
+        cluster_bind: String,
+        /// Number of cubes to pre-split the problem into for --strategy cluster.
+        /// Rounded up to the nearest power of 2 (minimum 1).  The split fixes the
+        /// first log2(N) variables to all combinations.  1 = no split (whole problem).
+        #[arg(long, default_value = "1")]
+        cluster_cubes: u32,
     },
     /// Run as a cluster node: load a DIMACS file, start local workers, and
     /// exchange learned clauses with peer nodes over TCP (AKX NetBus).
@@ -197,6 +215,18 @@ enum Command {
         /// solved problems.
         #[arg(long)]
         checkpoint: Option<PathBuf>,
+    },
+    /// Run as a cluster worker node: connect to a coordinator and solve assigned cubes.
+    ///
+    /// Start one or more of these on remote machines while the coordinator runs
+    /// `reasonmesh solve --strategy cluster --cluster-bind <addr>`.
+    WorkerNode {
+        /// Coordinator TCP address to connect to (host:port).
+        #[arg(long)]
+        coordinator: String,
+        /// Number of local CDCL threads per cube (0 = use all CPUs on this machine).
+        #[arg(long, default_value = "0")]
+        threads: usize,
     },
 }
 
@@ -606,6 +636,8 @@ fn run_solve_with_strategy(
     strategy: StrategyArg,
     proof_out: Option<&std::path::Path>,
     use_gpu: bool,
+    cluster_bind: &str,
+    cluster_cubes: u32,
 ) -> (i32, Vec<Event>) {
     // SMT-LIB files bypass all of this and go straight to the SMT path.
     if file.extension().is_some_and(|e| e == "smt2" || e == "smt") {
@@ -665,6 +697,12 @@ fn run_solve_with_strategy(
         }
         StrategyArg::Cnc if workers > 1 => {
             run_solve_cnc(&cnf, workers, timeout_secs)
+        }
+        StrategyArg::SharedDb => {
+            run_solve_shared_db(&cnf, workers)
+        }
+        StrategyArg::Cluster => {
+            run_solve_cluster(&cnf, cluster_bind, workers as usize, cluster_cubes)
         }
         _ => {
             // cdcl, or portfolio/cnc with workers==1 (fall back to single solver)
@@ -752,6 +790,116 @@ fn run_solve_cnc(cnf: &DimacsCnf, workers: u32, timeout_secs: u64) -> (i32, Vec<
         }
         Outcome::Unknown => {
             println!("s UNKNOWN");
+            (EXIT_UNKNOWN, vec![])
+        }
+    }
+}
+
+/// Parallel CDCL with shared in-memory clause database.
+/// Uses all logical CPUs by default; `workers == 0` means auto-detect.
+fn run_solve_shared_db(cnf: &DimacsCnf, workers: u32) -> (i32, Vec<Event>) {
+    let config = ParallelConfig {
+        num_threads: workers as usize, // 0 → auto-detect inside ParallelCdclSolver
+        ..Default::default()
+    };
+    let solver = ParallelCdclSolver::from_dimacs(cnf.num_vars, &cnf.clauses, config);
+    match solver.solve() {
+        SolveResult::Sat(_) => {
+            println!("s SATISFIABLE");
+            (EXIT_SAT, vec![])
+        }
+        SolveResult::Unsat => {
+            println!("s UNSATISFIABLE");
+            (EXIT_UNSAT, vec![])
+        }
+        _ => {
+            println!("s UNKNOWN");
+            (EXIT_UNKNOWN, vec![])
+        }
+    }
+}
+
+/// Cluster solve: start a TCP coordinator, optionally spawn local workers, and
+/// wait for all cubes to be resolved.  With `local_workers > 0` this runs a
+/// full cluster in a single process (good for testing / single-machine use).
+/// With `local_workers == 0` it listens for remote worker nodes to connect.
+/// Split the problem into `n` cubes by exhaustively fixing the first k variables
+/// (k = ceil(log2(n))).  Produces 2^k cubes covering all combinations.
+fn generate_cubes(n: u32, num_vars: u32) -> Vec<Vec<i32>> {
+    if n <= 1 || num_vars == 0 {
+        return vec![vec![]];
+    }
+    let k = (n as f64).log2().ceil() as u32;
+    let k = k.min(num_vars);
+    (0..(1u32 << k))
+        .map(|mask| {
+            (0..k)
+                .map(|bit| {
+                    let var = (bit + 1) as i32;
+                    if mask & (1 << bit) != 0 { var } else { -var }
+                })
+                .collect()
+        })
+        .collect()
+}
+
+fn run_solve_cluster(
+    cnf: &DimacsCnf,
+    bind: &str,
+    local_workers: usize,
+    n_cubes: u32,
+) -> (i32, Vec<Event>) {
+    use std::net::SocketAddr;
+
+    let bind_addr: SocketAddr = match bind.parse() {
+        Ok(a) => a,
+        Err(e) => {
+            eprintln!("error: invalid --cluster-bind address '{bind}': {e}");
+            return (EXIT_INTERNAL_ERROR, vec![]);
+        }
+    };
+
+    let cubes = generate_cubes(n_cubes, cnf.num_vars);
+    eprintln!("info: problem split into {} cube(s)", cubes.len());
+
+    let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
+    let result = rt.block_on(async {
+        let coord = ClusterCoordinator;
+        let bound = match coord.bind(bind_addr).await {
+            Ok(b) => b,
+            Err(e) => {
+                eprintln!("error: cluster bind failed: {e}");
+                return ClusterResult::Failed(e.to_string());
+            }
+        };
+        eprintln!("info: cluster coordinator on {}", bound.addr);
+
+        if local_workers > 0 {
+            let addr = bound.addr;
+            for _ in 0..local_workers {
+                tokio::spawn(async move {
+                    ClusterWorkerNode::new(0).run(addr).await.ok();
+                });
+            }
+            eprintln!("info: spawned {local_workers} local worker(s)");
+        } else {
+            eprintln!("info: waiting for remote workers to connect to {}", bound.addr);
+        }
+
+        bound.run(cnf.num_vars, cnf.clauses.clone(), cubes).await
+    });
+
+    match result {
+        ClusterResult::Sat => {
+            println!("s SATISFIABLE");
+            (EXIT_SAT, vec![])
+        }
+        ClusterResult::Unsat => {
+            println!("s UNSATISFIABLE");
+            (EXIT_UNSAT, vec![])
+        }
+        ClusterResult::Failed(msg) => {
+            eprintln!("error: cluster solve failed: {msg}");
             (EXIT_UNKNOWN, vec![])
         }
     }
@@ -1024,6 +1172,8 @@ fn main() {
             classify_only,
             trace,
             proof_out,
+            cluster_bind,
+            cluster_cubes,
         } => {
             let workers = if deterministic { 1 } else { workers };
             log::info!(
@@ -1060,6 +1210,8 @@ fn main() {
                 strategy,
                 proof_out.as_deref(),
                 !no_gpu,
+                &cluster_bind,
+                cluster_cubes,
             );
             if let Some(trace_path) = trace {
                 match write_trace(&trace_path, seed, command_line, events) {
@@ -1078,6 +1230,24 @@ fn main() {
         },
         Command::CheckProof { proof } => {
             std::process::exit(run_check_proof(&proof));
+        }
+        Command::WorkerNode { coordinator, threads } => {
+            let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+            loop {
+                let addr = coordinator.clone();
+                match rt.block_on(async { ClusterWorkerNode::new(threads).run(addr.as_str()).await }) {
+                    Ok(()) => std::process::exit(0),
+                    Err(e) if std::time::Instant::now() < deadline => {
+                        eprintln!("info: [{coordinator}] {e}, retrying in 2s...");
+                        std::thread::sleep(std::time::Duration::from_secs(2));
+                    }
+                    Err(e) => {
+                        eprintln!("error: [{coordinator}] {e}");
+                        std::process::exit(EXIT_INTERNAL_ERROR);
+                    }
+                }
+            }
         }
         Command::Benchmark { manifest, checkpoint } => match Manifest::load(&manifest) {
             Ok(m) => match run_manifest(&m, checkpoint.as_deref()) {

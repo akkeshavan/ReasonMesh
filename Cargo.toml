@@ -19,6 +19,7 @@ members = [
     "crates/rm-telemetry",
     "crates/rm-bench",
     "crates/rm-coordinator",
+    "crates/rm-cluster",
     "crates/rm-node",
     "crates/reasonmesh-cli",
 ]
@@ -28,7 +29,8 @@ resolver = "2"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-repository = "https://github.com/reasonmesh/reasonmesh"
+repository = "https://github.com/akkeshavan/ReasonMesh"
+description = "Parallel SAT/SMT solver with asynchronous clause sharing (AKX protocol)"
 
 [workspace.dependencies]
 # Internal crates — version required alongside path so crates.io can resolve
@@ -51,6 +53,7 @@ rm-proof     = { path = "crates/rm-proof",    version = "0.1.0" }
 rm-telemetry = { path = "crates/rm-telemetry", version = "0.1.0" }
 rm-bench     = { path = "crates/rm-bench",    version = "0.1.0" }
 rm-coordinator = { path = "crates/rm-coordinator", version = "0.1.0" }
+rm-cluster     = { path = "crates/rm-cluster",     version = "0.1.0" }
 rm-node        = { path = "crates/rm-node",   version = "0.1.0" }
 
 # External crates

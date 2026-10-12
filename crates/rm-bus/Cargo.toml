@@ -5,6 +5,8 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+keywords = ["clause-sharing", "sat", "parallel", "pubsub"]
+categories = ["concurrency", "network-programming"]
 
 [dependencies]
 rm-akx            = { workspace = true }

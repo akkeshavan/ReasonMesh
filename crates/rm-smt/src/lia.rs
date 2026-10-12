@@ -21,7 +21,7 @@ use rm_syntax::ast::{ArithCmpKind, ArithOpKind, Term, TermInner};
 use rm_syntax::{Script, SortExpr};
 use rm_theory_arith::{Rational, SimplexSolver};
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 // ---------------------------------------------------------------------------
 // Public result type
@@ -158,6 +158,20 @@ struct LiaCdclT {
     /// Prevents encode_arith_cmp from creating duplicate SAT atoms when the same
     /// comparison appears multiple times (e.g. via let-expansion).
     arith_atom_cache: FxHashMap<(u32, bool, i64), u32>,
+    /// (le_sat, ge_sat) component SAT vars for each encode_var_eq pair.
+    /// Populated alongside eq_cache so we can retrieve the component atoms
+    /// without re-creating them (e.g. for Ackermann T-propagation bookkeeping).
+    eq_detail_cache: FxHashMap<(u32, u32), (u32, u32)>,
+    /// SAT vars that are the le/ge component atoms of Ackermann arg-equality
+    /// encodings. These atoms represent `diff_slack ≤ 0` and `diff_slack ≥ 0`
+    /// for arg diffs of UF pairs, where integer tightening (¬(x≤k) → x≥k+1)
+    /// is unsound: it creates permanent Simplex bounds that block the solver
+    /// from exploring branches where two UF args are equal.
+    ackermann_le_ge_atoms: FxHashSet<u32>,
+    /// (arg_i_var, arg_j_var, le_sat, ge_sat) tuples for Ackermann arg pairs.
+    /// Used in theory_propagate to emit T-propagation lemmas when tight Simplex
+    /// bounds prove an arg diff is zero (forcing the le/ge atoms TRUE by theory).
+    ackermann_arg_tprop: Vec<(u32, u32, u32, u32)>,
 }
 
 impl LiaCdclT {
@@ -185,6 +199,9 @@ impl LiaCdclT {
             cancel,
             eq_cache: FxHashMap::default(),
             arith_atom_cache: FxHashMap::default(),
+            eq_detail_cache: FxHashMap::default(),
+            ackermann_le_ge_atoms: FxHashSet::default(),
+            ackermann_arg_tprop: Vec::new(),
         }
     }
 
@@ -219,6 +236,84 @@ impl LiaCdclT {
         self.bb_end = self.next_sat_var;
 
         let num_vars = self.next_sat_var - 1;
+        // Debug: simulate BCP to find propositional contradiction
+        if std::env::var("RM_DEBUG_TFC").is_ok() {
+            // value: None=unset, Some(true)=forced TRUE, Some(false)=forced FALSE
+            let mut vals: Vec<Option<bool>> = vec![None; (num_vars + 1) as usize];
+            let mut queue: std::collections::VecDeque<(u32, bool)> = std::collections::VecDeque::new();
+            // Seed with unit clauses
+            for clause in &self.pending_clauses {
+                if clause.len() == 1 {
+                    let lit = clause[0];
+                    queue.push_back((lit.var(), lit.is_positive()));
+                }
+            }
+            // Propagate
+            let mut contradiction: Option<(u32, bool, bool)> = None;
+            while let Some((var, val)) = queue.pop_front() {
+                if var as usize >= vals.len() { continue; }
+                if let Some(existing) = vals[var as usize] {
+                    if existing != val {
+                        contradiction = Some((var, existing, val));
+                        break;
+                    }
+                    continue;
+                }
+                vals[var as usize] = Some(val);
+                // Propagate through all clauses where this lit is FALSE → unit
+                for clause in &self.pending_clauses {
+                    // Check if our assignment makes this clause unit
+                    let mut unset_count = 0u32;
+                    let mut last_unset: Option<Literal> = None;
+                    let mut satisfied = false;
+                    for &lit in clause {
+                        if lit.var() as usize >= vals.len() { unset_count += 1; last_unset = Some(lit); continue; }
+                        match vals[lit.var() as usize] {
+                            None => { unset_count += 1; last_unset = Some(lit); }
+                            Some(v) if v == lit.is_positive() => { satisfied = true; break; }
+                            _ => {} // this lit is FALSE
+                        }
+                    }
+                    if !satisfied && unset_count == 1 {
+                        if let Some(unit_lit) = last_unset {
+                            queue.push_back((unit_lit.var(), unit_lit.is_positive()));
+                        }
+                    } else if !satisfied && unset_count == 0 {
+                        log::trace!("[BCP] all-false clause: {:?}", clause);
+                    }
+                }
+            }
+            let assigned_count = vals.iter().filter(|v| v.is_some()).count();
+            if let Some((var, v1, v2)) = contradiction {
+                log::trace!("[BCP] contradiction at var={}: forced both {} and {}", var, v1, v2);
+                if let Some(atom) = self.atoms.get(&var) {
+                    log::trace!("  simplex atom for var {}: {:?}", var, atom);
+                }
+            } else {
+                log::trace!("[BCP] no contradiction found; assigned {}/{} vars", assigned_count, num_vars);
+            }
+            log::trace!("[BCP] pending_clauses={} vars={}", self.pending_clauses.len(), num_vars);
+            // RUST_LOG=trace + RM_DUMP_DIMACS=/tmp/out.cnf dumps the clause set to a file
+            if let Ok(path) = std::env::var("RM_DUMP_DIMACS") {
+                let mut out = String::new();
+                out.push_str(&format!("p cnf {} {}\n", num_vars, self.pending_clauses.len()));
+                for clause in &self.pending_clauses {
+                    for lit in clause {
+                        if lit.is_positive() {
+                            out.push_str(&format!("{} ", lit.var()));
+                        } else {
+                            out.push_str(&format!("-{} ", lit.var()));
+                        }
+                    }
+                    out.push_str("0\n");
+                }
+                if let Err(e) = std::fs::write(&path, &out) {
+                    log::warn!("RM_DUMP_DIMACS: could not write to {path}: {e}");
+                } else {
+                    log::trace!("RM_DUMP_DIMACS: wrote {} to {path}", out.len());
+                }
+            }
+        }
         let mut sat = CdclSolver::new(num_vars);
         sat.skip_bve();
         for clause in self.pending_clauses.drain(..) {
@@ -248,6 +343,7 @@ impl LiaCdclT {
             .count() as u32;
         let uf_count = self.uf_apps.len() as u32;
         let bb_budget = (int_count + uf_count + 1) * 64;
+        log::debug!("LIA finalize: int_count={int_count} uf_count={uf_count} bb_budget={bb_budget} ackermann_tprop_pairs={}", self.ackermann_arg_tprop.len());
         self.finalize_with_bb(bb_budget);
         // Take the SAT solver out of self so we can pass `self` as the theory.
         let mut sat = match self.sat.take() {
@@ -287,29 +383,39 @@ impl TheorySolver for LiaCdclT {
             self.simplex.new_decision_level();
             self.simplex_level += 1;
         }
-        // Assert only the newly assigned theory atoms.
+        // Assert newly assigned theory atoms into the incremental Simplex.
+        // For TRUE atoms: assert the bound directly.
+        // For FALSE atoms: apply integer tightening (¬(x≤k) → x≥k+1) EXCEPT
+        // for Ackermann le/ge atoms — those represent arg-diff=0 checks where
+        // tightening creates permanent bounds that block branches where two UF
+        // args genuinely equal each other.
         for &lit in &trail[prev_trail_len..] {
             let var = lit.var();
             let val = lit.is_positive();
+            if !val && self.ackermann_le_ge_atoms.contains(&var) {
+                continue;
+            }
             let sat_raw = lit.raw();
             let atom = match self.atoms.get(&var) {
                 Some(a) => a.clone(),
                 None => continue,
             };
-            let res = match atom {
-                SimplexAtom::Upper { var, bound } => {
-                    if val {
+            let res = if val {
+                match atom {
+                    SimplexAtom::Upper { var, bound } => {
                         self.simplex.assert_upper(var, Rational::from_int(bound), sat_raw)
-                    } else {
-                        // ¬(x ≤ bound) ↔ x ≥ bound+1
-                        self.simplex.assert_lower(var, Rational::from_int(bound + 1), sat_raw)
+                    }
+                    SimplexAtom::Lower { var, bound } => {
+                        self.simplex.assert_lower(var, Rational::from_int(bound), sat_raw)
                     }
                 }
-                SimplexAtom::Lower { var, bound } => {
-                    if val {
-                        self.simplex.assert_lower(var, Rational::from_int(bound), sat_raw)
-                    } else {
-                        // ¬(x ≥ bound) ↔ x ≤ bound-1
+            } else {
+                // Integer tightening: ¬(x ≤ k) ↔ x ≥ k+1, ¬(x ≥ k) ↔ x ≤ k-1.
+                match atom {
+                    SimplexAtom::Upper { var, bound } => {
+                        self.simplex.assert_lower(var, Rational::from_int(bound + 1), sat_raw)
+                    }
+                    SimplexAtom::Lower { var, bound } => {
                         self.simplex.assert_upper(var, Rational::from_int(bound - 1), sat_raw)
                     }
                 }
@@ -318,14 +424,83 @@ impl TheorySolver for LiaCdclT {
                 return Err(mk_conflict_simplex(&e.lits));
             }
         }
-        // Run Simplex to detect infeasibility from the new bounds.
-        // T-propagation (emitting lemmas for implied atoms) was tried in S17 but caused
-        // regressions on Wisa/Hash problems by disrupting CDCL search; reverted.
-        // theory_final_check provides complete checking at the end.
+        // Run Simplex to detect infeasibility from the newly asserted bounds.
         match self.simplex.check() {
-            Ok(_) => Ok(Vec::new()),
-            Err(e) => Err(mk_conflict_simplex(&e.lits)),
+            Err(e) => return Err(mk_conflict_simplex(&e.lits)),
+            Ok(_) => {}
         }
+        // T-propagation: when Simplex bounds prove an Ackermann arg diff is zero
+        // (ub(arg_i) ≤ lb(arg_j) AND lb(arg_i) ≥ ub(arg_j)), force the le and ge
+        // atoms TRUE by emitting theory lemmas. This chains through the Tseitin
+        // AND and Ackermann clause to force result equality, enabling the SAT solver
+        // to detect congruence conflicts without exhaustive propositional search.
+        //
+        // Guard: only emit for a pair if the target atom is NOT yet TRUE in the
+        // current trail. Without this guard, T-propagation can infinite-loop when
+        // the lemma's head is already TRUE (satisfied clause → no BCP progress →
+        // theory_propagate called again → same lemma emitted → repeat).
+        let mut tprop: Vec<Vec<Literal>> = Vec::new();
+        // Build a one-shot TRUE-var set over the current trail for dedup checks.
+        let trail_true: FxHashSet<u32> = trail.iter()
+            .filter(|l| l.is_positive())
+            .map(|l| l.var())
+            .collect();
+        for &(arg_i, arg_j, le_sat, ge_sat) in &self.ackermann_arg_tprop {
+            // le_sat represents: arg_i - arg_j ≤ 0, i.e. arg_i ≤ arg_j.
+            // Proved when ub(arg_i) ≤ lb(arg_j) (both are tight numeric bounds).
+            let diff_le_zero = if trail_true.contains(&le_sat) {
+                None // already TRUE in trail — lemma would be satisfied, skip
+            } else {
+                match (
+                    self.simplex.upper_bound(arg_i),
+                    self.simplex.lower_bound(arg_j),
+                ) {
+                    (Some((ub_i, ub_i_raw)), Some((lb_j, lb_j_raw))) if ub_i <= lb_j => {
+                        Some((ub_i_raw, lb_j_raw))
+                    }
+                    _ => None,
+                }
+            };
+            // ge_sat represents: arg_i - arg_j ≥ 0, i.e. arg_i ≥ arg_j.
+            // Proved when lb(arg_i) ≥ ub(arg_j).
+            let diff_ge_zero = if trail_true.contains(&ge_sat) {
+                None // already TRUE in trail — lemma would be satisfied, skip
+            } else {
+                match (
+                    self.simplex.lower_bound(arg_i),
+                    self.simplex.upper_bound(arg_j),
+                ) {
+                    (Some((lb_i, lb_i_raw)), Some((ub_j, ub_j_raw))) if lb_i >= ub_j => {
+                        Some((lb_i_raw, ub_j_raw))
+                    }
+                    _ => None,
+                }
+            };
+            if let Some((ub_i_raw, lb_j_raw)) = diff_le_zero {
+                // Lemma: [+le_sat, ¬ub_i_reason, ¬lb_j_reason]
+                // Meaning: "if ub(arg_i) and lb(arg_j) witnesses hold, le must be TRUE".
+                let mut le_lemma = vec![Literal::positive(le_sat)];
+                if ub_i_raw != 0 {
+                    le_lemma.push(Literal::from_raw(ub_i_raw).negate());
+                }
+                if lb_j_raw != 0 && lb_j_raw != ub_i_raw {
+                    le_lemma.push(Literal::from_raw(lb_j_raw).negate());
+                }
+                tprop.push(le_lemma);
+            }
+            if let Some((lb_i_raw, ub_j_raw)) = diff_ge_zero {
+                // Lemma: [+ge_sat, ¬lb_i_reason, ¬ub_j_reason]
+                let mut ge_lemma = vec![Literal::positive(ge_sat)];
+                if lb_i_raw != 0 {
+                    ge_lemma.push(Literal::from_raw(lb_i_raw).negate());
+                }
+                if ub_j_raw != 0 && ub_j_raw != lb_i_raw {
+                    ge_lemma.push(Literal::from_raw(ub_j_raw).negate());
+                }
+                tprop.push(ge_lemma);
+            }
+        }
+        Ok(tprop)
     }
 
     fn theory_backtrack(&mut self, target_level: u32) {
@@ -423,6 +598,7 @@ impl TheorySolver for LiaCdclT {
                     // would be misinterpreted as SAT — unsound. Signal Unknown instead
                     // by setting the cancel flag; the solve() caller checks it and
                     // returns Unknown before returning Sat.
+                    log::debug!("LIA B&B pool exhausted (bb_next={} bb_end={}); returning Unknown", self.bb_next, self.bb_end);
                     self.cancel.store(true, std::sync::atomic::Ordering::Relaxed);
                     return None;
                 }
@@ -453,17 +629,21 @@ fn mk_conflict_simplex(lits: &[u32]) -> Vec<Literal> {
 
 /// Encode "simplex_var_a = simplex_var_b" as a SAT literal using two Simplex
 /// bound atoms: `a ≤ b` and `a ≥ b`, Tseitin-combined into one AND variable.
-fn encode_var_eq(a: u32, b: u32, solver: &mut LiaCdclT) -> Literal {
+///
+/// Returns `(eq_lit, le_sat, ge_sat)`. For the trivial `a == b` case,
+/// `le_sat` and `ge_sat` are both 0 (sentinel meaning "always true").
+fn encode_var_eq(a: u32, b: u32, solver: &mut LiaCdclT) -> (Literal, u32, u32) {
     // Handle the trivial case (a == b means always true).
     if a == b {
         let v = solver.alloc_sat();
         solver.add_clause(&[Literal::positive(v)]);
-        return Literal::positive(v);
+        return (Literal::positive(v), 0, 0);
     }
     // Cache check: same pair (order-normalised) reuses existing literal.
     let key = (a.min(b), a.max(b));
     if let Some(&lit) = solver.eq_cache.get(&key) {
-        return lit;
+        let (le, ge) = solver.eq_detail_cache[&key];
+        return (lit, le, ge);
     }
     // diff = a - b.  We want: diff ≤ 0 ∧ diff ≥ 0.
     let mut diff = LinearForm::default();
@@ -483,8 +663,9 @@ fn encode_var_eq(a: u32, b: u32, solver: &mut LiaCdclT) -> Literal {
     solver.add_clause(&[z.negate(), le]);
     solver.add_clause(&[z.negate(), ge]);
     solver.add_clause(&[z, le.negate(), ge.negate()]);
+    solver.eq_detail_cache.insert(key, (le_sat, ge_sat));
     solver.eq_cache.insert(key, z);
-    z
+    (z, le_sat, ge_sat)
 }
 
 /// Add Ackermann congruence constraints for all pairs of UF applications with
@@ -527,11 +708,22 @@ fn add_ackermann_constraints(solver: &mut LiaCdclT) {
         if args_i.iter().zip(args_j.iter()).any(|(&a, &b)| args_provably_differ(a, b, solver)) {
             continue;
         }
-        // Encode arg equalities.
-        let arg_lits: Vec<Literal> =
-            args_i.iter().zip(args_j.iter()).map(|(&a, &b)| encode_var_eq(a, b, solver)).collect();
+        // Encode arg equalities, collecting le/ge SAT vars for T-propagation.
+        let mut arg_lits: Vec<Literal> = Vec::with_capacity(args_i.len());
+        for (&a, &b) in args_i.iter().zip(args_j.iter()) {
+            let (eq_lit, le_sat, ge_sat) = encode_var_eq(a, b, solver);
+            arg_lits.push(eq_lit);
+            // Register non-trivial arg pairs for T-propagation and integer-tightening
+            // suppression. Trivial pairs (a==b, le_sat==0) are always-true and need
+            // neither.
+            if le_sat != 0 {
+                solver.ackermann_le_ge_atoms.insert(le_sat);
+                solver.ackermann_le_ge_atoms.insert(ge_sat);
+                solver.ackermann_arg_tprop.push((a, b, le_sat, ge_sat));
+            }
+        }
         // Encode result equality.
-        let res_eq = encode_var_eq(ri, rj, solver);
+        let (res_eq, _, _) = encode_var_eq(ri, rj, solver);
         // Ackermann clause: ¬eq_0 ∨ ¬eq_1 ∨ ... ∨ res_eq
         let mut clause: Vec<Literal> = arg_lits.iter().map(|l| l.negate()).collect();
         clause.push(res_eq);
@@ -638,8 +830,8 @@ fn extract_linear(term: &Term, solver: &mut LiaCdclT) -> Option<LinearForm> {
             let ev = form_to_var(e_form, solver);
             let c_lit = encode_bool(cond, solver).ok()?;
             let r = solver.alloc_simplex();
-            let rt_eq = encode_var_eq(r, tv, solver);
-            let re_eq = encode_var_eq(r, ev, solver);
+            let (rt_eq, _, _) = encode_var_eq(r, tv, solver);
+            let (re_eq, _, _) = encode_var_eq(r, ev, solver);
             solver.add_clause(&[c_lit.negate(), rt_eq]);
             solver.add_clause(&[c_lit, re_eq]);
             let mut f = LinearForm::default();

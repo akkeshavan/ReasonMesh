@@ -1,10 +1,12 @@
 [package]
 name = "rm-theory-arith"
-description = "Difference-logic arithmetic theory: QF_IDL and QF_RDL via Bellman-Ford"
+description = "Arithmetic theories: Bellman-Ford difference logic (QF_IDL/QF_RDL) and Dutertre-de Moura Simplex (QF_LIA/QF_UFLIA)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+keywords = ["smt", "simplex", "arithmetic", "sat", "formal-verification"]
+categories = ["algorithms", "science"]
 
 [dependencies]
 rm-akx     = { workspace = true }

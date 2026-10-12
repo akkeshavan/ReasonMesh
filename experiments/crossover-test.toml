@@ -1,0 +1,142 @@
+schema_version = 1
+name = "crossover-test"
+description = "Crossover test: RM-4w vs kissat-1t at 500 and 2000 vars, phase-transition random 3-SAT (ratio=4.267)."
+
+[solver]
+workers = 4
+seed = 1
+deterministic = false
+clause_sharing = true
+export_min_utility = 0.143
+import_min_utility = 0.143
+timeout_secs = 300
+parallel_problems = 4
+
+[output]
+dir = "results/crossover-test"
+trace = false
+
+[[baselines]]
+name = "kissat-1t"
+binary = "kissat"
+args = ["-q"]
+
+[[problems]]
+name = "n500/r3sat-500-001"
+file = "../benchmarks/random-3sat/n500/r3sat-500-001.cnf"
+
+[[problems]]
+name = "n500/r3sat-500-002"
+file = "../benchmarks/random-3sat/n500/r3sat-500-002.cnf"
+
+[[problems]]
+name = "n500/r3sat-500-003"
+file = "../benchmarks/random-3sat/n500/r3sat-500-003.cnf"
+
+[[problems]]
+name = "n500/r3sat-500-004"
+file = "../benchmarks/random-3sat/n500/r3sat-500-004.cnf"
+
+[[problems]]
+name = "n500/r3sat-500-005"
+file = "../benchmarks/random-3sat/n500/r3sat-500-005.cnf"
+
+[[problems]]
+name = "n500/r3sat-500-006"
+file = "../benchmarks/random-3sat/n500/r3sat-500-006.cnf"
+
+[[problems]]
+name = "n500/r3sat-500-007"
+file = "../benchmarks/random-3sat/n500/r3sat-500-007.cnf"
+
+[[problems]]
+name = "n500/r3sat-500-008"
+file = "../benchmarks/random-3sat/n500/r3sat-500-008.cnf"
+
+[[problems]]
+name = "n500/r3sat-500-009"
+file = "../benchmarks/random-3sat/n500/r3sat-500-009.cnf"
+
+[[problems]]
+name = "n500/r3sat-500-010"
+file = "../benchmarks/random-3sat/n500/r3sat-500-010.cnf"
+
+[[problems]]
+name = "n500/r3sat-500-011"
+file = "../benchmarks/random-3sat/n500/r3sat-500-011.cnf"
+
+[[problems]]
+name = "n500/r3sat-500-012"
+file = "../benchmarks/random-3sat/n500/r3sat-500-012.cnf"
+
+[[problems]]
+name = "n500/r3sat-500-013"
+file = "../benchmarks/random-3sat/n500/r3sat-500-013.cnf"
+
+[[problems]]
+name = "n500/r3sat-500-014"
+file = "../benchmarks/random-3sat/n500/r3sat-500-014.cnf"
+
+[[problems]]
+name = "n500/r3sat-500-015"
+file = "../benchmarks/random-3sat/n500/r3sat-500-015.cnf"
+
+[[problems]]
+name = "n500/r3sat-500-016"
+file = "../benchmarks/random-3sat/n500/r3sat-500-016.cnf"
+
+[[problems]]
+name = "n500/r3sat-500-017"
+file = "../benchmarks/random-3sat/n500/r3sat-500-017.cnf"
+
+[[problems]]
+name = "n500/r3sat-500-018"
+file = "../benchmarks/random-3sat/n500/r3sat-500-018.cnf"
+
+[[problems]]
+name = "n500/r3sat-500-019"
+file = "../benchmarks/random-3sat/n500/r3sat-500-019.cnf"
+
+[[problems]]
+name = "n500/r3sat-500-020"
+file = "../benchmarks/random-3sat/n500/r3sat-500-020.cnf"
+
+[[problems]]
+name = "n2000/r3sat-2000-001"
+file = "../benchmarks/random-3sat/n2000/r3sat-2000-001.cnf"
+
+[[problems]]
+name = "n2000/r3sat-2000-002"
+file = "../benchmarks/random-3sat/n2000/r3sat-2000-002.cnf"
+
+[[problems]]
+name = "n2000/r3sat-2000-003"
+file = "../benchmarks/random-3sat/n2000/r3sat-2000-003.cnf"
+
+[[problems]]
+name = "n2000/r3sat-2000-004"
+file = "../benchmarks/random-3sat/n2000/r3sat-2000-004.cnf"
+
+[[problems]]
+name = "n2000/r3sat-2000-005"
+file = "../benchmarks/random-3sat/n2000/r3sat-2000-005.cnf"
+
+[[problems]]
+name = "n2000/r3sat-2000-006"
+file = "../benchmarks/random-3sat/n2000/r3sat-2000-006.cnf"
+
+[[problems]]
+name = "n2000/r3sat-2000-007"
+file = "../benchmarks/random-3sat/n2000/r3sat-2000-007.cnf"
+
+[[problems]]
+name = "n2000/r3sat-2000-008"
+file = "../benchmarks/random-3sat/n2000/r3sat-2000-008.cnf"
+
+[[problems]]
+name = "n2000/r3sat-2000-009"
+file = "../benchmarks/random-3sat/n2000/r3sat-2000-009.cnf"
+
+[[problems]]
+name = "n2000/r3sat-2000-010"
+file = "../benchmarks/random-3sat/n2000/r3sat-2000-010.cnf"

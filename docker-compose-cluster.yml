@@ -1,0 +1,60 @@
+# ReasonMesh TCP cluster transport test — 1 coordinator + 2 worker nodes.
+#
+# The coordinator splits the problem into 2 cubes (cube0: x1=true, cube1: x1=false),
+# binds 0.0.0.0:7654 and waits for workers to connect.  Each worker receives the
+# full CNF once, solves its assigned cube locally using all available CPUs, and
+# reports SAT or UNSAT back.
+#
+# Usage:
+#   docker compose -f docker-compose-cluster.yml build   # ~3-5 min first build
+#   docker compose -f docker-compose-cluster.yml up      # run the cluster test
+#   docker compose -f docker-compose-cluster.yml down    # cleanup
+
+services:
+  coordinator:
+    build:
+      context: .
+      dockerfile: Dockerfile.cluster
+    command:
+      - solve
+      - /cnf/problem.cnf
+      - --strategy=cluster
+      - --cluster-bind=0.0.0.0:7654
+      - --workers=0
+      - --cluster-cubes=2
+    volumes:
+      - ./benchmarks/satlib/aim/aim-100-1_6-no-1.cnf:/cnf/problem.cnf:ro
+    networks:
+      - cluster
+    ports:
+      - "7654:7654"
+
+  worker1:
+    build:
+      context: .
+      dockerfile: Dockerfile.cluster
+    command:
+      - worker-node
+      - --coordinator=coordinator:7654
+      - --threads=0
+    networks:
+      - cluster
+    depends_on:
+      - coordinator
+
+  worker2:
+    build:
+      context: .
+      dockerfile: Dockerfile.cluster
+    command:
+      - worker-node
+      - --coordinator=coordinator:7654
+      - --threads=0
+    networks:
+      - cluster
+    depends_on:
+      - coordinator
+
+networks:
+  cluster:
+    driver: bridge

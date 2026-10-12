@@ -5,6 +5,8 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+keywords = ["distributed", "sat", "coordinator", "solver"]
+categories = ["network-programming", "algorithms"]
 
 [[bin]]
 name = "rm-coordinator"

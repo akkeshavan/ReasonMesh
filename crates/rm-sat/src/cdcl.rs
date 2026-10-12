@@ -350,6 +350,21 @@ impl CdclSolver {
         self.bve_done = true;
     }
 
+    /// Set a default polarity bias for all variables.
+    /// `prefer_true = true`: branch on positive literals first (good for SAT instances).
+    /// `prefer_true = false`: branch on negative literals first (more UNSAT-oriented).
+    /// Parallel portfolios use alternating bias across threads for search diversity.
+    pub fn set_polarity_bias(&mut self, prefer_true: bool) {
+        self.polarity.iter_mut().for_each(|p| *p = prefer_true);
+    }
+
+    /// Set the Luby restart base scale. Varying this across threads staggers
+    /// restart schedules so threads explore different parts of the search space.
+    pub fn set_luby_scale(&mut self, scale: u64) {
+        self.luby_scale = scale.max(1);
+        self.next_restart_conflicts = scale.max(1);
+    }
+
     /// Attach a GPU accelerator for parallel WalkSAT phase guidance.
     /// When set, each `walk_phase()` call dispatches 10 000 trajectories to the
     /// GPU instead of the single-trajectory CPU path.

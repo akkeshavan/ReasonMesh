@@ -5,6 +5,8 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+keywords = ["parallel", "sat", "solver", "cube-and-conquer"]
+categories = ["algorithms", "concurrency"]
 
 [dependencies]
 rm-akx       = { workspace = true }

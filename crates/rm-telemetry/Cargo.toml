@@ -5,6 +5,8 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+keywords = ["tracing", "telemetry", "sat", "replay"]
+categories = ["development-tools", "algorithms"]
 
 [dependencies]
 rm-akx    = { workspace = true }
