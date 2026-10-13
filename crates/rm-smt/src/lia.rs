@@ -397,40 +397,33 @@ impl TheorySolver for LiaCdclT {
             self.simplex_level += 1;
         }
         // Assert newly assigned theory atoms into the incremental Simplex.
-        // For TRUE atoms: assert the bound directly.
-        // For FALSE atoms: apply integer tightening (¬(x≤k) → x≥k+1) EXCEPT
-        // for Ackermann le/ge atoms — those represent arg-diff=0 checks where
-        // tightening creates permanent bounds that block branches where two UF
-        // args genuinely equal each other.
+        // For TRUE atoms: assert the bound directly into the incremental Simplex.
+        // For FALSE atoms: skip — integer tightening (¬(x≤k)→x≥k+1) is unsound
+        // here because the incremental Simplex tracks rational (not integer) values
+        // for all slack and UF-result variables.  Two ITE-equality atoms for the same
+        // diff slack (e.g. Upper(d,0) and Lower(d,0) for "sc1=sc0") can both be FALSE
+        // in a CDCL branch before SAT propagates their joint Tseitin gate, and applying
+        // tightening to both simultaneously creates contradictory persistent bounds
+        // (d≥1 and d≤-1) that survive backjumps and block genuinely SAT models.
+        // Correctness for integer variables is handled by TFC B&B on a fresh scratch
+        // Simplex, which is always sound.
         for &lit in &trail[prev_trail_len..] {
             let var = lit.var();
             let val = lit.is_positive();
-            if !val && self.ackermann_le_ge_atoms.contains(&var) {
-                continue;
+            if !val {
+                continue; // skip FALSE atoms entirely — no integer tightening
             }
             let sat_raw = lit.raw();
             let atom = match self.atoms.get(&var) {
                 Some(a) => a.clone(),
                 None => continue,
             };
-            let res = if val {
-                match atom {
-                    SimplexAtom::Upper { var, bound } => {
-                        self.simplex.assert_upper(var, Rational::from_int(bound), sat_raw)
-                    }
-                    SimplexAtom::Lower { var, bound } => {
-                        self.simplex.assert_lower(var, Rational::from_int(bound), sat_raw)
-                    }
+            let res = match atom {
+                SimplexAtom::Upper { var, bound } => {
+                    self.simplex.assert_upper(var, Rational::from_int(bound), sat_raw)
                 }
-            } else {
-                // Integer tightening: ¬(x ≤ k) ↔ x ≥ k+1, ¬(x ≥ k) ↔ x ≤ k-1.
-                match atom {
-                    SimplexAtom::Upper { var, bound } => {
-                        self.simplex.assert_lower(var, Rational::from_int(bound + 1), sat_raw)
-                    }
-                    SimplexAtom::Lower { var, bound } => {
-                        self.simplex.assert_upper(var, Rational::from_int(bound - 1), sat_raw)
-                    }
+                SimplexAtom::Lower { var, bound } => {
+                    self.simplex.assert_lower(var, Rational::from_int(bound), sat_raw)
                 }
             };
             if let Err(e) = res {
@@ -944,9 +937,9 @@ fn add_ackermann_constraints(solver: &mut LiaCdclT) {
         for (&a, &b) in args_i.iter().zip(args_j.iter()) {
             let (eq_lit, le_sat, ge_sat) = encode_var_eq(a, b, solver);
             arg_lits.push(eq_lit);
-            // Register non-trivial arg pairs for T-propagation and integer-tightening
-            // suppression. Trivial pairs (a==b, le_sat==0) are always-true and need
-            // neither.  Deduplicate by le_sat: the same arg pair (same diff slack,
+            // Register non-trivial arg pairs for T-propagation.
+            // Trivial pairs (a==b, le_sat==0) are always-true and need neither.
+            // Deduplicate by le_sat: the same arg pair (same diff slack,
             // same le_sat atom) must not appear twice in ackermann_arg_tprop.
             if le_sat != 0 {
                 solver.ackermann_le_ge_atoms.insert(le_sat);
