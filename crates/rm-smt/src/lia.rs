@@ -179,6 +179,10 @@ struct LiaCdclT {
     /// with O(n²) clauses and degrade BCP.  TFC checks model values instead
     /// and returns a violated clause on demand.
     ackermann_full_pairs: Vec<(Vec<Literal>, Literal, u32, u32)>,
+    /// Maps arg-equality SAT var → indices into ackermann_full_pairs.
+    /// Used in theory_propagate to efficiently find pairs whose congruence
+    /// precondition just became fully satisfied in the trail.
+    ackermann_cong_watcher: FxHashMap<u32, Vec<usize>>,
 }
 
 impl LiaCdclT {
@@ -210,6 +214,7 @@ impl LiaCdclT {
             ackermann_le_ge_atoms: FxHashSet::default(),
             ackermann_arg_tprop: Vec::new(),
             ackermann_full_pairs: Vec::new(),
+            ackermann_cong_watcher: FxHashMap::default(),
         }
     }
 
@@ -506,6 +511,47 @@ impl TheorySolver for LiaCdclT {
                     ge_lemma.push(Literal::from_raw(ub_j_raw).negate());
                 }
                 tprop.push(ge_lemma);
+            }
+        }
+        // Congruence T-propagation: when all arg-equality literals of an Ackermann
+        // pair become TRUE in the trail, immediately propagate the result equality.
+        // Uses ackermann_cong_watcher to avoid an O(n²) scan — only pairs
+        // touched by newly assigned literals are checked.
+        //
+        // If result equality is unassigned → push unit lemma (T-prop).
+        // If result equality is already FALSE in trail → return conflict.
+        let trail_false: FxHashSet<u32> = trail.iter()
+            .filter(|l| !l.is_positive())
+            .map(|l| l.var())
+            .collect();
+        let mut checked: FxHashSet<usize> = FxHashSet::default();
+        for &lit in &trail[prev_trail_len..] {
+            if !lit.is_positive() {
+                continue;
+            }
+            let Some(pair_indices) = self.ackermann_cong_watcher.get(&lit.var()) else {
+                continue;
+            };
+            for &idx in pair_indices {
+                if !checked.insert(idx) {
+                    continue;
+                }
+                let (arg_eq_lits, res_eq_lit, _, _) = &self.ackermann_full_pairs[idx];
+                if !arg_eq_lits.iter().all(|l| trail_true.contains(&l.var())) {
+                    continue;
+                }
+                if trail_true.contains(&res_eq_lit.var()) {
+                    continue; // already satisfied
+                }
+                // Build the Ackermann clause: ¬arg_eq_0 ∨ … ∨ res_eq
+                let mut clause: Vec<Literal> = arg_eq_lits.iter().map(|l| l.negate()).collect();
+                clause.push(*res_eq_lit);
+                if trail_false.contains(&res_eq_lit.var()) {
+                    // All literals in clause are FALSE → conflict.
+                    return Err(clause);
+                }
+                // Result is unassigned — propagate it TRUE.
+                tprop.push(clause);
             }
         }
         Ok(tprop)
@@ -836,6 +882,13 @@ fn add_ackermann_constraints(solver: &mut LiaCdclT) {
         // that dominate the SAT instance for problems with many UF applications
         // (e.g. processor verification benchmarks with 10,000+ pairs).
         // TFC checks model values and returns the violated clause on demand.
+        let pair_idx = solver.ackermann_full_pairs.len();
+        for lit in &arg_lits {
+            solver.ackermann_cong_watcher
+                .entry(lit.var())
+                .or_default()
+                .push(pair_idx);
+        }
         solver.ackermann_full_pairs.push((arg_lits, res_eq, ri, rj));
     }
 }
