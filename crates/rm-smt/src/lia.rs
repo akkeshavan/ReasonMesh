@@ -536,6 +536,14 @@ impl TheorySolver for LiaCdclT {
                 if le_true && ge_true {
                     continue;
                 }
+                // Skip pairs with no decided arithmetic atoms: when neither le_sat nor
+                // ge_sat is TRUE the LP is fully unconstrained so model values all sit
+                // at the Simplex default (0), making model_value(arg_i)==model_value(arg_j)
+                // trivially true for every pair — probing here is pure overhead with no
+                // benefit.  Only probe once at least one bound has been committed.
+                if !le_true && !ge_true {
+                    continue;
+                }
                 let vi = self.simplex.model_value(arg_i);
                 let vj = self.simplex.model_value(arg_j);
                 if vi != vj {
@@ -917,6 +925,16 @@ fn add_ackermann_constraints(solver: &mut LiaCdclT) {
             ));
         }
     }
+    // Track which arg pairs have already been pushed to ackermann_arg_tprop.
+    // Multiple Ackermann function-call pairs often share the same arg comparison
+    // (e.g. op(e0,X) vs op(e1,X) and op(e0,Y) vs op(e1,Y) both use the e0-e1
+    // pair).  Without dedup, ackermann_arg_tprop grows O(n²) even though there
+    // are only O(k²) unique pairs for k distinct argument values.  Each TFC probe
+    // and incremental-probe call iterates the whole list, so O(n²) entries
+    // means O(n²) Simplex clones per call — catastrophic for large quasigroup/
+    // permutation benchmarks with n=25 function applications (300 pairs → 600
+    // useless clones vs 20 with dedup).
+    let mut seen_tprop_pairs: FxHashSet<u32> = FxHashSet::default();
     for (_func, args_i, args_j, ri, rj) in pairs {
         if args_i.iter().zip(args_j.iter()).any(|(&a, &b)| args_provably_differ(a, b, solver)) {
             continue;
@@ -928,11 +946,14 @@ fn add_ackermann_constraints(solver: &mut LiaCdclT) {
             arg_lits.push(eq_lit);
             // Register non-trivial arg pairs for T-propagation and integer-tightening
             // suppression. Trivial pairs (a==b, le_sat==0) are always-true and need
-            // neither.
+            // neither.  Deduplicate by le_sat: the same arg pair (same diff slack,
+            // same le_sat atom) must not appear twice in ackermann_arg_tprop.
             if le_sat != 0 {
                 solver.ackermann_le_ge_atoms.insert(le_sat);
                 solver.ackermann_le_ge_atoms.insert(ge_sat);
-                solver.ackermann_arg_tprop.push((a, b, le_sat, ge_sat));
+                if seen_tprop_pairs.insert(le_sat) {
+                    solver.ackermann_arg_tprop.push((a, b, le_sat, ge_sat));
+                }
             }
         }
         // Encode result equality.
