@@ -513,6 +513,66 @@ impl TheorySolver for LiaCdclT {
                 tprop.push(ge_lemma);
             }
         }
+        // Incremental congruence probe (S26): after check() the incremental Simplex
+        // has a feasible model.  For pairs whose model values are equal but whose
+        // le/ge atoms are not yet TRUE, probe whether asserting inequality is
+        // infeasible.  This fires mid-search (not just at TFC), catching equalities
+        // that arise through row equations rather than direct bounds.
+        //
+        // Limit: probe at most 30 pairs per call to bound overhead from Simplex clones.
+        // Only run when the newly assigned trail segment is non-empty (at least one
+        // new atom could have changed model values).
+        if !trail[prev_trail_len..].is_empty() {
+            let mut probed: usize = 0;
+            for &(arg_i, arg_j, le_sat, ge_sat) in &self.ackermann_arg_tprop {
+                if probed >= 30 {
+                    break;
+                }
+                if le_sat == 0 || ge_sat == 0 {
+                    continue;
+                }
+                let le_true = trail_true.contains(&le_sat);
+                let ge_true = trail_true.contains(&ge_sat);
+                if le_true && ge_true {
+                    continue;
+                }
+                let vi = self.simplex.model_value(arg_i);
+                let vj = self.simplex.model_value(arg_j);
+                if vi != vj {
+                    continue;
+                }
+                // Retrieve the diff slack from the le_sat atom (Upper {var, bound=0}).
+                let slack = match self.atoms.get(&le_sat) {
+                    Some(SimplexAtom::Upper { var, .. }) => *var,
+                    _ => continue,
+                };
+                probed += 1;
+                if !le_true {
+                    let mut probe = self.simplex.clone();
+                    let neg_raw = Literal::negative(le_sat).raw();
+                    let conflict = probe
+                        .assert_lower(slack, Rational::from_int(1), neg_raw)
+                        .err()
+                        .map(|e| mk_conflict_simplex(&e.lits))
+                        .or_else(|| probe.check().err().map(|e| mk_conflict_simplex(&e.lits)));
+                    if let Some(c) = conflict {
+                        tprop.push(c);
+                    }
+                }
+                if !ge_true {
+                    let mut probe = self.simplex.clone();
+                    let neg_raw = Literal::negative(ge_sat).raw();
+                    let conflict = probe
+                        .assert_upper(slack, Rational::from_int(-1), neg_raw)
+                        .err()
+                        .map(|e| mk_conflict_simplex(&e.lits))
+                        .or_else(|| probe.check().err().map(|e| mk_conflict_simplex(&e.lits)));
+                    if let Some(c) = conflict {
+                        tprop.push(c);
+                    }
+                }
+            }
+        }
         // Congruence T-propagation: when all arg-equality literals of an Ackermann
         // pair become TRUE in the trail, immediately propagate the result equality.
         // Uses ackermann_cong_watcher to avoid an O(n²) scan — only pairs
