@@ -306,7 +306,8 @@ impl LiaCdclT {
                 log::trace!("[BCP] no contradiction found; assigned {}/{} vars", assigned_count, num_vars);
             }
             log::trace!("[BCP] pending_clauses={} vars={}", self.pending_clauses.len(), num_vars);
-            // RUST_LOG=trace + RM_DUMP_DIMACS=/tmp/out.cnf dumps the clause set to a file
+            // RM_DUMP_DIMACS=/tmp/out.cnf dumps the initial clause set to a file
+            // (unconditional: fires even if BCP found a contradiction)
             if let Ok(path) = std::env::var("RM_DUMP_DIMACS") {
                 let mut out = String::new();
                 out.push_str(&format!("p cnf {} {}\n", num_vars, self.pending_clauses.len()));
@@ -397,33 +398,47 @@ impl TheorySolver for LiaCdclT {
             self.simplex_level += 1;
         }
         // Assert newly assigned theory atoms into the incremental Simplex.
-        // For TRUE atoms: assert the bound directly into the incremental Simplex.
-        // For FALSE atoms: skip — integer tightening (¬(x≤k)→x≥k+1) is unsound
-        // here because the incremental Simplex tracks rational (not integer) values
-        // for all slack and UF-result variables.  Two ITE-equality atoms for the same
-        // diff slack (e.g. Upper(d,0) and Lower(d,0) for "sc1=sc0") can both be FALSE
-        // in a CDCL branch before SAT propagates their joint Tseitin gate, and applying
-        // tightening to both simultaneously creates contradictory persistent bounds
-        // (d≥1 and d≤-1) that survive backjumps and block genuinely SAT models.
-        // Correctness for integer variables is handled by TFC B&B on a fresh scratch
-        // Simplex, which is always sound.
+        // For TRUE atoms: assert the bound directly.
+        // For FALSE atoms: apply integer tightening (¬(x≤k) → x≥k+1) UNLESS the
+        // atom is an Ackermann or ITE arg-equality component (tracked in
+        // ackermann_le_ge_atoms).  For those paired le/ge atoms, both can be FALSE
+        // simultaneously before the Tseitin AND gate resolves, causing tightening to
+        // assert contradictory persistent bounds (diff≥1 AND diff≤-1) and block
+        // valid models.  Plain arithmetic comparison atoms (e.g. ¬(4*f3 ≤ 1)) have
+        // no such pairing issue and must be tightened for integer completeness.
         for &lit in &trail[prev_trail_len..] {
             let var = lit.var();
             let val = lit.is_positive();
-            if !val {
-                continue; // skip FALSE atoms entirely — no integer tightening
-            }
             let sat_raw = lit.raw();
             let atom = match self.atoms.get(&var) {
                 Some(a) => a.clone(),
                 None => continue,
             };
-            let res = match atom {
-                SimplexAtom::Upper { var, bound } => {
-                    self.simplex.assert_upper(var, Rational::from_int(bound), sat_raw)
+            let res = if val {
+                // TRUE atom: assert bound directly.
+                match atom {
+                    SimplexAtom::Upper { var, bound } => {
+                        self.simplex.assert_upper(var, Rational::from_int(bound), sat_raw)
+                    }
+                    SimplexAtom::Lower { var, bound } => {
+                        self.simplex.assert_lower(var, Rational::from_int(bound), sat_raw)
+                    }
                 }
-                SimplexAtom::Lower { var, bound } => {
-                    self.simplex.assert_lower(var, Rational::from_int(bound), sat_raw)
+            } else if self.ackermann_le_ge_atoms.contains(&var) {
+                // FALSE Ackermann/ITE equality atom: skip tightening (unsafe).
+                continue;
+            } else {
+                // FALSE plain arithmetic atom: apply integer tightening.
+                let neg_raw = Literal::negative(var).raw();
+                match atom {
+                    SimplexAtom::Upper { var, bound } => {
+                        // ¬(slack ≤ bound) → slack ≥ bound+1
+                        self.simplex.assert_lower(var, Rational::from_int(bound + 1), neg_raw)
+                    }
+                    SimplexAtom::Lower { var, bound } => {
+                        // ¬(slack ≥ bound) → slack ≤ bound-1
+                        self.simplex.assert_upper(var, Rational::from_int(bound - 1), neg_raw)
+                    }
                 }
             };
             if let Err(e) = res {
@@ -692,52 +707,25 @@ impl TheorySolver for LiaCdclT {
         // but Simplex model_value says args are equal, asserting Lower(diff,1)
         // (the negation of Upper(diff,0)) must conflict with the existing rows —
         // we collect that conflict core as a theory lemma and return it.
-        for &(arg_i, arg_j, le_sat, ge_sat) in &self.ackermann_arg_tprop {
-            if le_sat == 0 || ge_sat == 0 {
-                continue; // trivial pair (same var)
-            }
-            let vi = scratch.model_value(arg_i);
-            let vj = scratch.model_value(arg_j);
-            if vi != vj {
-                continue; // args genuinely differ in the model
-            }
-
-            // Retrieve the diff slack from the le_sat atom.
-            let slack = match self.atoms.get(&le_sat) {
-                Some(SimplexAtom::Upper { var, .. }) => *var,
-                _ => continue,
-            };
-
-            // If le_sat is FALSE: the SAT model claims diff > 0, but Simplex
-            // says diff = 0.  Probe Lower(diff, 1); if it conflicts, emit the
-            // lemma [+le_sat, ¬<witness bounds>].
-            if !model.value_of(le_sat) {
-                let mut probe = scratch.clone();
-                let neg_raw = Literal::negative(le_sat).raw();
-                let conflict = probe
-                    .assert_lower(slack, Rational::from_int(1), neg_raw)
-                    .err()
-                    .map(|e| mk_conflict_simplex(&e.lits))
-                    .or_else(|| probe.check().err().map(|e| mk_conflict_simplex(&e.lits)));
-                if let Some(c) = conflict {
-                    return Some(c);
-                }
-            }
-
-            // If ge_sat is FALSE: the SAT model claims diff < 0; probe Upper(diff,-1).
-            if !model.value_of(ge_sat) {
-                let mut probe = scratch.clone();
-                let neg_raw = Literal::negative(ge_sat).raw();
-                let conflict = probe
-                    .assert_upper(slack, Rational::from_int(-1), neg_raw)
-                    .err()
-                    .map(|e| mk_conflict_simplex(&e.lits))
-                    .or_else(|| probe.check().err().map(|e| mk_conflict_simplex(&e.lits)));
-                if let Some(c) = conflict {
-                    return Some(c);
-                }
-            }
-        }
+        // S23 (TFC congruence probe) is disabled.
+        //
+        // The probe fires when scratch.model_value(arg_i) == scratch.model_value(arg_j)
+        // but the SAT model has le_sat=FALSE, and probes if Lower(diff,1) is infeasible.
+        // In practice, the equality in the scratch almost always arises because two
+        // variables happen to have the same value due to B&B decisions (e.g. both pinned
+        // to 0 or 1), not because of a genuine arithmetic row identity.  The resulting
+        // conflict clauses reference B&B atoms and force Ackermann congruences in branches
+        // where the args are NOT actually equal, eventually causing false UNSAT on SAT
+        // instances (observed: hash_sat_06_03, hash_sat_03_05).
+        //
+        // Genuine congruences where arg equality is derivable from explicit arithmetic
+        // assertions are handled by S24 (lazy Ackermann): the arith_atom_cache ensures
+        // that problem assertions and Ackermann arg-equality encodings share the same
+        // le_sat/ge_sat atoms, so BCP forces z_arg=TRUE and S24 fires.
+        //
+        // Re-enable S23 only if a case is found where S24 cannot detect the violation
+        // and the probe can be restricted to purely structural (row-equation) infeasibility
+        // that contains no B&B or contingent bound atoms.
 
         // Lazy Ackermann: check all deferred Ackermann pairs against the SAT model.
         // Ackermann clauses (¬eq_0 ∨ … ∨ res_eq) were not added upfront to avoid
@@ -842,33 +830,100 @@ fn encode_var_eq(a: u32, b: u32, solver: &mut LiaCdclT) -> (Literal, u32, u32) {
         let (le, ge) = solver.eq_detail_cache[&key];
         return (lit, le, ge);
     }
-    // diff = a - b.  We want: diff ≤ 0 ∧ diff ≥ 0.
-    let mut diff = LinearForm::default();
-    diff.coeffs.insert(a, 1);
-    diff.coeffs.insert(b, -1);
-    // Use form_to_var so (a-b) reuses any existing slack/row for this form.
-    let slack = form_to_var(diff, solver);
-    // Reuse atoms from arith_atom_cache when encode_arith_cmp already created
-    // them for the same slack.  Without this, encode_var_eq would allocate fresh
-    // SAT variables that the SAT solver treats as independent of the user-asserted
-    // equality, allowing it to set the Ackermann equality atoms false even when the
-    // corresponding arithmetic assertion forces the diff slack to zero.
-    let le_sat = if let Some(&v) = solver.arith_atom_cache.get(&(slack, true, 0)) {
+
+    // Expand a and b through var_to_form to get user-variable-level linear forms.
+    // This ensures the diff form matches what encode_arith_cmp creates for problem
+    // assertions on the same relationship.
+    //
+    // encode_arith_cmp always normalises to zero constant in the form (moving the
+    // constant to rhs_const).  For example `(assert (= y (+ x 1)))` creates form
+    // {y:1, x:-1} (constant=0) with bound=1 (i.e. y-x ≤ 1 and y-x ≥ 1).
+    //
+    // So when encoding the Ackermann equality between xp1_slack (row: x+1) and y_var:
+    //   a_form = {x:1, const:1},  b_form = {y:1}
+    //   diff_vars = a_form - b_form variable parts = {x:1, y:-1} (constant extracted: C=1)
+    //   rev_vars  = b_form - a_form variable parts = {x:-1, y:1} (constant: -C=-1)
+    //   The equality is: rev_vars_slack = C  =>  arith_atom_cache[(rev_slack, true/false, C)]
+    // which is exactly the assertion's arith_atom_cache[(slack_yx, true, 1)] and [(slack_yx, false, 1)].
+    let a_form = var_to_linear_form(a, solver);
+    let b_form = var_to_linear_form(b, solver);
+    // diff = a_form - b_form (including constant).
+    let mut diff_full = a_form.clone();
+    diff_full.add_scaled(&b_form, -1);
+    // Separate variable part from constant: equality is diff_vars_slack = -C.
+    let big_c = diff_full.constant;
+    diff_full.constant = 0; // diff_vars_form (no constant)
+
+    // rev_vars = -(diff_vars) = b_vars - a_vars.  rev_vars_slack = C means a = b.
+    let mut rev_vars = diff_full.clone();
+    rev_vars.negate();
+
+    // Build cache key for rev_vars (constant=0, matching encode_arith_cmp normalisation).
+    let mut rev_key_pairs: Vec<(u32, i64)> = rev_vars.coeffs.iter()
+        .filter(|(_, &c)| c != 0)
+        .map(|(&v, &c)| (v, c))
+        .collect();
+    rev_key_pairs.sort_unstable();
+    let rev_cache_key = (rev_key_pairs, 0i64);
+
+    // Build cache key for diff_vars (a - b, constant=0).
+    let mut diff_key_pairs: Vec<(u32, i64)> = diff_full.coeffs.iter()
+        .filter(|(_, &c)| c != 0)
+        .map(|(&v, &c)| (v, c))
+        .collect();
+    diff_key_pairs.sort_unstable();
+    let diff_cache_key = (diff_key_pairs, 0i64);
+
+    // Choose the slack direction.
+    // Prefer rev if rev_slack already exists: its atoms (rev_slack, ?, C) may
+    // already be in arith_atom_cache (from the problem assertion), letting BCP
+    // force z_arg=TRUE when the assertion's unit clause is propagated.
+    // Otherwise fall back to diff direction (with bound=-C), creating if needed.
+    let (slack, le_bound, ge_bound, le_is_upper, ge_is_upper) =
+        if let Some(&slack_rev) = solver.form_to_var_cache.get(&rev_cache_key) {
+            // rev_slack = b - a (expanded).  rev_slack = C means a = b.
+            //   le_sat = "a ≤ b" = "rev_slack ≥ C" = Lower(rev_slack, C)
+            //   ge_sat = "a ≥ b" = "rev_slack ≤ C" = Upper(rev_slack, C)
+            (slack_rev, big_c, big_c, false, true)
+        } else {
+            let slack_diff = if let Some(&s) = solver.form_to_var_cache.get(&diff_cache_key) {
+                s
+            } else {
+                form_to_var(diff_full, solver)
+            };
+            // diff_slack = a - b (expanded).  diff_slack = -C means a = b.
+            //   le_sat = "a ≤ b" = "diff_slack ≤ -C" = Upper(diff_slack, -C)
+            //   ge_sat = "a ≥ b" = "diff_slack ≥ -C" = Lower(diff_slack, -C)
+            (slack_diff, -big_c, -big_c, true, false)
+        };
+
+    let le_sat = if let Some(&v) = solver.arith_atom_cache.get(&(slack, le_is_upper, le_bound)) {
         v
     } else {
         let v = solver.alloc_sat();
-        solver.atoms.insert(v, SimplexAtom::Upper { var: slack, bound: 0 });
-        solver.arith_atom_cache.insert((slack, true, 0), v);
+        let atom = if le_is_upper {
+            SimplexAtom::Upper { var: slack, bound: le_bound }
+        } else {
+            SimplexAtom::Lower { var: slack, bound: le_bound }
+        };
+        solver.atoms.insert(v, atom);
+        solver.arith_atom_cache.insert((slack, le_is_upper, le_bound), v);
         v
     };
-    let ge_sat = if let Some(&v) = solver.arith_atom_cache.get(&(slack, false, 0)) {
+    let ge_sat = if let Some(&v) = solver.arith_atom_cache.get(&(slack, ge_is_upper, ge_bound)) {
         v
     } else {
         let v = solver.alloc_sat();
-        solver.atoms.insert(v, SimplexAtom::Lower { var: slack, bound: 0 });
-        solver.arith_atom_cache.insert((slack, false, 0), v);
+        let atom = if ge_is_upper {
+            SimplexAtom::Upper { var: slack, bound: ge_bound }
+        } else {
+            SimplexAtom::Lower { var: slack, bound: ge_bound }
+        };
+        solver.atoms.insert(v, atom);
+        solver.arith_atom_cache.insert((slack, ge_is_upper, ge_bound), v);
         v
     };
+
     // Tseitin AND: z ↔ (le ∧ ge)
     let v = solver.alloc_sat();
     let z = Literal::positive(v);
@@ -880,6 +935,26 @@ fn encode_var_eq(a: u32, b: u32, solver: &mut LiaCdclT) -> (Literal, u32, u32) {
     solver.eq_detail_cache.insert(key, (le_sat, ge_sat));
     solver.eq_cache.insert(key, z);
     (z, le_sat, ge_sat)
+}
+
+/// Return the canonical linear form for a Simplex variable.
+/// For vars created by form_to_var (non-user slacks), returns the stored form.
+/// For user variables (not in var_to_form), returns the unit form {var: 1}.
+/// This single-level expansion is sufficient for UF arguments, which are either
+/// user variables or first-level slacks (e.g. x+1 encoded as xp1_slack).
+fn var_to_linear_form(var: u32, solver: &LiaCdclT) -> LinearForm {
+    if let Some((key_pairs, constant)) = solver.var_to_form.get(&var) {
+        let mut f = LinearForm::default();
+        f.constant = *constant;
+        for &(v, c) in key_pairs {
+            *f.coeffs.entry(v).or_insert(0) += c;
+        }
+        f
+    } else {
+        let mut f = LinearForm::default();
+        f.coeffs.insert(var, 1);
+        f
+    }
 }
 
 /// Add Ackermann congruence constraints for all pairs of UF applications with
@@ -1066,8 +1141,14 @@ fn extract_linear(term: &Term, solver: &mut LiaCdclT) -> Option<LinearForm> {
             let ev = form_to_var(e_form, solver);
             let c_lit = encode_bool(cond, solver).ok()?;
             let r = solver.alloc_simplex();
-            let (rt_eq, _, _) = encode_var_eq(r, tv, solver);
-            let (re_eq, _, _) = encode_var_eq(r, ev, solver);
+            let (rt_eq, rt_le, rt_ge) = encode_var_eq(r, tv, solver);
+            let (re_eq, re_le, re_ge) = encode_var_eq(r, ev, solver);
+            // Mark ITE equality le/ge atoms as unsafe for tightening: both can be
+            // simultaneously FALSE before the cond gate resolves, so applying
+            // ¬(diff≤0)→diff≥1 and ¬(diff≥0)→diff≤-1 together creates unsound bounds.
+            for &s in &[rt_le, rt_ge, re_le, re_ge] {
+                if s != 0 { solver.ackermann_le_ge_atoms.insert(s); }
+            }
             solver.add_clause(&[c_lit.negate(), rt_eq]);
             solver.add_clause(&[c_lit, re_eq]);
             let mut f = LinearForm::default();
