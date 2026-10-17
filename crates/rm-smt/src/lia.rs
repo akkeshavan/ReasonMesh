@@ -1268,6 +1268,54 @@ fn encode_bool(term: &Term, solver: &mut LiaCdclT) -> Result<Literal, ()> {
             unreachable!()
         }
         TermInner::Not(inner) => {
+            match &inner.inner {
+                // ¬(ArithCmp): encode the dual comparison as a positive atom so
+                // theory_propagate asserts the bound when the literal is TRUE.
+                // e.g. ¬(x ≤ k) → Lower(x, k+1).
+                TermInner::ArithCmp(kind, lhs, rhs) => {
+                    let dual = match kind {
+                        ArithCmpKind::Le => ArithCmpKind::Gt,
+                        ArithCmpKind::Lt => ArithCmpKind::Ge,
+                        ArithCmpKind::Ge => ArithCmpKind::Lt,
+                        ArithCmpKind::Gt => ArithCmpKind::Le,
+                    };
+                    return encode_arith_cmp(dual, lhs, rhs, solver);
+                }
+                // De Morgan: ¬(A∨B∨…) → (¬A ∧ ¬B ∧ …).
+                // Push negation inside so ¬(ArithCmp) sub-expressions become
+                // positive atoms (e.g. ¬(x≤k) → Lower(x,k+1)), which lets
+                // theory_propagate assert their bounds when the conjunction is TRUE.
+                // Without this, the formula ¬(¬P ∨ Q) would force both ¬P=FALSE
+                // (→P=TRUE) and Q=FALSE as negative atoms that theory_propagate
+                // silently skips, missing the infeasibility.
+                TermInner::Or(subs) => {
+                    let subs_clone: Vec<Term> = subs.clone();
+                    let neg_lits: Vec<Literal> = subs_clone
+                        .into_iter()
+                        .map(|s| {
+                            let neg = Term {
+                                sort: SortExpr::Bool,
+                                inner: TermInner::Not(Box::new(s)),
+                            };
+                            encode_bool(&neg, solver)
+                        })
+                        .collect::<Result<_, _>>()?;
+                    let v = solver.alloc_sat();
+                    let z = Literal::positive(v);
+                    for &sl in &neg_lits {
+                        solver.add_clause(&[z.negate(), sl]);
+                    }
+                    let mut cl: Vec<Literal> = neg_lits.iter().map(|l| l.negate()).collect();
+                    cl.push(z);
+                    solver.add_clause(&cl);
+                    return Ok(z);
+                }
+                // Double negation: ¬(¬x) → x.
+                TermInner::Not(inner2) => {
+                    return encode_bool(inner2, solver);
+                }
+                _ => {}
+            }
             let l = encode_bool(inner, solver)?;
             Ok(l.negate())
         }
