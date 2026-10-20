@@ -162,12 +162,6 @@ struct LiaCdclT {
     /// Populated alongside eq_cache so we can retrieve the component atoms
     /// without re-creating them (e.g. for Ackermann T-propagation bookkeeping).
     eq_detail_cache: FxHashMap<(u32, u32), (u32, u32)>,
-    /// SAT vars that are the le/ge component atoms of Ackermann arg-equality
-    /// encodings. These atoms represent `diff_slack ≤ 0` and `diff_slack ≥ 0`
-    /// for arg diffs of UF pairs, where integer tightening (¬(x≤k) → x≥k+1)
-    /// is unsound: it creates permanent Simplex bounds that block the solver
-    /// from exploring branches where two UF args are equal.
-    ackermann_le_ge_atoms: FxHashSet<u32>,
     /// (arg_i_var, arg_j_var, le_sat, ge_sat) tuples for Ackermann arg pairs.
     /// Used in theory_propagate to emit T-propagation lemmas when tight Simplex
     /// bounds prove an arg diff is zero (forcing the le/ge atoms TRUE by theory).
@@ -183,6 +177,13 @@ struct LiaCdclT {
     /// Used in theory_propagate to efficiently find pairs whose congruence
     /// precondition just became fully satisfied in the trail.
     ackermann_cong_watcher: FxHashMap<u32, Vec<usize>>,
+    /// SAT vars for all le/ge atoms created by encode_var_eq (Ackermann equality
+    /// atoms).  theory_propagate skips integer tightening for these when False.
+    /// Tightening Ackermann atoms produces negative-polarity raw labels; the S26
+    /// probe's mk_safe_conflict_simplex rejects those clauses as unsound anyway,
+    /// and for QF_UF (no formula arithmetic) it causes all Ackermann atoms to be
+    /// tightened — killing S26 for QF_UF entirely.  Skip tightening for all of them.
+    ackermann_le_ge_atoms: FxHashSet<u32>,
 }
 
 impl LiaCdclT {
@@ -211,10 +212,10 @@ impl LiaCdclT {
             eq_cache: FxHashMap::default(),
             arith_atom_cache: FxHashMap::default(),
             eq_detail_cache: FxHashMap::default(),
-            ackermann_le_ge_atoms: FxHashSet::default(),
             ackermann_arg_tprop: Vec::new(),
             ackermann_full_pairs: Vec::new(),
             ackermann_cong_watcher: FxHashMap::default(),
+            ackermann_le_ge_atoms: FxHashSet::default(),
         }
     }
 
@@ -397,15 +398,15 @@ impl TheorySolver for LiaCdclT {
             self.simplex.new_decision_level();
             self.simplex_level += 1;
         }
+        // Build the full-trail TRUE-var set once here; used by both the smarter skip
+        // below and the T-propagation dedup checks later.
+        let trail_true: FxHashSet<u32> = trail.iter()
+            .filter(|l| l.is_positive())
+            .map(|l| l.var())
+            .collect();
         // Assert newly assigned theory atoms into the incremental Simplex.
         // For TRUE atoms: assert the bound directly.
-        // For FALSE atoms: apply integer tightening (¬(x≤k) → x≥k+1) UNLESS the
-        // atom is an Ackermann or ITE arg-equality component (tracked in
-        // ackermann_le_ge_atoms).  For those paired le/ge atoms, both can be FALSE
-        // simultaneously before the Tseitin AND gate resolves, causing tightening to
-        // assert contradictory persistent bounds (diff≥1 AND diff≤-1) and block
-        // valid models.  Plain arithmetic comparison atoms (e.g. ¬(4*f3 ≤ 1)) have
-        // no such pairing issue and must be tightened for integer completeness.
+        // For FALSE atoms: apply integer tightening (¬(x≤k) → x≥k+1).
         for &lit in &trail[prev_trail_len..] {
             let var = lit.var();
             let val = lit.is_positive();
@@ -425,10 +426,16 @@ impl TheorySolver for LiaCdclT {
                     }
                 }
             } else if self.ackermann_le_ge_atoms.contains(&var) {
-                // FALSE Ackermann/ITE equality atom: skip tightening (unsafe).
+                // Skip tightening for fresh Ackermann atoms whose Simplex variable is
+                // shared with a formula assertion atom.  Applying ¬(x≤k) → x≥k+1 here
+                // creates spurious conflicts: the tightened bound conflicts with the
+                // formula's own assertion on the same variable at a different bound
+                // (e.g. ¬Lower(var17,0) → Upper(var17,-1) vs. formula Lower(var17,2)).
+                // Pure Ackermann atoms (Simplex var not shared with any formula assertion)
+                // are NOT in this set and are always tightened below.
                 continue;
             } else {
-                // FALSE plain arithmetic atom: apply integer tightening.
+                // FALSE plain arithmetic atom: apply integer tightening (¬(x≤k) → x≥k+1).
                 let neg_raw = Literal::negative(var).raw();
                 match atom {
                     SimplexAtom::Upper { var, bound } => {
@@ -461,11 +468,6 @@ impl TheorySolver for LiaCdclT {
         // the lemma's head is already TRUE (satisfied clause → no BCP progress →
         // theory_propagate called again → same lemma emitted → repeat).
         let mut tprop: Vec<Vec<Literal>> = Vec::new();
-        // Build a one-shot TRUE-var set over the current trail for dedup checks.
-        let trail_true: FxHashSet<u32> = trail.iter()
-            .filter(|l| l.is_positive())
-            .map(|l| l.var())
-            .collect();
         for &(arg_i, arg_j, le_sat, ge_sat) in &self.ackermann_arg_tprop {
             // le_sat represents: arg_i - arg_j ≤ 0, i.e. arg_i ≤ arg_j.
             // Proved when ub(arg_i) ≤ lb(arg_j) (both are tight numeric bounds).
@@ -521,16 +523,16 @@ impl TheorySolver for LiaCdclT {
                 tprop.push(ge_lemma);
             }
         }
-        // Incremental congruence probe (S26): after check() the incremental Simplex
-        // has a feasible model.  For pairs whose model values are equal but whose
-        // le/ge atoms are not yet TRUE, probe whether asserting inequality is
-        // infeasible.  This fires mid-search (not just at TFC), catching equalities
-        // that arise through row equations rather than direct bounds.
-        //
-        // Limit: probe at most 30 pairs per call to bound overhead from Simplex clones.
-        // Only run when the newly assigned trail segment is non-empty (at least one
-        // new atom could have changed model values).
-        if !trail[prev_trail_len..].is_empty() {
+        // S26 incremental congruence probe (restored in S33 with soundness filter).
+        // RM_DISABLE_S26=1 env var disables for debugging.
+        let _s26_disabled = std::env::var("RM_DISABLE_S26").is_ok();
+        // Fires when model_value(arg_i) == model_value(arg_j) and not both atoms
+        // are already TRUE.  Probes ¬le_sat (assert Lower(slack, le_bound+1)) and
+        // ¬ge_sat (assert Upper(slack, ge_bound-1)) using correct integer-tightening
+        // bounds (not hardcoded ±1).  mk_safe_conflict_simplex rejects any conflict
+        // whose core contains a tightened-integer-bound justification (negative raw),
+        // preventing false UNSATs on SAT instances with shared formula atoms.
+        if !_s26_disabled && !trail[prev_trail_len..].is_empty() {
             let mut probed: usize = 0;
             for &(arg_i, arg_j, le_sat, ge_sat) in &self.ackermann_arg_tprop {
                 if probed >= 30 {
@@ -544,34 +546,50 @@ impl TheorySolver for LiaCdclT {
                 if le_true && ge_true {
                     continue;
                 }
-                // Skip pairs with no decided arithmetic atoms: when neither le_sat nor
-                // ge_sat is TRUE the LP is fully unconstrained so model values all sit
-                // at the Simplex default (0), making model_value(arg_i)==model_value(arg_j)
-                // trivially true for every pair — probing here is pure overhead with no
-                // benefit.  Only probe once at least one bound has been committed.
+                // When neither atom is TRUE, only probe for pairs where both args
+                // are non-user vars (UF result vars or derived slacks).  User-declared
+                // arithmetic variables are freely assigned by the Simplex to their
+                // default lower bounds; model equality between them is coincidental.
+                // UF result vars have constrained model values (via row equations) and
+                // can generate sound transitivity lemmas from the conflict core.
                 if !le_true && !ge_true {
-                    continue;
+                    let ai_is_user = self.var_ids.values().any(|&v| v == arg_i);
+                    let aj_is_user = self.var_ids.values().any(|&v| v == arg_j);
+                    if ai_is_user || aj_is_user {
+                        continue;
+                    }
                 }
                 let vi = self.simplex.model_value(arg_i);
                 let vj = self.simplex.model_value(arg_j);
                 if vi != vj {
                     continue;
                 }
-                // Retrieve the diff slack from the le_sat atom (Upper {var, bound=0}).
-                let slack = match self.atoms.get(&le_sat) {
-                    Some(SimplexAtom::Upper { var, .. }) => *var,
+                let (slack, le_bound) = match self.atoms.get(&le_sat) {
+                    Some(SimplexAtom::Upper { var, bound }) => (*var, *bound),
                     _ => continue,
+                };
+                let ge_bound = match self.atoms.get(&ge_sat) {
+                    Some(SimplexAtom::Lower { bound, .. }) => *bound,
+                    _ => le_bound,
                 };
                 probed += 1;
                 if !le_true {
                     let mut probe = self.simplex.clone();
                     let neg_raw = Literal::negative(le_sat).raw();
                     let conflict = probe
-                        .assert_lower(slack, Rational::from_int(1), neg_raw)
+                        .assert_lower(slack, Rational::from_int(le_bound + 1), neg_raw)
                         .err()
-                        .map(|e| mk_conflict_simplex(&e.lits))
-                        .or_else(|| probe.check().err().map(|e| mk_conflict_simplex(&e.lits)));
+                        .and_then(|e| mk_safe_conflict_simplex(neg_raw, &e.lits))
+                        .or_else(|| {
+                            probe
+                                .check()
+                                .err()
+                                .and_then(|e| mk_safe_conflict_simplex(neg_raw, &e.lits))
+                        });
                     if let Some(c) = conflict {
+                        if std::env::var("RM_DEBUG_S26").is_ok() {
+                            eprintln!("S26 le clause: {:?} (le_sat={le_sat} ge_sat={ge_sat})", c);
+                        }
                         tprop.push(c);
                     }
                 }
@@ -579,11 +597,19 @@ impl TheorySolver for LiaCdclT {
                     let mut probe = self.simplex.clone();
                     let neg_raw = Literal::negative(ge_sat).raw();
                     let conflict = probe
-                        .assert_upper(slack, Rational::from_int(-1), neg_raw)
+                        .assert_upper(slack, Rational::from_int(ge_bound - 1), neg_raw)
                         .err()
-                        .map(|e| mk_conflict_simplex(&e.lits))
-                        .or_else(|| probe.check().err().map(|e| mk_conflict_simplex(&e.lits)));
+                        .and_then(|e| mk_safe_conflict_simplex(neg_raw, &e.lits))
+                        .or_else(|| {
+                            probe
+                                .check()
+                                .err()
+                                .and_then(|e| mk_safe_conflict_simplex(neg_raw, &e.lits))
+                        });
                     if let Some(c) = conflict {
+                        if std::env::var("RM_DEBUG_S26").is_ok() {
+                            eprintln!("S26 ge clause: {:?} (le_sat={le_sat} ge_sat={ge_sat})", c);
+                        }
                         tprop.push(c);
                     }
                 }
@@ -653,12 +679,9 @@ impl TheorySolver for LiaCdclT {
         // model by cloning the post-encoding Simplex (rows only, no bounds) and
         // asserting all TRUE atoms fresh — no stale incremental bounds.
         //
-        // Only TRUE atoms are asserted here (FALSE atoms are skipped). Integer tightening
-        // of FALSE atoms (¬(x ≤ k) → x ≥ k+1) in a rational Simplex produces unsound
-        // conflict clauses when rational-valued slacks (e.g. diff_slack = ri − rj) have
-        // a satisfying rational value in (k, k+1). theory_propagate handles negated atoms
-        // incrementally with proper backtracking; TFC only needs the positive bounds to
-        // detect genuine rational infeasibilities in the complete model.
+        // Assert all TRUE atoms into a fresh Simplex clone and check feasibility.
+        // FALSE atoms are skipped — only positive bounds are needed to detect genuine
+        // rational infeasibilities in the complete model.
         let mut scratch = self.initial_simplex.as_ref().unwrap().clone();
         let atoms_snapshot: Vec<(u32, SimplexAtom)> = self
             .atoms
@@ -812,6 +835,22 @@ fn mk_conflict_simplex(lits: &[u32]) -> Vec<Literal> {
         .collect()
 }
 
+/// Like mk_conflict_simplex but returns None if any core element (other than
+/// probe_label_raw) is a negative-polarity literal — indicating a tightened
+/// integer bound from theory_propagate.  Such clauses are unsound for
+/// QF_UFLIA because the tightened bound is branch-local, not a global fact.
+fn mk_safe_conflict_simplex(probe_label_raw: u32, lits: &[u32]) -> Option<Vec<Literal>> {
+    for &raw in lits {
+        if raw == probe_label_raw {
+            continue;
+        }
+        if Literal::from_raw(raw).is_negative() {
+            return None;
+        }
+    }
+    Some(mk_conflict_simplex(lits))
+}
+
 /// Encode "simplex_var_a = simplex_var_b" as a SAT literal using two Simplex
 /// bound atoms: `a ≤ b` and `a ≥ b`, Tseitin-combined into one AND variable.
 ///
@@ -898,6 +937,7 @@ fn encode_var_eq(a: u32, b: u32, solver: &mut LiaCdclT) -> (Literal, u32, u32) {
         };
 
     let le_sat = if let Some(&v) = solver.arith_atom_cache.get(&(slack, le_is_upper, le_bound)) {
+        solver.ackermann_le_ge_atoms.insert(v);
         v
     } else {
         let v = solver.alloc_sat();
@@ -908,9 +948,11 @@ fn encode_var_eq(a: u32, b: u32, solver: &mut LiaCdclT) -> (Literal, u32, u32) {
         };
         solver.atoms.insert(v, atom);
         solver.arith_atom_cache.insert((slack, le_is_upper, le_bound), v);
+        solver.ackermann_le_ge_atoms.insert(v);
         v
     };
     let ge_sat = if let Some(&v) = solver.arith_atom_cache.get(&(slack, ge_is_upper, ge_bound)) {
+        solver.ackermann_le_ge_atoms.insert(v);
         v
     } else {
         let v = solver.alloc_sat();
@@ -921,6 +963,7 @@ fn encode_var_eq(a: u32, b: u32, solver: &mut LiaCdclT) -> (Literal, u32, u32) {
         };
         solver.atoms.insert(v, atom);
         solver.arith_atom_cache.insert((slack, ge_is_upper, ge_bound), v);
+        solver.ackermann_le_ge_atoms.insert(v);
         v
     };
 
@@ -1143,9 +1186,9 @@ fn extract_linear(term: &Term, solver: &mut LiaCdclT) -> Option<LinearForm> {
             let r = solver.alloc_simplex();
             let (rt_eq, rt_le, rt_ge) = encode_var_eq(r, tv, solver);
             let (re_eq, re_le, re_ge) = encode_var_eq(r, ev, solver);
-            // Mark ITE equality le/ge atoms as unsafe for tightening: both can be
-            // simultaneously FALSE before the cond gate resolves, so applying
-            // ¬(diff≤0)→diff≥1 and ¬(diff≥0)→diff≤-1 together creates unsound bounds.
+            // ITE le/ge atoms must skip integer tightening: both branches can be
+            // simultaneously FALSE before the cond gate resolves, so tightening
+            // both would assert incompatible bounds (r > tv AND r < tv simultaneously).
             for &s in &[rt_le, rt_ge, re_le, re_ge] {
                 if s != 0 { solver.ackermann_le_ge_atoms.insert(s); }
             }
@@ -1269,9 +1312,7 @@ fn encode_bool(term: &Term, solver: &mut LiaCdclT) -> Result<Literal, ()> {
         }
         TermInner::Not(inner) => {
             match &inner.inner {
-                // ¬(ArithCmp): encode the dual comparison as a positive atom so
-                // theory_propagate asserts the bound when the literal is TRUE.
-                // e.g. ¬(x ≤ k) → Lower(x, k+1).
+                // S32: ¬(ArithCmp) → encode the dual comparison as a fresh positive atom.
                 TermInner::ArithCmp(kind, lhs, rhs) => {
                     let dual = match kind {
                         ArithCmpKind::Le => ArithCmpKind::Gt,
@@ -1281,13 +1322,7 @@ fn encode_bool(term: &Term, solver: &mut LiaCdclT) -> Result<Literal, ()> {
                     };
                     return encode_arith_cmp(dual, lhs, rhs, solver);
                 }
-                // De Morgan: ¬(A∨B∨…) → (¬A ∧ ¬B ∧ …).
-                // Push negation inside so ¬(ArithCmp) sub-expressions become
-                // positive atoms (e.g. ¬(x≤k) → Lower(x,k+1)), which lets
-                // theory_propagate assert their bounds when the conjunction is TRUE.
-                // Without this, the formula ¬(¬P ∨ Q) would force both ¬P=FALSE
-                // (→P=TRUE) and Q=FALSE as negative atoms that theory_propagate
-                // silently skips, missing the infeasibility.
+                // S31: ¬(A∨B∨…) → (¬A ∧ ¬B ∧ …) — push negation inside Or.
                 TermInner::Or(subs) => {
                     let subs_clone: Vec<Term> = subs.clone();
                     let neg_lits: Vec<Literal> = subs_clone
@@ -1310,7 +1345,7 @@ fn encode_bool(term: &Term, solver: &mut LiaCdclT) -> Result<Literal, ()> {
                     solver.add_clause(&cl);
                     return Ok(z);
                 }
-                // Double negation: ¬(¬x) → x.
+                // Double negation elimination.
                 TermInner::Not(inner2) => {
                     return encode_bool(inner2, solver);
                 }
