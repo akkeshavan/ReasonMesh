@@ -10,6 +10,7 @@
 //! - Theory lemmas (N-O derived equalities) are a future extension (spec §11.1).
 
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::AtomicBool;
 use std::time::Instant;
 
 use rm_akx::{
@@ -21,6 +22,7 @@ use rm_akx::{
 };
 
 use crate::cdclt::{build_cdclt_from_text, CdclT, NoResult};
+use crate::lia::{build_lia_from_text, LiaCdclT, LiaStatus};
 
 const KID_WORD: u64 = 1 << 32;
 
@@ -55,7 +57,12 @@ impl SmtReasoner {
         work: WorkUnit,
     ) -> Result<Self, String> {
         let cancel = work.shutdown.clone();
-        let cdclt = build_cdclt_from_text(text, cancel)?;
+        let mut cdclt = build_cdclt_from_text(text, cancel)?;
+        // Portfolio diversity: even workers prefer TRUE, odd prefer FALSE; stagger restarts.
+        if let Some(c) = &mut cdclt {
+            c.set_polarity_bias(worker_id.0 % 2 == 0);
+            c.set_luby_scale(25u64.saturating_add(worker_id.0 as u64 * 4));
+        }
         let num_vars = cdclt.as_ref().map(|c| c.num_sat_vars()).unwrap_or(0);
 
         let mut ctx = work.assumptions.clone();
@@ -279,6 +286,207 @@ pub fn make_smt_work_unit(seed: u64, budget: WorkBudget) -> WorkUnit {
 }
 
 // ---------------------------------------------------------------------------
+// LiaReasoner — AKX Reasoner wrapping LiaCdclT (QF_LIA/QF_UFLIA)
+// ---------------------------------------------------------------------------
+
+/// AKX reasoner wrapping the LIA CDCL(T) solver (Simplex + Ackermann).
+pub struct LiaReasoner {
+    id: ReasonerId,
+    worker_id: WorkerId,
+    solver: Option<LiaCdclT>,
+    gate: ImportGate,
+    pending: Mutex<Vec<KnowledgeObject>>,
+    next_kid: u64,
+    max_imported_id: u64,
+    num_vars: u32,
+    done: Option<LiaStatus>,
+    shutdown: Arc<AtomicBool>,
+}
+
+impl LiaReasoner {
+    pub fn new(
+        id: ReasonerId,
+        worker_id: WorkerId,
+        text: &str,
+        shutdown: Arc<AtomicBool>,
+    ) -> Result<Self, String> {
+        let cancel = Arc::clone(&shutdown);
+        let mut solver = build_lia_from_text(text, cancel)?
+            .ok_or_else(|| "empty or unencodable problem".to_string())?;
+        solver.set_polarity_bias(worker_id.0 % 2 == 0);
+        solver.set_luby_scale(25u64.saturating_add(worker_id.0 as u64 * 4));
+        let num_vars = solver.num_sat_vars();
+        let gate = ImportGate::new(ImportPolicy::default());
+        Ok(LiaReasoner {
+            id,
+            worker_id,
+            solver: Some(solver),
+            gate,
+            pending: Mutex::new(Vec::new()),
+            next_kid: ((worker_id.0 as u64) * KID_WORD) | 1,
+            max_imported_id: 0,
+            num_vars,
+            done: None,
+            shutdown,
+        })
+    }
+
+    fn drain_to_pending(&mut self) {
+        let Some(solver) = &mut self.solver else { return };
+        let mut pending = self.pending.lock().unwrap();
+        for (lits, lbd) in solver.drain_learned_clauses() {
+            let mut sorted = lits;
+            sorted.sort_unstable();
+            sorted.dedup();
+            pending.push(KnowledgeObject {
+                id: KnowledgeId(self.next_kid),
+                kind: KnowledgeKind::Clause(ClauseKnowledge {
+                    literals: sorted.into_iter().collect(),
+                    lbd,
+                }),
+                assumptions: Vec::new().into(),
+                scope: Scope::Process,
+                trust: TrustLevel::Trusted,
+                utility: utility_of(lbd),
+                proof_ref: None,
+                source: self.worker_id.0,
+            });
+            self.next_kid += 1;
+        }
+    }
+
+    pub fn drain_and_export(&mut self, policy: &ExportPolicy) -> KnowledgeBatch {
+        if policy.max_items == 0 {
+            if let Some(s) = &mut self.solver {
+                s.drain_learned_clauses();
+            }
+            return KnowledgeBatch::new();
+        }
+        self.drain_to_pending();
+        self.export(policy).unwrap_or_default()
+    }
+}
+
+impl Reasoner for LiaReasoner {
+    fn id(&self) -> ReasonerId {
+        self.id
+    }
+
+    fn capabilities(&self) -> Capabilities {
+        Capabilities {
+            can_produce: smallvec::smallvec![KnowledgeKindTag::Clause],
+            can_consume: smallvec::smallvec![KnowledgeKindTag::Clause],
+            is_complete: true,
+            produces_proofs: false,
+            hardware: HardwareClass::Cpu,
+        }
+    }
+
+    fn import(&mut self, batch: KnowledgeBatch) -> Result<ImportStats, ReasonerError> {
+        let decisions = self.gate.submit(&batch);
+        let mut stats = ImportStats { received: batch.len() as u32, ..ImportStats::default() };
+        let mut clauses: Vec<Vec<Literal>> = Vec::new();
+        for (obj, d) in batch.iter().zip(decisions.iter()) {
+            match d {
+                ImportDecision::Applied => {
+                    if let KnowledgeKind::Clause(c) = &obj.kind {
+                        if c.literals.iter().any(|l| l.var() > self.num_vars) {
+                            stats.discarded_no_overlap += 1;
+                            continue;
+                        }
+                        clauses.push(c.literals.iter().copied().collect());
+                    }
+                    stats.applied += 1;
+                    self.max_imported_id = self.max_imported_id.max(obj.id.0);
+                }
+                ImportDecision::Buffered => stats.buffered += 1,
+                ImportDecision::Duplicate => stats.discarded_duplicate += 1,
+                ImportDecision::DiscardedNoOverlap | ImportDecision::DiscardedLowUtility => {
+                    stats.discarded_no_overlap += 1;
+                }
+            }
+        }
+        if !clauses.is_empty() {
+            if let Some(s) = &mut self.solver {
+                s.import_sat_clauses(&clauses);
+            }
+        }
+        Ok(stats)
+    }
+
+    fn step(&mut self, budget: WorkBudget) -> Result<ReasonerEvent, ReasonerError> {
+        use std::sync::atomic::Ordering;
+        if self.shutdown.load(Ordering::SeqCst) {
+            return Ok(ReasonerEvent::Cancelled);
+        }
+        let Some(solver) = &mut self.solver else {
+            return Ok(ReasonerEvent::BudgetExhausted);
+        };
+        if let Some(done) = self.done {
+            return match done {
+                LiaStatus::Sat => Ok(ReasonerEvent::SatCandidate {
+                    model: Arc::new(PartialModel {
+                        assignments: Vec::new(),
+                        work_unit_ancestry: CubePath::default(),
+                    }),
+                }),
+                LiaStatus::Unsat => Ok(ReasonerEvent::UnsatLocal { proof_ref: None }),
+                LiaStatus::Unknown => Ok(ReasonerEvent::BudgetExhausted),
+            };
+        }
+        let result = solver.solve_step(budget.max_conflicts);
+        if self.shutdown.load(Ordering::SeqCst) {
+            return Ok(ReasonerEvent::Cancelled);
+        }
+        match result {
+            LiaStatus::Sat => {
+                self.done = Some(LiaStatus::Sat);
+                Ok(ReasonerEvent::SatCandidate {
+                    model: Arc::new(PartialModel {
+                        assignments: Vec::new(),
+                        work_unit_ancestry: CubePath::default(),
+                    }),
+                })
+            }
+            LiaStatus::Unsat => {
+                self.done = Some(LiaStatus::Unsat);
+                Ok(ReasonerEvent::UnsatLocal { proof_ref: None })
+            }
+            LiaStatus::Unknown => Ok(ReasonerEvent::BudgetExhausted),
+        }
+    }
+
+    fn export(&self, policy: &ExportPolicy) -> Result<KnowledgeBatch, ReasonerError> {
+        let mut pending = self.pending.lock().unwrap();
+        pending.retain(|o| o.id > policy.watermark);
+        let mut out = KnowledgeBatch::new();
+        let mut keep = Vec::new();
+        for obj in pending.drain(..) {
+            if out.len() >= policy.max_items {
+                keep.push(obj);
+                continue;
+            }
+            if obj.utility < policy.min_utility {
+                continue;
+            }
+            if obj.scope > policy.max_scope {
+                continue;
+            }
+            if !policy.kind_filter.is_empty() && !policy.kind_filter.contains(&obj.kind.tag()) {
+                continue;
+            }
+            out.push(obj);
+        }
+        pending.extend(keep);
+        Ok(out)
+    }
+
+    fn checkpoint(&self) -> Result<Option<Checkpoint>, ReasonerError> {
+        Ok(None)
+    }
+}
+
+// ---------------------------------------------------------------------------
 // SmtWorkerPool — run N SmtReasoners in parallel on the same problem
 // ---------------------------------------------------------------------------
 
@@ -316,8 +524,24 @@ pub enum SmtWorkerOutcome {
     Aborted { worker: WorkerId },
 }
 
-/// Run `num_workers` `SmtReasoner`s in parallel on `text`, sharing learned
-/// clauses via an in-process AKX bus. Returns the first conclusive outcome.
+/// Detect the SMT-LIB logic from raw text. Returns None if not found.
+fn detect_logic(text: &str) -> Option<String> {
+    let tokens = rm_syntax::lex(text).ok()?;
+    let exprs = rm_syntax::parse_program(&tokens).ok()?;
+    for expr in &exprs {
+        let rm_syntax::SExpr::List(items) = expr else { continue };
+        if items.first().and_then(|e| e.symbol()) == Some("set-logic") {
+            if let Some(rm_syntax::SExpr::Atom(rm_syntax::Atom::Symbol(l))) = items.get(1) {
+                return Some(l.clone());
+            }
+        }
+    }
+    None
+}
+
+/// Run `num_workers` reasoners in parallel on `text`, sharing learned clauses
+/// via an in-process AKX bus. Dispatches to `LiaReasoner` for QF_LIA/QF_UFLIA,
+/// `SmtReasoner` (CdclT-based) for all other logics.
 pub fn run_smt_pool(
     text: &str,
     config: SmtWorkerConfig,
@@ -325,8 +549,13 @@ pub fn run_smt_pool(
 ) -> Vec<SmtWorkerOutcome> {
     use std::sync::atomic::AtomicBool;
 
-    let bus: Arc<dyn KnowledgeBus> =
-        Arc::new(InprocBus::new(&config.bus));
+    let logic = detect_logic(text);
+    let use_lia = matches!(
+        logic.as_deref(),
+        Some("QF_LIA") | Some("QF_LRA") | Some("QF_UFLIA") | Some("QF_UFLRA")
+    );
+
+    let bus: Arc<dyn KnowledgeBus> = Arc::new(InprocBus::new(&config.bus));
     let shutdown = Arc::new(AtomicBool::new(false));
 
     let handles: Vec<_> = (0..config.num_workers)
@@ -335,12 +564,21 @@ pub fn run_smt_pool(
             let bus = Arc::clone(&bus);
             let shutdown = Arc::clone(&shutdown);
             let cfg = config.clone();
-            std::thread::Builder::new()
-                .name(format!("smt-worker-{i}"))
-                .spawn(move || {
-                    run_smt_worker(WorkerId(i as u32), &text, cfg, bus, shutdown, deadline)
-                })
-                .expect("spawn")
+            if use_lia {
+                std::thread::Builder::new()
+                    .name(format!("lia-worker-{i}"))
+                    .spawn(move || {
+                        run_lia_worker(WorkerId(i as u32), &text, cfg, bus, shutdown, deadline)
+                    })
+                    .expect("spawn")
+            } else {
+                std::thread::Builder::new()
+                    .name(format!("smt-worker-{i}"))
+                    .spawn(move || {
+                        run_smt_worker(WorkerId(i as u32), &text, cfg, bus, shutdown, deadline)
+                    })
+                    .expect("spawn")
+            }
         })
         .collect();
 
@@ -431,6 +669,63 @@ fn drain_export_import_smt(
     }
 }
 
+fn run_lia_worker(
+    worker: WorkerId,
+    text: &str,
+    cfg: SmtWorkerConfig,
+    bus: Arc<dyn KnowledgeBus>,
+    shutdown: Arc<std::sync::atomic::AtomicBool>,
+    deadline: Option<std::time::Duration>,
+) -> SmtWorkerOutcome {
+    let mut reasoner = match LiaReasoner::new(ReasonerId(worker.0), worker, text, Arc::clone(&shutdown)) {
+        Ok(r) => r,
+        Err(_) => return SmtWorkerOutcome::Aborted { worker },
+    };
+
+    let started = std::time::Instant::now();
+    loop {
+        if deadline.is_some_and(|d| started.elapsed() >= d)
+            || shutdown.load(std::sync::atomic::Ordering::SeqCst)
+        {
+            return SmtWorkerOutcome::Aborted { worker };
+        }
+
+        match reasoner.step(cfg.step_budget) {
+            Ok(ReasonerEvent::UnsatLocal { .. }) => {
+                shutdown.store(true, std::sync::atomic::Ordering::SeqCst);
+                return SmtWorkerOutcome::Unsat { worker };
+            }
+            Ok(ReasonerEvent::SatCandidate { .. }) => {
+                shutdown.store(true, std::sync::atomic::Ordering::SeqCst);
+                return SmtWorkerOutcome::Sat { worker };
+            }
+            Ok(ReasonerEvent::Progress) | Ok(ReasonerEvent::BudgetExhausted) => {
+                let batch = reasoner.drain_and_export(&cfg.export_policy);
+                if !batch.is_empty() {
+                    match bus.publish(Scope::Process, batch) {
+                        Ok(_) => {}
+                        Err(BusError::BufferFull) => {}
+                        Err(e) => log::warn!("lia bus publish: {e}"),
+                    }
+                }
+                match bus.poll(PollBudget::default()) {
+                    Ok(batch) if !batch.is_empty() => {
+                        let _ = reasoner.import(batch);
+                    }
+                    _ => {}
+                }
+            }
+            Ok(ReasonerEvent::Cancelled) | Ok(ReasonerEvent::NeedWork) => {
+                return SmtWorkerOutcome::Aborted { worker };
+            }
+            Ok(ReasonerEvent::InternalError(e)) | Err(e) => {
+                log::error!("lia worker {worker:?} failed: {e}");
+                return SmtWorkerOutcome::Aborted { worker };
+            }
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -506,6 +801,92 @@ mod tests {
         assert!(
             !outcomes.iter().any(|o| matches!(o, SmtWorkerOutcome::Sat { .. })),
             "no sat expected: {outcomes:?}"
+        );
+    }
+
+    #[test]
+    fn lia_reasoner_unsat() {
+        let text = "(set-logic QF_LIA)
+(declare-fun x () Int)
+(declare-fun y () Int)
+(assert (>= (+ x y) 10))
+(assert (<= x 3))
+(assert (<= y 3))
+(check-sat)";
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let mut r = LiaReasoner::new(ReasonerId(0), WorkerId(0), text, shutdown).unwrap();
+        let budget = WorkBudget { max_conflicts: 100_000, max_ms: 30_000 };
+        loop {
+            match r.step(budget).unwrap() {
+                ReasonerEvent::UnsatLocal { .. } => return,
+                ReasonerEvent::SatCandidate { .. } => panic!("expected unsat"),
+                ReasonerEvent::BudgetExhausted | ReasonerEvent::Progress => continue,
+                ReasonerEvent::Cancelled | ReasonerEvent::NeedWork => panic!("unexpected"),
+                ReasonerEvent::InternalError(e) => panic!("error: {e}"),
+            }
+        }
+    }
+
+    #[test]
+    fn lia_reasoner_sat() {
+        let text = "(set-logic QF_LIA)
+(declare-fun x () Int)
+(declare-fun y () Int)
+(assert (<= (+ x y) 10))
+(assert (>= x 3))
+(assert (>= y 2))
+(check-sat)";
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let mut r = LiaReasoner::new(ReasonerId(0), WorkerId(0), text, shutdown).unwrap();
+        let budget = WorkBudget { max_conflicts: 100_000, max_ms: 30_000 };
+        loop {
+            match r.step(budget).unwrap() {
+                ReasonerEvent::SatCandidate { .. } => return,
+                ReasonerEvent::UnsatLocal { .. } => panic!("expected sat"),
+                ReasonerEvent::BudgetExhausted | ReasonerEvent::Progress => continue,
+                ReasonerEvent::Cancelled | ReasonerEvent::NeedWork => panic!("unexpected"),
+                ReasonerEvent::InternalError(e) => panic!("error: {e}"),
+            }
+        }
+    }
+
+    #[test]
+    fn smt_pool_lia_unsat() {
+        // Pure LIA: x + y >= 10, x <= 3, y <= 3 → UNSAT.
+        let text = "(set-logic QF_LIA)
+(declare-fun x () Int)
+(declare-fun y () Int)
+(assert (>= (+ x y) 10))
+(assert (<= x 3))
+(assert (<= y 3))
+(check-sat)";
+        let cfg = SmtWorkerConfig { num_workers: 2, ..SmtWorkerConfig::default() };
+        let outcomes = run_smt_pool(text, cfg, Some(std::time::Duration::from_secs(30)));
+        assert!(
+            outcomes.iter().any(|o| matches!(o, SmtWorkerOutcome::Unsat { .. })),
+            "expected unsat: {outcomes:?}"
+        );
+        assert!(
+            !outcomes.iter().any(|o| matches!(o, SmtWorkerOutcome::Sat { .. })),
+            "no sat expected: {outcomes:?}"
+        );
+    }
+
+    #[test]
+    fn smt_pool_lia_sat() {
+        // Pure LIA: x + y <= 10, x >= 3, y >= 2 → SAT.
+        let text = "(set-logic QF_LIA)
+(declare-fun x () Int)
+(declare-fun y () Int)
+(assert (<= (+ x y) 10))
+(assert (>= x 3))
+(assert (>= y 2))
+(check-sat)";
+        let cfg = SmtWorkerConfig { num_workers: 2, ..SmtWorkerConfig::default() };
+        let outcomes = run_smt_pool(text, cfg, Some(std::time::Duration::from_secs(30)));
+        assert!(
+            outcomes.iter().any(|o| matches!(o, SmtWorkerOutcome::Sat { .. })),
+            "expected sat: {outcomes:?}"
         );
     }
 }

@@ -771,6 +771,10 @@ pub(crate) struct CdclT {
     /// sets this to true after the wall-clock deadline fires; the solve loop
     /// checks it once per iteration and returns Unknown promptly.
     cancel: Arc<AtomicBool>,
+    /// Portfolio diversity: polarity bias applied to the SAT backbone at finalize.
+    polarity_bias: Option<bool>,
+    /// Portfolio diversity: Luby restart scale applied to the SAT backbone at finalize.
+    luby_scale: Option<u64>,
 }
 
 impl CdclT {
@@ -800,7 +804,17 @@ impl CdclT {
             no_euf_dl_pairs: FxHashMap::default(),
             next_no_tag: 1 << 28,
             cancel,
+            polarity_bias: None,
+            luby_scale: None,
         }
+    }
+
+    pub(crate) fn set_polarity_bias(&mut self, prefer_true: bool) {
+        self.polarity_bias = Some(prefer_true);
+    }
+
+    pub(crate) fn set_luby_scale(&mut self, scale: u64) {
+        self.luby_scale = Some(scale);
     }
 
     fn alloc_var(&mut self) -> u32 {
@@ -833,6 +847,12 @@ impl CdclT {
         // BVE eliminates variables that theory atoms depend on; theory lemmas
         // added during solving reference those variables, so BVE is incompatible.
         sat.skip_bve();
+        if let Some(bias) = self.polarity_bias {
+            sat.set_polarity_bias(bias);
+        }
+        if let Some(scale) = self.luby_scale {
+            sat.set_luby_scale(scale);
+        }
         for clause in self.pending_clauses.drain(..) {
             sat.add_clause(&clause);
         }

@@ -27,7 +27,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 // Public result type
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LiaStatus {
     Sat,
     Unsat,
@@ -102,7 +102,7 @@ enum SimplexAtom {
 // CDCL(T) state for LIA
 // ---------------------------------------------------------------------------
 
-struct LiaCdclT {
+pub struct LiaCdclT {
     next_sat_var: u32,
     simplex: SimplexSolver,
     /// Name → Simplex VarId for user-declared variables.
@@ -190,6 +190,12 @@ struct LiaCdclT {
     /// In QF_UF mode (formula_simplex_vars empty), this set is populated but the
     /// tightening skip is bypassed — all atoms are tightened for original S26 behavior.
     ackermann_le_ge_atoms: FxHashSet<u32>,
+    /// True once finalize_with_bb has been called; prevents double-initialization.
+    finalized: bool,
+    /// Portfolio diversity: polarity bias for the SAT backbone, applied at finalize.
+    polarity_bias: Option<bool>,
+    /// Portfolio diversity: Luby restart scale for the SAT backbone, applied at finalize.
+    luby_scale: Option<u64>,
 }
 
 impl LiaCdclT {
@@ -223,6 +229,71 @@ impl LiaCdclT {
             ackermann_cong_watcher: FxHashMap::default(),
             formula_simplex_vars: FxHashSet::default(),
             ackermann_le_ge_atoms: FxHashSet::default(),
+            finalized: false,
+            polarity_bias: None,
+            luby_scale: None,
+        }
+    }
+
+    pub(crate) fn set_polarity_bias(&mut self, prefer_true: bool) {
+        self.polarity_bias = Some(prefer_true);
+    }
+
+    pub(crate) fn set_luby_scale(&mut self, scale: u64) {
+        self.luby_scale = Some(scale);
+    }
+
+    pub(crate) fn drain_learned_clauses(&mut self) -> Vec<(Vec<Literal>, u32)> {
+        self.sat.as_mut().map(|s| s.drain_learned()).unwrap_or_default()
+    }
+
+    pub(crate) fn import_sat_clauses(&mut self, clauses: &[Vec<Literal>]) {
+        if let Some(sat) = &mut self.sat {
+            sat.import_clauses(clauses);
+        } else {
+            self.pending_clauses.extend(clauses.iter().cloned());
+        }
+    }
+
+    pub(crate) fn num_sat_vars(&self) -> u32 {
+        self.next_sat_var.saturating_sub(1)
+    }
+
+    /// Run one conflict-budget slice of the LIA CDCL(T) loop.
+    /// Calls finalize_with_bb on the first invocation; subsequent calls reuse
+    /// the existing SAT solver. Returns Unknown when the budget is exhausted.
+    pub(crate) fn solve_step(&mut self, max_conflicts: u64) -> LiaStatus {
+        if !self.finalized {
+            let int_count = self.var_ids.values()
+                .filter(|&&id| (id as usize) < self.is_int.len() && self.is_int[id as usize])
+                .count() as u32;
+            let uf_count = self.uf_apps.len() as u32;
+            let bb_budget = (int_count + uf_count + 1) * 64;
+            log::debug!("LIA finalize: int_count={int_count} uf_count={uf_count} bb_budget={bb_budget}");
+            self.finalize_with_bb(bb_budget);
+            if let Some(sat) = &mut self.sat {
+                if let Some(bias) = self.polarity_bias {
+                    sat.set_polarity_bias(bias);
+                }
+                if let Some(scale) = self.luby_scale {
+                    sat.set_luby_scale(scale);
+                }
+            }
+            self.finalized = true;
+        }
+        let mut sat = match self.sat.take() {
+            Some(s) => s,
+            None => return LiaStatus::Unknown,
+        };
+        let result = sat.solve_with_theory(max_conflicts, self);
+        self.sat = Some(sat);
+        if self.cancel.load(Ordering::Relaxed) {
+            return LiaStatus::Unknown;
+        }
+        match result {
+            SolveResult::Sat(_) => LiaStatus::Sat,
+            SolveResult::Unsat => LiaStatus::Unsat,
+            SolveResult::BudgetExceeded | SolveResult::Unknown => LiaStatus::Unknown,
         }
     }
 
@@ -357,32 +428,7 @@ impl LiaCdclT {
     }
 
     fn solve(&mut self) -> LiaStatus {
-        // Reserve 64 B&B cut variables per Int-sorted variable (user + UF results).
-        // Count only actual user-declared Int vars, not the entire pre-allocated is_int
-        // array (which is all-true and much larger than the real variable count).
-        let int_count = self.var_ids.values()
-            .filter(|&&id| (id as usize) < self.is_int.len() && self.is_int[id as usize])
-            .count() as u32;
-        let uf_count = self.uf_apps.len() as u32;
-        let bb_budget = (int_count + uf_count + 1) * 64;
-        log::debug!("LIA finalize: int_count={int_count} uf_count={uf_count} bb_budget={bb_budget} ackermann_tprop_pairs={}", self.ackermann_arg_tprop.len());
-        self.finalize_with_bb(bb_budget);
-        // Take the SAT solver out of self so we can pass `self` as the theory.
-        let mut sat = match self.sat.take() {
-            Some(s) => s,
-            None => return LiaStatus::Unknown,
-        };
-        let result = sat.solve_with_theory(u64::MAX, self);
-        self.sat = Some(sat);
-        // If cancelled, return Unknown even if solve_with_theory thinks it's Sat.
-        if self.cancel.load(Ordering::Relaxed) {
-            return LiaStatus::Unknown;
-        }
-        match result {
-            SolveResult::Sat(_) => LiaStatus::Sat,
-            SolveResult::Unsat => LiaStatus::Unsat,
-            SolveResult::BudgetExceeded | SolveResult::Unknown => LiaStatus::Unknown,
-        }
+        self.solve_step(u64::MAX)
     }
 }
 
@@ -1530,15 +1576,18 @@ fn encode_arith_cmp(
 // Public entry point
 // ---------------------------------------------------------------------------
 
-/// Solve a QF_LIA / QF_LRA problem given the raw SMT-LIB text.
-/// `cancel` is set to `true` by the benchmark harness when the timeout fires.
-pub fn solve_qf_lia(text: &str, cancel: Arc<AtomicBool>) -> Result<LiaResult, String> {
+/// Parse and encode a QF_LIA / QF_LRA / QF_UFLIA / QF_UFLRA SMT-LIB script
+/// into a ready-to-solve `LiaCdclT`. Returns `None` when encoding fails or
+/// the problem has no assertions (trivially SAT).
+pub fn build_lia_from_text(
+    text: &str,
+    cancel: Arc<AtomicBool>,
+) -> Result<Option<LiaCdclT>, String> {
     let script = Script::parse(text).map_err(|e| e.to_string())?;
     if script.assertions().is_empty() {
-        return Ok(LiaResult { status: LiaStatus::Sat, model: vec![] });
+        return Ok(None);
     }
 
-    // Collect Int/Real declared constants.
     let mut var_names: Vec<(String, SortExpr)> = Vec::new();
     use rm_syntax::Command;
     for cmd in &script.commands {
@@ -1549,12 +1598,7 @@ pub fn solve_qf_lia(text: &str, cancel: Arc<AtomicBool>) -> Result<LiaResult, St
         }
     }
 
-    // Allocate Simplex variables: first come user vars, then slacks.
-    // Pre-allocate enough space. We'll conservatively use 2x user vars as
-    // initial capacity; slacks are added dynamically.
     let user_count = var_names.len() as u32;
-    // Rough upper bound: each comparison can introduce one slack; UF applications
-    // each get a result var plus additional slacks for Ackermann constraints.
     let max_atoms = count_assertions(&script);
     let max_simplex = user_count + max_atoms * 8 + 64;
 
@@ -1569,8 +1613,6 @@ pub fn solve_qf_lia(text: &str, cancel: Arc<AtomicBool>) -> Result<LiaResult, St
         }
     }
 
-    // Allocate the "one variable": always fixed to 1 so constant offsets in
-    // linear forms can be encoded as `k * one_var` in Simplex rows.
     {
         let ov = solver.alloc_simplex();
         solver.one_var = ov;
@@ -1583,27 +1625,27 @@ pub fn solve_qf_lia(text: &str, cancel: Arc<AtomicBool>) -> Result<LiaResult, St
         solver.add_clause(&[Literal::positive(ov_ge)]);
     }
 
-    // Encode assertions.
     for assertion in script.assertions() {
         match encode_bool(assertion, &mut solver) {
             Ok(lit) => solver.add_clause(&[lit]),
-            Err(()) => {
-                return Ok(LiaResult {
-                    status: LiaStatus::Unknown,
-                    model: Vec::new(),
-                });
-            }
+            Err(()) => return Ok(None),
         }
     }
 
-    // Add Ackermann congruence constraints for all pairs of UF applications
-    // with the same function symbol before handing off to the SAT/B&B loop.
     add_ackermann_constraints(&mut solver);
-
-    // Save the Simplex state after encoding (rows only, no bounds).
-    // theory_final_check clones this for each full-model rational check so it
-    // starts from a clean state rather than an incremental state with stale bounds.
     solver.initial_simplex = Some(solver.simplex.clone());
+
+    Ok(Some(solver))
+}
+
+/// Solve a QF_LIA / QF_LRA problem given the raw SMT-LIB text.
+/// `cancel` is set to `true` by the benchmark harness when the timeout fires.
+pub fn solve_qf_lia(text: &str, cancel: Arc<AtomicBool>) -> Result<LiaResult, String> {
+    let solver_opt = build_lia_from_text(text, cancel)?;
+    let mut solver = match solver_opt {
+        Some(s) => s,
+        None => return Ok(LiaResult { status: LiaStatus::Sat, model: vec![] }),
+    };
 
     let status = solver.solve();
     let model = if status == LiaStatus::Sat {

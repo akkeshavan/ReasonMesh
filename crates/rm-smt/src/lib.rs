@@ -10,9 +10,9 @@ pub mod uf;
 
 pub use cdclt::{solve_qf_ufidl, NoResult};
 pub use dl::{solve_qf_idl, DlStatus};
-pub use lia::{solve_qf_lia, LiaStatus};
+pub use lia::{build_lia_from_text, solve_qf_lia, LiaStatus};
 pub use reasoner::{
-    make_smt_work_unit, run_smt_pool, SmtReasoner, SmtWorkerConfig, SmtWorkerOutcome,
+    make_smt_work_unit, run_smt_pool, LiaReasoner, SmtReasoner, SmtWorkerConfig, SmtWorkerOutcome,
 };
 pub use solver::{SmtError, SmtResult, SmtSolver, SmtStatus};
 pub use uf::{solve_qf_uf, UfStatus};

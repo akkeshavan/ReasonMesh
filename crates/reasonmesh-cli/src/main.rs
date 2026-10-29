@@ -648,7 +648,7 @@ fn run_solve_with_strategy(
                 return (EXIT_INTERNAL_ERROR, vec![]);
             }
         };
-        return run_smt_solve(&input, max_conflicts, vec![]);
+        return run_smt_solve_dispatch(&input, workers, max_conflicts, timeout_secs, vec![]);
     }
 
     let input = match std::fs::read_to_string(file) {
@@ -972,6 +972,46 @@ fn run_solve(
         Outcome::Unknown => EXIT_UNKNOWN,
     };
     (code, events)
+}
+
+/// Dispatch SMT solve: single-threaded when workers ≤ 1, parallel pool otherwise.
+fn run_smt_solve_dispatch(
+    input: &str,
+    workers: u32,
+    max_conflicts: Option<u64>,
+    timeout_secs: u64,
+    events: Vec<Event>,
+) -> (i32, Vec<Event>) {
+    if workers <= 1 {
+        return run_smt_solve(input, max_conflicts, events);
+    }
+
+    use rm_akx::{ExportPolicy, ImportPolicy, WorkBudget};
+    use rm_smt::{run_smt_pool, SmtWorkerConfig, SmtWorkerOutcome};
+
+    eprintln!("info: SMT parallel pool — {workers} workers, timeout={timeout_secs}s");
+    let timeout = std::time::Duration::from_secs(timeout_secs);
+    let config = SmtWorkerConfig {
+        num_workers: workers as usize,
+        step_budget: WorkBudget { max_conflicts: 5_000, max_ms: 10_000 },
+        export_policy: ExportPolicy { min_utility: 0.25, ..ExportPolicy::default() },
+        import_policy: ImportPolicy::default(),
+        seed: 1,
+        ..SmtWorkerConfig::default()
+    };
+    let outcomes = run_smt_pool(input, config, Some(timeout));
+    let is_sat = outcomes.iter().any(|o| matches!(o, SmtWorkerOutcome::Sat { .. }));
+    let is_unsat = outcomes.iter().any(|o| matches!(o, SmtWorkerOutcome::Unsat { .. }));
+    if is_unsat {
+        println!("s UNSATISFIABLE");
+        (EXIT_UNSAT, events)
+    } else if is_sat {
+        println!("s SATISFIABLE");
+        (EXIT_SAT, events)
+    } else {
+        println!("s UNKNOWN");
+        (EXIT_UNKNOWN, events)
+    }
 }
 
 /// Solve an SMT-LIB (QF_BV) input.
