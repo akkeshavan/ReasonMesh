@@ -43,29 +43,66 @@ ReasonMesh is within 1.2× of Kissat and Z3 on PAR-2. The gap is entirely in the
 
 ---
 
-## SMTLIB — QF_UF / QF_UFIDL / QF_UFLIA (600 problems)
+## SMTLIB — QF_UF / QF_UFIDL / QF_UFLIA
+
+### S34 — latest (2026-10-29)
+
+**Manifest:** `experiments/smtlib-real-s34.toml`
+**Config:** 1 worker, 60 s timeout
+**Source:** SMT-LIB 2025 benchmarks — 200 QF_UF + 317 QF_UFIDL + 474 QF_UFLIA (991 total)
+
+#### Per-logic results
+
+| Logic | RM correct | RM timeout | RM wrong | PAR-2 |
+|---|---|---|---|---|
+| QF_UF | 187 / 200 | 13 | 0 | 2 122 s |
+| QF_UFIDL | 87 / 317 | 230 | 0 | 28 770 s |
+| QF_UFLIA | 161 / 474 | 313 | 0 | 40 926 s |
+| **Total** | **435 / 991** | **556** | **0** | **71 818 s** |
+
+PAR-2 uses 120 s penalty (2× 60 s timeout). Zero wrong answers.
+
+S34 introduces `formula_simplex_vars` to split QF_UF and QF_UFLIA handling in the S26 incremental congruence probe. QF_UF now uses `mk_conflict_simplex` (no filter) since branch-local tightening labels never appear in pure UF mode; QF_UFLIA retains `mk_safe_conflict_simplex`.
+
+**Deduplicated subset (smtlib-real-s34-dedup, 384 problems):** 276/384 correct, 108 timeout, 0 wrong. PAR-2 = 14 355 s.
+
+---
+
+### S33 — (2026-10-20)
+
+**Manifest:** `experiments/smtlib-real-s33.toml`
+**Config:** 1 worker, 60 s timeout
+**Source:** Official SMT-LIB 2023 benchmark suite, 200 problems per logic
+
+#### Per-logic results
+
+| Logic | RM correct | RM timeout | RM wrong |
+|---|---|---|---|
+| QF_UF | 187 / 200 | 13 | 0 |
+| QF_UFIDL | 63 / 200 | 137 | 0 |
+| QF_UFLIA | 78 / 200 | 122 | 0 |
+| **Total** | **328 / 600** | **272** | **0** |
+
+PAR-2 (60 s penalty): **35 349 s**. Zero wrong answers.
+
+S33 fixes three wrong answers present in S31+S32: xs_29_29 and xs_25_25 (false-UNSAT) and vhard4 (false-SAT). Root cause was the S26 incremental congruence probe generating conflict clauses containing branch-local integer-tightening labels — fixed by `mk_safe_conflict_simplex`.
+
+---
+
+### Previous run (smtlib-uflia-run17, 30 s timeout)
 
 **Manifest:** `experiments/smtlib-uflia-run17.toml`
 **Config:** 1 worker, 30 s timeout
 **Baseline:** Z3 4.12 (1 thread)
-**Source:** Official SMTLIB 2023 benchmark suite, 200 problems per logic
 
-### Per-logic results
+| Logic | RM correct | RM timeout | RM wrong | Z3 solved |
+|---|---|---|---|---|
+| QF_UF | 191 / 200 | 9 | 0 | 200 / 200 |
+| QF_UFIDL | 87 / 200 | 113 | 0 | 184 / 200 |
+| QF_UFLIA | 86 / 200 | 114 | 0 | 174 / 200 |
+| **Total** | **364 / 600** | **236** | **0** | **558 / 600** |
 
-| Logic | RM correct | RM timeout | RM wrong | RM avg (ms) | Z3 solved | Z3 avg (ms) |
-|---|---|---|---|---|---|---|
-| QF_UF | 191 / 200 | 9 | 0 | 4 596 | 200 / 200 | 459 |
-| QF_UFIDL | 87 / 200 | 113 | 0 | 38 557 | 184 / 200 | 9 948 |
-| QF_UFLIA | 86 / 200 | 114 | 0 | 38 404 | 174 / 200 | 29 349 |
-| **Total** | **364 / 600** | **236** | **0** | — | **558 / 600** | — |
-
-### PAR-2 comparison (30 s penalty)
-
-| Solver | Solved | PAR-2 |
-|---|---|---|
-| ReasonMesh 0.1.0 (1t) | 364 | 16 310 s |
-| Z3 4.12 (1t) | 558 | 9 549 s |
-| RM / Z3 ratio | — | 1.71× |
+PAR-2 (30 s penalty): RM 16 310 s, Z3 9 549 s (1.71× ratio).
 
 **QF_UF** is close to Z3 (191/200 vs 200/200). **QF_UFIDL** and **QF_UFLIA** are the active improvement areas — both have ~57% timeout rates. No wrong answers on any logic.
 

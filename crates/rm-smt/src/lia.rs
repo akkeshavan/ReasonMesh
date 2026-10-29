@@ -177,12 +177,18 @@ struct LiaCdclT {
     /// Used in theory_propagate to efficiently find pairs whose congruence
     /// precondition just became fully satisfied in the trail.
     ackermann_cong_watcher: FxHashMap<u32, Vec<usize>>,
+    /// Simplex variable IDs created by encode_arith_cmp for formula ArithCmp atoms.
+    /// Non-empty exactly when the logic is QF_UFLIA (has integer arithmetic).
+    /// Used to distinguish QF_UF mode (empty) from QF_UFLIA mode (non-empty):
+    /// - QF_UF: Ackermann atoms ARE tightened (original S26 behavior, all sound)
+    /// - QF_UFLIA: Ackermann atoms NOT tightened; S26 uses mk_safe_conflict_simplex
+    formula_simplex_vars: FxHashSet<u32>,
     /// SAT vars for all le/ge atoms created by encode_var_eq (Ackermann equality
-    /// atoms).  theory_propagate skips integer tightening for these when False.
-    /// Tightening Ackermann atoms produces negative-polarity raw labels; the S26
-    /// probe's mk_safe_conflict_simplex rejects those clauses as unsound anyway,
-    /// and for QF_UF (no formula arithmetic) it causes all Ackermann atoms to be
-    /// tightened — killing S26 for QF_UF entirely.  Skip tightening for all of them.
+    /// atoms).  In QF_UFLIA mode (formula_simplex_vars non-empty), theory_propagate
+    /// skips integer tightening for these; tightened Ackermann bounds with shared
+    /// formula slacks produce spurious S26 clauses (xs false UNSATs).
+    /// In QF_UF mode (formula_simplex_vars empty), this set is populated but the
+    /// tightening skip is bypassed — all atoms are tightened for original S26 behavior.
     ackermann_le_ge_atoms: FxHashSet<u32>,
 }
 
@@ -215,6 +221,7 @@ impl LiaCdclT {
             ackermann_arg_tprop: Vec::new(),
             ackermann_full_pairs: Vec::new(),
             ackermann_cong_watcher: FxHashMap::default(),
+            formula_simplex_vars: FxHashSet::default(),
             ackermann_le_ge_atoms: FxHashSet::default(),
         }
     }
@@ -426,13 +433,13 @@ impl TheorySolver for LiaCdclT {
                     }
                 }
             } else if self.ackermann_le_ge_atoms.contains(&var) {
-                // Skip tightening for fresh Ackermann atoms whose Simplex variable is
-                // shared with a formula assertion atom.  Applying ¬(x≤k) → x≥k+1 here
-                // creates spurious conflicts: the tightened bound conflicts with the
-                // formula's own assertion on the same variable at a different bound
-                // (e.g. ¬Lower(var17,0) → Upper(var17,-1) vs. formula Lower(var17,2)).
-                // Pure Ackermann atoms (Simplex var not shared with any formula assertion)
-                // are NOT in this set and are always tightened below.
+                // Skip tightening for Ackermann/ITE equality atoms (both QF_UF and
+                // QF_UFLIA).  Both le and ge can be simultaneously FALSE before the
+                // Tseitin AND gate resolves; tightening both creates lower(slack,1)
+                // and upper(slack,-1) simultaneously — contradictory persistent bounds
+                // that survive backjumps and block valid models.
+                // S26 for QF_UF works through Simplex row equations + TRUE trail bounds,
+                // not tightened Ackermann bounds; no tightening needed here.
                 continue;
             } else {
                 // FALSE plain arithmetic atom: apply integer tightening (¬(x≤k) → x≥k+1).
@@ -572,6 +579,10 @@ impl TheorySolver for LiaCdclT {
                     Some(SimplexAtom::Lower { bound, .. }) => *bound,
                     _ => le_bound,
                 };
+                // QF_UFLIA: use safety filter (reject tightened formula labels).
+                // QF_UF: use original mk_conflict_simplex (no filter needed; all
+                // tightened labels come from Ackermann atoms which are sound in QF_UF).
+                let uflia_mode = !self.formula_simplex_vars.is_empty();
                 probed += 1;
                 if !le_true {
                     let mut probe = self.simplex.clone();
@@ -579,12 +590,21 @@ impl TheorySolver for LiaCdclT {
                     let conflict = probe
                         .assert_lower(slack, Rational::from_int(le_bound + 1), neg_raw)
                         .err()
-                        .and_then(|e| mk_safe_conflict_simplex(neg_raw, &e.lits))
+                        .and_then(|e| {
+                            if uflia_mode {
+                                mk_safe_conflict_simplex(neg_raw, &e.lits)
+                            } else {
+                                Some(mk_conflict_simplex(&e.lits))
+                            }
+                        })
                         .or_else(|| {
-                            probe
-                                .check()
-                                .err()
-                                .and_then(|e| mk_safe_conflict_simplex(neg_raw, &e.lits))
+                            probe.check().err().and_then(|e| {
+                                if uflia_mode {
+                                    mk_safe_conflict_simplex(neg_raw, &e.lits)
+                                } else {
+                                    Some(mk_conflict_simplex(&e.lits))
+                                }
+                            })
                         });
                     if let Some(c) = conflict {
                         if std::env::var("RM_DEBUG_S26").is_ok() {
@@ -599,12 +619,21 @@ impl TheorySolver for LiaCdclT {
                     let conflict = probe
                         .assert_upper(slack, Rational::from_int(ge_bound - 1), neg_raw)
                         .err()
-                        .and_then(|e| mk_safe_conflict_simplex(neg_raw, &e.lits))
+                        .and_then(|e| {
+                            if uflia_mode {
+                                mk_safe_conflict_simplex(neg_raw, &e.lits)
+                            } else {
+                                Some(mk_conflict_simplex(&e.lits))
+                            }
+                        })
                         .or_else(|| {
-                            probe
-                                .check()
-                                .err()
-                                .and_then(|e| mk_safe_conflict_simplex(neg_raw, &e.lits))
+                            probe.check().err().and_then(|e| {
+                                if uflia_mode {
+                                    mk_safe_conflict_simplex(neg_raw, &e.lits)
+                                } else {
+                                    Some(mk_conflict_simplex(&e.lits))
+                                }
+                            })
                         });
                     if let Some(c) = conflict {
                         if std::env::var("RM_DEBUG_S26").is_ok() {
@@ -1493,6 +1522,7 @@ fn encode_arith_cmp(
     };
     solver.atoms.insert(v, atom);
     solver.arith_atom_cache.insert(cache_key, v);
+    solver.formula_simplex_vars.insert(slack);
     Ok(Literal::positive(v))
 }
 

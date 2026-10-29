@@ -1,4 +1,4 @@
-# ReasonMesh Agent Status — 2026-10-20
+# ReasonMesh Agent Status — 2026-10-29
 
 ## Repository
 
@@ -16,9 +16,9 @@ Public at https://github.com/akkeshavan/ReasonMesh — v0.1.0 in progress.
 | Parallel portfolio with AKX clause sharing | Working — 4-thread within 1.2× of Kissat/Z3 on SATLIB |
 | QF_BV (Tseitin bit-blasting) | Working |
 | QF_IDL / QF_RDL (Bellman-Ford) | Working |
-| QF_UF (e-graph congruence closure) | Working — 191/200 SMTLIB correct |
-| QF_UFIDL (Nelson-Oppen EUF+DL) | Partial — 87/200, 57% timeout rate |
-| QF_LIA / QF_UFLIA (Simplex) | Partial — ~86/200, 57% timeout rate; 0 wrong answers; all unit tests passing |
+| QF_UF (e-graph congruence closure) | Working — 187/200 SMTLIB correct (S34, 60 s) |
+| QF_UFIDL (Nelson-Oppen EUF+DL) | Partial — 87/317, 73% timeout rate (S34, 60 s) |
+| QF_LIA / QF_UFLIA (Simplex) | Partial — 161/474, 66% timeout rate; 0 wrong answers; all unit tests passing |
 | TCP cluster transport (`rm-cluster`) | Working — correctness tests pass |
 | Benchmark harness (`rm-bench`) | Working — checkpoint/resume, baseline comparison |
 | Proof certificates (DRUP, `rm-proof`) | Working for SAT |
@@ -29,14 +29,28 @@ Public at https://github.com/akkeshavan/ReasonMesh — v0.1.0 in progress.
 796/807 solved, PAR-2 = 7 647 s (Kissat: 6 373 s, Z3: 6 401 s). No wrong answers.
 See `Benchmarks.md` for per-category breakdown.
 
-**SMTLIB QF_UF/QF_UFIDL/QF_UFLIA (600 problems, 1 thread, 60 s timeout):**
-S33 (2026-10-20): fixed 3 wrong answers (xs_29_29, xs_25_25, vhard4) vs S31+S32; 0 wrong answers total. Full run pending.
-Previous run (30 s timeout): 364/600 correct, PAR-2 = 16 310 s (Z3: 9 549 s), 0 wrong.
+**SMTLIB QF_UF/QF_UFIDL/QF_UFLIA (991 problems, 1 thread, 60 s timeout):**
+S34 (2026-10-29): 435/991 correct, 556 timeout, **0 wrong**. PAR-2 = 71 818 s (120 s penalty). QF_UF: 187/200, QF_UFIDL: 87/317, QF_UFLIA: 161/474.
+S33 (2026-10-20, 600 problems): 328/600 correct, PAR-2 = 35 349 s, 0 wrong.
+Previous run (30 s timeout, smtlib-uflia-run17): 364/600 correct, PAR-2 = 16 310 s (Z3: 9 549 s), 0 wrong.
 See `Benchmarks.md` for details.
 
 ---
 
 ## Recent Changes
+
+### S34 (2026-10-29)
+
+**`formula_simplex_vars` — QF_UF / QF_UFLIA mode split in S26:**
+Added `formula_simplex_vars: FxHashSet<u32>` to `LiaCdclT`. `encode_arith_cmp` populates it with each Simplex slack it creates; the set is non-empty exactly when the problem has formula-level integer arithmetic (QF_UFLIA). The S26 incremental congruence probe in `theory_propagate` now checks `uflia_mode = !self.formula_simplex_vars.is_empty()`:
+- **QF_UFLIA** (non-empty): continue using `mk_safe_conflict_simplex` — safety filter still needed because formula arithmetic labels can appear as negative-polarity raw literals in S26 conflict cores.
+- **QF_UF** (empty): switch to `mk_conflict_simplex` (no filter) — in QF_UF there are no formula arithmetic atoms, so no branch-local tightening labels can appear; the safety filter was overcautiously rejecting valid S26 clauses.
+
+Also updated the `ackermann_le_ge_atoms` comment to describe the precise invariant: both le and ge components of a Tseitin AND gate can be simultaneously FALSE before the gate fires, so tightening both creates contradictory persistent bounds `lower(slack,1)` and `upper(slack,-1)` that survive backjumps.
+
+**Benchmark (smtlib-real-s34, 991 problems, 60 s):** 435/991 correct, 556 timeout, **0 wrong**. PAR-2 = 71 818 s.
+
+---
 
 ### S33 (2026-10-20)
 
